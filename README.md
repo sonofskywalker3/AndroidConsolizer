@@ -20,12 +20,15 @@ A SMAPI mod that fixes broken controller support on Android Stardew Valley, enab
 |---------|--------|--------|
 | Shop | A | Purchase selected quantity |
 | Shop | LT/RT | Adjust purchase quantity |
+| Shop | Y | Switch to sell tab |
+| Shop | B | Switch to buy tab |
 | Inventory Menu | X | Sort inventory |
 | Chest Menu | X | Sort chest contents |
 | Chest Menu | Y | Add to existing stacks |
 
-### Known Limitations
-- **Buy/Sell Toggle**: Y button in shops doesn't switch between buy and sell tabs (Android limitation)
+### Shop Navigation
+- **Y button**: Switch to sell tab
+- **B button**: Switch back to buy tab
 
 ## Dependencies
 
