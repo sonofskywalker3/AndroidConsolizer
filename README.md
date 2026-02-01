@@ -46,10 +46,8 @@ If you test on other devices, please report your results!
 ## Installation
 
 1. Download the latest release ZIP
-2. Extract the `AndroidControllerFix` folder
-3. Copy to your Stardew Valley mods folder:
-   `/storage/emulated/0/StardewValley/Mods/`
-4. Launch the game via SMAPI Launcher
+2. Install with SMAPI Launcher
+3. Launch the game via SMAPI Launcher
 
 ## Configuration
 
