@@ -68,24 +68,49 @@ namespace AndroidConsolizer.Patches
                 // Log shop state
                 Monitor.Log($"Shop state: currentItemIndex={__instance.currentItemIndex}, forSale count={__instance.forSale?.Count ?? -1}", LogLevel.Debug);
 
-                // Use hoveredItem to find the selected item.
-                // On Android, forSaleButtons all have myID=-500, so we can't match snapped
-                // components to buttons. hoveredItem is set by the game's own navigation.
-                // Validate it's in the forSale list to prevent sell-tab purchases.
-                ISalable selectedItem = null;
-                var hoveredField = AccessTools.Field(typeof(ShopMenu), "hoveredItem");
-                if (hoveredField != null)
+                // Determine if we're on the buy list using a spatial check.
+                // On Android: forSaleButtons all have myID=-500 (can't match by ID), and
+                // hoveredItem is stale across tab switches (can't trust it alone).
+                // Instead, check if the snapped component is physically positioned over a
+                // forSaleButton. On the sell tab, the snapped component is in the inventory
+                // area which doesn't overlap with the buy-list buttons.
+                var snapped = __instance.currentlySnappedComponent;
+                int snappedBtnIndex = -1;
+                if (snapped != null && __instance.forSaleButtons != null)
                 {
-                    selectedItem = hoveredField.GetValue(__instance) as ISalable;
+                    int cx = snapped.bounds.Center.X;
+                    int cy = snapped.bounds.Center.Y;
+                    for (int i = 0; i < __instance.forSaleButtons.Count; i++)
+                    {
+                        if (__instance.forSaleButtons[i].containsPoint(cx, cy))
+                        {
+                            snappedBtnIndex = i;
+                            break;
+                        }
+                    }
                 }
 
-                if (selectedItem == null || !__instance.forSale.Contains(selectedItem))
+                if (snappedBtnIndex < 0)
                 {
-                    Monitor.Log($"hoveredItem '{selectedItem?.DisplayName ?? "null"}' is not in forSale list — not in buy mode, skipping", LogLevel.Trace);
+                    Monitor.Log($"Snapped component not over any forSaleButton — not in buy mode, skipping", LogLevel.Trace);
                     return;
                 }
 
-                Monitor.Log($"Selected item: {selectedItem.DisplayName}", LogLevel.Debug);
+                // Use the spatial match to find the selected item
+                int itemIndex = __instance.currentItemIndex + snappedBtnIndex;
+                ISalable selectedItem = null;
+                if (itemIndex >= 0 && itemIndex < __instance.forSale.Count)
+                {
+                    selectedItem = __instance.forSale[itemIndex];
+                }
+
+                if (selectedItem == null)
+                {
+                    Monitor.Log($"Could not determine item at index {itemIndex}", LogLevel.Warn);
+                    return;
+                }
+
+                Monitor.Log($"Selected item: {selectedItem.DisplayName} (button {snappedBtnIndex}, index {itemIndex})", LogLevel.Debug);
 
                 // Get price info
                 if (!__instance.itemPriceAndStock.TryGetValue(selectedItem, out var priceAndStock))
