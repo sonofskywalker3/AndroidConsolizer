@@ -20,6 +20,14 @@ namespace AndroidConsolizer.Patches
         private static FieldInfo HoveredItemField;
         private static FieldInfo QuantityToBuyField;
 
+        // Y button sell-one hold tracking
+        private static bool _yHeldOnSellTab;
+        private static int _yHoldTicks;
+        private static Buttons _yHoldRawButton;
+        private static Item _yHoldTargetItem;
+        private const int SellHoldDelay = 20;   // ~333ms at 60fps before repeat starts
+        private const int SellRepeatRate = 3;   // ~50ms at 60fps between repeats
+
         /// <summary>Apply Harmony patches.</summary>
         public static void Apply(Harmony harmony, IMonitor monitor)
         {
@@ -66,12 +74,38 @@ namespace AndroidConsolizer.Patches
             {
                 Buttons remapped = ButtonRemapper.Remap(b);
 
-                // Let all non-A buttons pass through to vanilla
-                if (remapped != Buttons.A)
+                // Only handle A and Y buttons — let everything else pass through
+                if (remapped != Buttons.A && remapped != Buttons.Y)
                     return true;
 
                 if (!ModEntry.Config?.EnableShopPurchaseFix ?? true)
-                    return true; // Disabled — let vanilla handle A
+                    return true; // Disabled — let vanilla handle it
+
+                // Y button — sell one item on sell tab (hold Y to sell repeatedly)
+                if (remapped == Buttons.Y)
+                {
+                    if (InvVisibleField != null)
+                    {
+                        bool inventoryVisible = (bool)InvVisibleField.GetValue(__instance);
+                        if (inventoryVisible)
+                        {
+                            ISalable hoveredSalable = HoveredItemField?.GetValue(__instance) as ISalable;
+                            if (hoveredSalable != null && hoveredSalable is Item sellItem)
+                            {
+                                bool sold = SellOneItem(__instance, sellItem);
+                                if (sold)
+                                {
+                                    _yHeldOnSellTab = true;
+                                    _yHoldTicks = 0;
+                                    _yHoldRawButton = b;
+                                    _yHoldTargetItem = sellItem;
+                                }
+                                return false; // Block vanilla Y when cursor is on an item
+                            }
+                        }
+                    }
+                    return true; // Not on sell tab or no item — let vanilla handle Y (tab switching)
+                }
 
                 // Check sell mode via inventoryVisible field.
                 // inventoryVisible=False on buy tab, True on sell tab.
@@ -317,9 +351,84 @@ namespace AndroidConsolizer.Patches
             }
         }
 
+        /// <summary>Sell one unit of the given item. Returns true if sold successfully.</summary>
+        private static bool SellOneItem(ShopMenu shop, Item sellItem)
+        {
+            int sellPrice;
+            if (sellItem is StardewValley.Object obj)
+                sellPrice = obj.sellToStorePrice();
+            else
+            {
+                int sp = sellItem.salePrice();
+                sellPrice = sp > 0 ? sp / 2 : -1;
+            }
+
+            if (sellPrice <= 0)
+            {
+                Game1.playSound("cancel");
+                Monitor.Log($"Sell tab: {sellItem.DisplayName} cannot be sold (price={sellPrice})", LogLevel.Debug);
+                return false;
+            }
+
+            Game1.player.Money += sellPrice;
+
+            if (sellItem.Stack > 1)
+            {
+                sellItem.Stack -= 1;
+                Monitor.Log($"Sold 1x {sellItem.DisplayName} for {sellPrice}g ({sellItem.Stack} remaining)", LogLevel.Debug);
+            }
+            else
+            {
+                // Last item in stack — remove from inventory
+                int idx = Game1.player.Items.IndexOf(sellItem);
+                if (idx >= 0)
+                    Game1.player.Items[idx] = null;
+                HoveredItemField?.SetValue(shop, null);
+                Monitor.Log($"Sold last {sellItem.DisplayName} for {sellPrice}g", LogLevel.Debug);
+            }
+
+            Game1.playSound("purchaseClick");
+            return true;
+        }
+
         /// <summary>Postfix for update to handle held A button for continuous purchasing.</summary>
         private static void Update_Postfix(ShopMenu __instance, GameTime time)
         {
+            // Y button sell hold-to-repeat
+            if (_yHeldOnSellTab)
+            {
+                var gpState = GamePad.GetState(PlayerIndex.One);
+                bool yStillHeld = gpState.IsButtonDown(_yHoldRawButton);
+                bool stillOnSellTab = InvVisibleField != null && (bool)InvVisibleField.GetValue(__instance);
+
+                if (yStillHeld && stillOnSellTab)
+                {
+                    _yHoldTicks++;
+
+                    if (_yHoldTicks > SellHoldDelay &&
+                        (_yHoldTicks - SellHoldDelay) % SellRepeatRate == 0)
+                    {
+                        ISalable hoveredSalable = HoveredItemField?.GetValue(__instance) as ISalable;
+                        if (hoveredSalable is Item sellItem && sellItem == _yHoldTargetItem)
+                        {
+                            SellOneItem(__instance, sellItem);
+                        }
+                        else
+                        {
+                            // Item gone or changed — stop repeating
+                            _yHeldOnSellTab = false;
+                        }
+                    }
+                }
+                else
+                {
+                    // Y released or left sell tab — stop repeating
+                    _yHeldOnSellTab = false;
+                    _yHoldTicks = 0;
+                    _yHoldTargetItem = null;
+                }
+            }
+
             // Reset buy quantity to 1 while on sell tab — prevents vanilla trigger input
             // from modifying quantityToBuy while the sell tab is active
             if (InvVisibleField != null && QuantityToBuyField != null)
