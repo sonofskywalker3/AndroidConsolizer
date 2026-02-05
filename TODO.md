@@ -74,9 +74,10 @@ RE-IMPLEMENT (was in v2.9.0, lost in revert)
 - Purchase logic needs to call `actionWhenPurchased(shopId)`, check/consume trade items (`TradeItem`/`TradeItemCount`), and handle inventory-full refunds
 - Tool upgrades, recipes, and all special purchase behaviors need to work correctly
 - **Previous implementation:** Used Option B in ShopMenuPatches.cs — purchase logic calls `actionWhenPurchased(shopId)`, checks/consumes trade items, handles inventory-full refunds.
-- **NEW BUG — Sell screen also triggers buy:** `ReceiveGamePadButton_Postfix` fires on ALL A presses in ShopMenu, including when the player is on the sell/inventory tab. The postfix reads `hoveredItem` which still points to the last buy-list item, so pressing A to sell an inventory item ALSO purchases from the buy list. The postfix must check if the shop is in buy mode before executing purchase logic.
-- **Log evidence (v2.7.2):** User pressed Y (sell mode) at 21:25:01 in Pierre's shop, navigated to inventory item, pressed A at 21:25:06 → postfix fired "Purchase complete! Bought 1x Parsnip Seeds" using stale hoveredItem from the buy list. `currentlySnappedComponent: 13, name=13` (an inventory slot, not a forSale button).
-- **Fix:** At minimum, add an early-exit check: if the snapped component is NOT a forSale button (myID != forSaleButtons[n].myID), don't attempt a purchase. Better: check if the shop is on the buy tab vs sell tab. Consider Option B approach (simulate receiveLeftClick at snapped component coords) which would naturally respect which tab is active.
+- **Sell-tab buy bug:** `ReceiveGamePadButton_Postfix` fires on ALL A presses in ShopMenu, including the sell/inventory tab. Must detect buy vs sell mode before purchasing.
+- **CRITICAL ANDROID FINDING (v2.7.5):** All `forSaleButtons` have `myID=-500` on Android. Cannot use `forSaleButtons.FindIndex(btn => btn.myID == snapped.myID)` to match — it will never match. The snapped component IDs are different values (5, 7, 19, 3546 observed). 37 forSaleButtons for 32 items.
+- **Working approach:** Use `hoveredItem` field (game sets this correctly based on cursor position) but validate it's in the `forSale` list. Inventory items won't be in `forSale`, so this naturally prevents the sell-tab bug. `__instance.forSale.Contains(hoveredItem)` is the correct guard.
+- **Failed approach (v2.7.5):** Matching `snappedComponent.myID` against `forSaleButtons[n].myID` — broke all purchases because IDs never match on Android.
 
 ### 3. Fishing Mini-Game Button Mismatch — DONE (v2.7.1)
 - Fixed: `GameplayButtonPatches.GetState_Postfix` now applies X/Y swap when `BobberBar` is active.
