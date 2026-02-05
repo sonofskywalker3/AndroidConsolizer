@@ -218,7 +218,19 @@ namespace AndroidConsolizer.Patches
                     // Item wasn't handled by special logic — add to inventory normally
                     var newItem = purchaseItem.getOne();
                     newItem.Stack = quantity;
-                    Game1.player.addItemToInventoryBool(newItem);
+                    if (!Game1.player.addItemToInventoryBool(newItem))
+                    {
+                        // Inventory full — refund money and trade items
+                        ShopMenu.chargePlayer(Game1.player, __instance.currency, -totalCost);
+                        if (totalTradeItems > 0)
+                        {
+                            var refundItem = ItemRegistry.Create(tradeItem, totalTradeItems);
+                            Game1.player.addItemToInventoryBool(refundItem);
+                        }
+                        Game1.playSound("cancel");
+                        Monitor.Log($"Inventory full — refunded {totalCost} money" + (totalTradeItems > 0 ? $" and {totalTradeItems}x {tradeItem}" : ""), LogLevel.Warn);
+                        return false;
+                    }
                     Monitor.Log($"Added {quantity}x {newItem.DisplayName} to inventory", LogLevel.Debug);
                 }
 
