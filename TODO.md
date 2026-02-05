@@ -118,17 +118,15 @@ RE-IMPLEMENT (was in v2.9.0, lost in revert)
 - Sell price: `Object.sellToStorePrice()` for Object items (accounts for quality/professions), `salePrice()/2` for non-Object items (rings, boots, weapons)
 - **File:** `Patches/ShopMenuPatches.cs`
 
-### 5e. Shop Buy List Right Stick Scrolling
-- **Symptom:** Right thumbstick does not scroll the shop buy list. On console, right stick scrolls the item list up/down. On Android, it has zero effect.
-- **Log evidence (v2.7.19):** At Pierre's buy tab, user pressed RightThumbstickDown (14:01:34), then RightThumbstickUp x2, RightThumbstickDown, RightThumbstickRight, RightThumbstickLeft, RightThumbstickUp, RightThumbstickRight, and RightThumbstickDown+Right simultaneously (14:01:34-14:01:41) — all directions tried, no scrolling occurred. User then resorted to spamming LeftThumbstickDown ~50 times (14:01:42-14:02:01) to navigate through Pierre's long item list (SVE adds many items).
-- **Impact:** With SVE installed, Pierre's has a very long item list. Without right stick scrolling, navigating requires dozens of left stick presses through one-item-at-a-time snap navigation. This is extremely tedious.
-- **Root cause hypothesis:** On console, `ShopMenu.receiveGamePadButton` or `ShopMenu.update` reads the right stick Y axis and scrolls `currentItemIndex` to move the visible window of `forSaleButtons`. The Android port likely stripped this or the right stick input never reaches the shop's scroll handler.
-- **Investigation needed:**
-  - Check if `ShopMenu.update` or `receiveGamePadButton` reads right stick input for scrolling
-  - Check if `GamePad.GetState().ThumbSticks.Right.Y` returns non-zero values on Android when the right stick is moved
-  - Look for a `currentItemIndex` field or `scrollBarRunner` / scroll-related fields on ShopMenu
-  - The scroll logic may need to be added in `Update_Postfix`: read right stick Y axis, if above threshold scroll `currentItemIndex` up/down with debounce
-- **Implementation approach:** Likely a postfix on `ShopMenu.update` that reads `GamePad.GetState().ThumbSticks.Right.Y`, applies a dead zone threshold, and adjusts `currentItemIndex` to scroll the buy list. Need debounce/repeat timing to prevent scrolling too fast. Only active on the buy tab (`inventoryVisible=False`).
+### 5e. Shop Buy List Right Stick Scrolling — Selection Desync
+- **Symptom:** Right thumbstick scrolls the VISIBLE VIEW of the shop buy list, but does NOT move the SELECTED ITEM. The cursor stays on the original item while the list scrolls underneath. This makes right stick scrolling useless — you end up looking at items you can't interact with, and the selected item scrolls off-screen.
+- **Log evidence (v2.7.19):** At Pierre's buy tab, user pressed RightThumbstick in all directions (14:01:34-14:01:41) — the view scrolled but selection didn't follow. User then resorted to spamming LeftThumbstickDown ~50 times (14:01:42-14:02:01) to navigate through Pierre's long item list one item at a time (SVE adds many items to Pierre's).
+- **Impact:** With SVE installed, Pierre's has a very long item list. The left stick navigates one item at a time through snap navigation, requiring dozens of presses to reach items at the bottom. Right stick scrolls the view but is useless because the selection doesn't follow.
+- **Options:**
+  1. **Disable right stick scrolling on buy tab** — simplest. Prevents the confusing desync. User navigates with left stick only (tedious but functional).
+  2. **Right stick scrolls by one page AND moves selection** — better UX. Right stick up/down scrolls by one page (however many items are visible at once, probably 4) and snaps selection to the first/last visible item. Needs debounce to prevent rapid-fire page scrolling.
+  3. **Right stick moves selection by page** — instead of scrolling the view, right stick up/down jumps the selection by N items (one page worth). The view follows the selection naturally through vanilla's snap navigation. Simplest to implement since it just simulates N down/up presses.
+- **Root cause:** The vanilla Android shop right stick handler scrolls `currentItemIndex` (the view offset) but doesn't update `currentlySnappedComponent` to match. On console, the right stick likely does both, or selection scrolling works differently.
 - **File:** `Patches/ShopMenuPatches.cs`
 
 ---
