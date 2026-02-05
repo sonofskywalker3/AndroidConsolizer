@@ -1,4 +1,5 @@
 using System;
+using System.Reflection;
 using HarmonyLib;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
@@ -49,10 +50,22 @@ namespace AndroidConsolizer.Patches
         // Track previous A button state for blocking hold behavior
         private static bool WasAButtonDown = false;
 
+        // Cached reflection fields for hover/tooltip (avoids per-tick AccessTools.Field lookups)
+        private static FieldInfo InvPage_HoverTextField;
+        private static FieldInfo InvPage_HoverTitleField;
+        private static FieldInfo InvPage_HoveredItemField;
+        private static FieldInfo InvMenu_HoveredItemField;
+
         /// <summary>Apply Harmony patches for cursor item rendering.</summary>
         public static void Apply(Harmony harmony, IMonitor monitor)
         {
             Monitor = monitor;
+
+            // Cache reflection lookups for hover/tooltip fields
+            InvPage_HoverTextField = AccessTools.Field(typeof(InventoryPage), "hoverText");
+            InvPage_HoverTitleField = AccessTools.Field(typeof(InventoryPage), "hoverTitle");
+            InvPage_HoveredItemField = AccessTools.Field(typeof(InventoryPage), "hoveredItem");
+            InvMenu_HoveredItemField = AccessTools.Field(typeof(InventoryMenu), "hoveredItem");
 
             try
             {
@@ -294,33 +307,15 @@ namespace AndroidConsolizer.Patches
         {
             try
             {
-                // Clear hover text and title
-                var hoverTextField = AccessTools.Field(typeof(InventoryPage), "hoverText");
-                if (hoverTextField != null)
-                {
-                    hoverTextField.SetValue(inventoryPage, "");
-                }
-
-                var hoverTitleField = AccessTools.Field(typeof(InventoryPage), "hoverTitle");
-                if (hoverTitleField != null)
-                {
-                    hoverTitleField.SetValue(inventoryPage, "");
-                }
-
-                var hoveredItemField = AccessTools.Field(typeof(InventoryPage), "hoveredItem");
-                if (hoveredItemField != null)
-                {
-                    hoveredItemField.SetValue(inventoryPage, null);
-                }
+                // Clear hover text and title using cached fields
+                InvPage_HoverTextField?.SetValue(inventoryPage, "");
+                InvPage_HoverTitleField?.SetValue(inventoryPage, "");
+                InvPage_HoveredItemField?.SetValue(inventoryPage, null);
 
                 // Also clear from inventory menu
                 if (inventoryPage.inventory != null)
                 {
-                    var invHoveredItemField = AccessTools.Field(typeof(InventoryMenu), "hoveredItem");
-                    if (invHoveredItemField != null)
-                    {
-                        invHoveredItemField.SetValue(inventoryPage.inventory, null);
-                    }
+                    InvMenu_HoveredItemField?.SetValue(inventoryPage.inventory, null);
                 }
             }
             catch (Exception ex)
@@ -397,31 +392,11 @@ namespace AndroidConsolizer.Patches
                         Item item = Game1.player.Items[snapped.myID];
                         if (item != null && inventoryPage.inventory != null)
                         {
-                            // Use reflection to set the hoveredItem on the inventory menu
-                            var hoveredItemField = AccessTools.Field(typeof(InventoryMenu), "hoveredItem");
-                            if (hoveredItemField != null)
-                            {
-                                hoveredItemField.SetValue(inventoryPage.inventory, item);
-                            }
-
-                            // Also set the hoverText on the page itself
-                            var hoverTextField = AccessTools.Field(typeof(InventoryPage), "hoverText");
-                            if (hoverTextField != null)
-                            {
-                                hoverTextField.SetValue(inventoryPage, item.getDescription());
-                            }
-
-                            var hoverTitleField = AccessTools.Field(typeof(InventoryPage), "hoverTitle");
-                            if (hoverTitleField != null)
-                            {
-                                hoverTitleField.SetValue(inventoryPage, item.DisplayName);
-                            }
-
-                            var hoveredItemPageField = AccessTools.Field(typeof(InventoryPage), "hoveredItem");
-                            if (hoveredItemPageField != null)
-                            {
-                                hoveredItemPageField.SetValue(inventoryPage, item);
-                            }
+                            // Set hover state using cached fields
+                            InvMenu_HoveredItemField?.SetValue(inventoryPage.inventory, item);
+                            InvPage_HoverTextField?.SetValue(inventoryPage, item.getDescription());
+                            InvPage_HoverTitleField?.SetValue(inventoryPage, item.DisplayName);
+                            InvPage_HoveredItemField?.SetValue(inventoryPage, item);
                         }
                     }
                 }
