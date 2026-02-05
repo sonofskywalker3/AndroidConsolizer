@@ -79,14 +79,16 @@ namespace AndroidConsolizer.Patches
                 // Remap button based on configured button style
                 Buttons remapped = ButtonRemapper.Remap(b);
 
-                Monitor.Log($"GameMenu (inventory) button: {b} (remapped={remapped})", LogLevel.Debug);
+                if (ModEntry.Config.VerboseLogging)
+                    Monitor.Log($"GameMenu (inventory) button: {b} (remapped={remapped})", LogLevel.Debug);
 
                 // Block A button when console inventory is enabled - we handle it ourselves
                 if (ModEntry.Config.EnableConsoleInventoryFix)
                 {
                     if (b == Buttons.A || remapped == Buttons.A)
                     {
-                        Monitor.Log($"Blocking A button in GameMenu inventory (console inventory mode)", LogLevel.Debug);
+                        if (ModEntry.Config.VerboseLogging)
+                            Monitor.Log($"Blocking A button in GameMenu inventory (console inventory mode)", LogLevel.Debug);
                         return false;
                     }
                 }
@@ -95,14 +97,16 @@ namespace AndroidConsolizer.Patches
                 // The game's Android code uses raw X for deletion, regardless of our remapping
                 if (b == Buttons.X && ModEntry.Config.EnableSortFix)
                 {
-                    Monitor.Log($"Blocking raw X button in GameMenu inventory to prevent deletion", LogLevel.Debug);
+                    if (ModEntry.Config.VerboseLogging)
+                        Monitor.Log($"Blocking raw X button in GameMenu inventory to prevent deletion", LogLevel.Debug);
                     return false; // Block original method to prevent item deletion
                 }
 
                 // X button (after remapping) = Sort inventory (and block the original)
                 if (remapped == Buttons.X && ModEntry.Config.EnableSortFix)
                 {
-                    Monitor.Log($"{b} remapped to X in GameMenu inventory - sorting (blocking original)", LogLevel.Debug);
+                    if (ModEntry.Config.VerboseLogging)
+                        Monitor.Log($"{b} remapped to X in GameMenu inventory - sorting (blocking original)", LogLevel.Debug);
                     SortPlayerInventory();
                     return false; // Block original method
                 }
@@ -110,7 +114,8 @@ namespace AndroidConsolizer.Patches
             catch (Exception ex)
             {
                 Monitor.Log($"Error in GameMenu controller handler: {ex.Message}", LogLevel.Error);
-                Monitor.Log(ex.StackTrace, LogLevel.Debug);
+                if (ModEntry.Config.VerboseLogging)
+                    Monitor.Log(ex.StackTrace, LogLevel.Debug);
             }
 
             return true; // Let original method run for other buttons
@@ -125,7 +130,8 @@ namespace AndroidConsolizer.Patches
                 // Remap button based on configured button style
                 Buttons remapped = ButtonRemapper.Remap(b);
 
-                Monitor.Log($"InventoryPage button: {b} (remapped={remapped})", LogLevel.Debug);
+                if (ModEntry.Config.VerboseLogging)
+                    Monitor.Log($"InventoryPage button: {b} (remapped={remapped})", LogLevel.Debug);
 
                 // Block A button when console inventory is enabled - we handle it ourselves
                 // This prevents the default selection box and tooltip behavior
@@ -133,7 +139,8 @@ namespace AndroidConsolizer.Patches
                 {
                     if (b == Buttons.A || remapped == Buttons.A)
                     {
-                        Monitor.Log($"Blocking A button in InventoryPage (console inventory mode)", LogLevel.Debug);
+                        if (ModEntry.Config.VerboseLogging)
+                            Monitor.Log($"Blocking A button in InventoryPage (console inventory mode)", LogLevel.Debug);
                         return false;
                     }
                 }
@@ -142,21 +149,24 @@ namespace AndroidConsolizer.Patches
                 // Must block regardless of remapping to prevent the deletion bug
                 if (b == Buttons.X)
                 {
-                    Monitor.Log($"Blocking raw X button in InventoryPage to prevent deletion", LogLevel.Debug);
+                    if (ModEntry.Config.VerboseLogging)
+                        Monitor.Log($"Blocking raw X button in InventoryPage to prevent deletion", LogLevel.Debug);
                     return false; // Block original method to prevent item deletion
                 }
 
                 // Also block remapped X button (e.g., physical Y on Xbox layout that remaps to X)
                 if (remapped == Buttons.X)
                 {
-                    Monitor.Log($"{b} remapped to X in InventoryPage - BLOCKING", LogLevel.Debug);
+                    if (ModEntry.Config.VerboseLogging)
+                        Monitor.Log($"{b} remapped to X in InventoryPage - BLOCKING", LogLevel.Debug);
                     return false; // Block original method
                 }
             }
             catch (Exception ex)
             {
                 Monitor.Log($"Error in InventoryPage controller handler: {ex.Message}", LogLevel.Error);
-                Monitor.Log(ex.StackTrace, LogLevel.Debug);
+                if (ModEntry.Config.VerboseLogging)
+                    Monitor.Log(ex.StackTrace, LogLevel.Debug);
             }
 
             return true; // Let original method run for other buttons
@@ -174,7 +184,8 @@ namespace AndroidConsolizer.Patches
                 {
                     if (b == Buttons.A || remapped == Buttons.A)
                     {
-                        Monitor.Log($"Blocking A button in InventoryMenu (console inventory mode)", LogLevel.Debug);
+                        if (ModEntry.Config.VerboseLogging)
+                            Monitor.Log($"Blocking A button in InventoryMenu (console inventory mode)", LogLevel.Debug);
                         return false;
                     }
                 }
@@ -200,7 +211,8 @@ namespace AndroidConsolizer.Patches
                 GamePadState gpState = GamePad.GetState(Microsoft.Xna.Framework.PlayerIndex.One);
                 if (gpState.Buttons.A == ButtonState.Pressed)
                 {
-                    Monitor.Log($"Blocking leftClickHeld while A is pressed (console inventory mode)", LogLevel.Debug);
+                    if (ModEntry.Config.VerboseLogging)
+                        Monitor.Log($"Blocking leftClickHeld while A is pressed (console inventory mode)", LogLevel.Debug);
                     return false;
                 }
             }
@@ -219,7 +231,8 @@ namespace AndroidConsolizer.Patches
                 GamePadState gpState = GamePad.GetState(Microsoft.Xna.Framework.PlayerIndex.One);
                 if (gpState.Buttons.A == ButtonState.Pressed)
                 {
-                    Monitor.Log($"Blocking receiveLeftClick while A is pressed (console inventory mode)", LogLevel.Debug);
+                    if (ModEntry.Config.VerboseLogging)
+                        Monitor.Log($"Blocking receiveLeftClick while A is pressed (console inventory mode)", LogLevel.Debug);
                     return false;
                 }
             }
@@ -237,7 +250,8 @@ namespace AndroidConsolizer.Patches
                 GamePadState gpState = GamePad.GetState(Microsoft.Xna.Framework.PlayerIndex.One);
                 if (gpState.Buttons.A == ButtonState.Pressed)
                 {
-                    Monitor.Log($"Blocking InventoryMenu.receiveLeftClick while A is pressed", LogLevel.Debug);
+                    if (ModEntry.Config.VerboseLogging)
+                        Monitor.Log($"Blocking InventoryMenu.receiveLeftClick while A is pressed", LogLevel.Debug);
                     return false;
                 }
             }
@@ -249,12 +263,14 @@ namespace AndroidConsolizer.Patches
         {
             try
             {
-                Monitor.Log("SortPlayerInventory called", LogLevel.Debug);
+                if (ModEntry.Config.VerboseLogging)
+                    Monitor.Log("SortPlayerInventory called", LogLevel.Debug);
 
                 var inventory = Game1.player.Items;
                 if (inventory == null || inventory.Count == 0)
                 {
-                    Monitor.Log("No inventory to sort", LogLevel.Debug);
+                    if (ModEntry.Config.VerboseLogging)
+                        Monitor.Log("No inventory to sort", LogLevel.Debug);
                     return;
                 }
 
@@ -268,7 +284,8 @@ namespace AndroidConsolizer.Patches
                 }
                 catch (Exception ex)
                 {
-                    Monitor.Log($"organizeItemsInList failed: {ex.Message}", LogLevel.Debug);
+                    if (ModEntry.Config.VerboseLogging)
+                        Monitor.Log($"organizeItemsInList failed: {ex.Message}", LogLevel.Debug);
                 }
 
                 // Fallback: manual sort

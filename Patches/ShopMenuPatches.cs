@@ -127,7 +127,8 @@ namespace AndroidConsolizer.Patches
                         Item sellItem = GetSellTabSelectedItem(__instance);
                         if (sellItem == null)
                         {
-                            Monitor.Log("Sell tab: no item at snapped slot, passing to vanilla", LogLevel.Trace);
+                            if (ModEntry.Config.VerboseLogging)
+                                Monitor.Log("Sell tab: no item at snapped slot, passing to vanilla", LogLevel.Trace);
                             return true;
                         }
 
@@ -143,7 +144,8 @@ namespace AndroidConsolizer.Patches
                         if (sellPrice <= 0)
                         {
                             Game1.playSound("cancel");
-                            Monitor.Log($"Sell tab: {sellItem.DisplayName} cannot be sold (price={sellPrice})", LogLevel.Debug);
+                            if (ModEntry.Config.VerboseLogging)
+                                Monitor.Log($"Sell tab: {sellItem.DisplayName} cannot be sold (price={sellPrice})", LogLevel.Debug);
                             return false;
                         }
 
@@ -174,18 +176,21 @@ namespace AndroidConsolizer.Patches
 
                 if (selectedItem == null)
                 {
-                    Monitor.Log("No hoveredItem — passing A to vanilla", LogLevel.Trace);
+                    if (ModEntry.Config.VerboseLogging)
+                        Monitor.Log("No hoveredItem — passing A to vanilla", LogLevel.Trace);
                     return true;
                 }
 
                 // Verify it's actually a for-sale item
                 if (!__instance.itemPriceAndStock.TryGetValue(selectedItem, out var priceAndStock))
                 {
-                    Monitor.Log($"No price info for {selectedItem.DisplayName} — passing A to vanilla", LogLevel.Trace);
+                    if (ModEntry.Config.VerboseLogging)
+                        Monitor.Log($"No price info for {selectedItem.DisplayName} — passing A to vanilla", LogLevel.Trace);
                     return true;
                 }
 
-                Monitor.Log($"Selected item: {selectedItem.DisplayName}", LogLevel.Debug);
+                if (ModEntry.Config.VerboseLogging)
+                    Monitor.Log($"Selected item: {selectedItem.DisplayName}", LogLevel.Debug);
 
                 int unitPrice = priceAndStock.Price;
                 int stock = priceAndStock.Stock;
@@ -209,7 +214,8 @@ namespace AndroidConsolizer.Patches
 
                 int totalCost = unitPrice * quantity;
 
-                Monitor.Log($"Item: {selectedItem.DisplayName}, Unit price: {unitPrice}, Quantity: {quantity}, Total: {totalCost}, Player has: {playerMoney}", LogLevel.Debug);
+                if (ModEntry.Config.VerboseLogging)
+                    Monitor.Log($"Item: {selectedItem.DisplayName}, Unit price: {unitPrice}, Quantity: {quantity}, Total: {totalCost}, Player has: {playerMoney}", LogLevel.Debug);
 
                 // Limit to what player can afford
                 if (playerMoney < totalCost)
@@ -218,12 +224,14 @@ namespace AndroidConsolizer.Patches
                     if (affordableQty <= 0)
                     {
                         Game1.playSound("cancel");
-                        Monitor.Log("Cannot afford any", LogLevel.Debug);
+                        if (ModEntry.Config.VerboseLogging)
+                            Monitor.Log("Cannot afford any", LogLevel.Debug);
                         return false; // Block vanilla A handler
                     }
                     quantity = affordableQty;
                     totalCost = unitPrice * quantity;
-                    Monitor.Log($"Reduced quantity to {quantity} (affordable)", LogLevel.Debug);
+                    if (ModEntry.Config.VerboseLogging)
+                        Monitor.Log($"Reduced quantity to {quantity} (affordable)", LogLevel.Debug);
                 }
 
                 // Limit quantity by available trade items (Desert Trader, etc.)
@@ -240,7 +248,8 @@ namespace AndroidConsolizer.Patches
                     if (maxByTradeItems <= 0)
                     {
                         Game1.playSound("cancel");
-                        Monitor.Log($"Not enough trade items ({tradeItem}): need {tradeItemCost}, have {playerTradeItems}", LogLevel.Debug);
+                        if (ModEntry.Config.VerboseLogging)
+                            Monitor.Log($"Not enough trade items ({tradeItem}): need {tradeItemCost}, have {playerTradeItems}", LogLevel.Debug);
                         return false;
                     }
 
@@ -248,7 +257,8 @@ namespace AndroidConsolizer.Patches
                     {
                         quantity = maxByTradeItems;
                         totalCost = unitPrice * quantity;
-                        Monitor.Log($"Reduced quantity to {quantity} (limited by trade items)", LogLevel.Debug);
+                        if (ModEntry.Config.VerboseLogging)
+                            Monitor.Log($"Reduced quantity to {quantity} (limited by trade items)", LogLevel.Debug);
                     }
 
                     totalTradeItems = tradeItemCost * quantity;
@@ -258,7 +268,8 @@ namespace AndroidConsolizer.Patches
                 if (selectedItem is Item item && !Game1.player.couldInventoryAcceptThisItem(item))
                 {
                     Game1.playSound("cancel");
-                    Monitor.Log("Inventory full", LogLevel.Debug);
+                    if (ModEntry.Config.VerboseLogging)
+                        Monitor.Log("Inventory full", LogLevel.Debug);
                     return false; // Block vanilla A handler
                 }
 
@@ -286,7 +297,8 @@ namespace AndroidConsolizer.Patches
                             }
                         }
                     }
-                    Monitor.Log($"Consumed {totalTradeItems}x {tradeItem}", LogLevel.Debug);
+                    if (ModEntry.Config.VerboseLogging)
+                        Monitor.Log($"Consumed {totalTradeItems}x {tradeItem}", LogLevel.Debug);
                 }
 
                 // Call actionWhenPurchased — handles recipes, tool upgrades, trash can upgrades, etc.
@@ -295,7 +307,8 @@ namespace AndroidConsolizer.Patches
 
                 if (handled)
                 {
-                    Monitor.Log($"actionWhenPurchased handled {selectedItem.DisplayName} (shopId={shopId})", LogLevel.Debug);
+                    if (ModEntry.Config.VerboseLogging)
+                        Monitor.Log($"actionWhenPurchased handled {selectedItem.DisplayName} (shopId={shopId})", LogLevel.Debug);
                 }
                 else if (selectedItem is Item purchaseItem)
                 {
@@ -315,7 +328,8 @@ namespace AndroidConsolizer.Patches
                         Monitor.Log($"Inventory full — refunded {totalCost} money" + (totalTradeItems > 0 ? $" and {totalTradeItems}x {tradeItem}" : ""), LogLevel.Warn);
                         return false;
                     }
-                    Monitor.Log($"Added {quantity}x {newItem.DisplayName} to inventory", LogLevel.Debug);
+                    if (ModEntry.Config.VerboseLogging)
+                        Monitor.Log($"Added {quantity}x {newItem.DisplayName} to inventory", LogLevel.Debug);
                 }
 
                 // Update stock if limited
@@ -326,7 +340,8 @@ namespace AndroidConsolizer.Patches
                     {
                         __instance.forSale.Remove(selectedItem);
                         __instance.itemPriceAndStock.Remove(selectedItem);
-                        Monitor.Log("Removed depleted item from shop", LogLevel.Debug);
+                        if (ModEntry.Config.VerboseLogging)
+                            Monitor.Log("Removed depleted item from shop", LogLevel.Debug);
                     }
                     else
                     {
@@ -337,7 +352,8 @@ namespace AndroidConsolizer.Patches
                             priceAndStock.TradeItemCount
                         );
                         __instance.itemPriceAndStock[selectedItem] = newStockInfo;
-                        Monitor.Log($"Updated stock: {stock} -> {remaining}", LogLevel.Debug);
+                        if (ModEntry.Config.VerboseLogging)
+                            Monitor.Log($"Updated stock: {stock} -> {remaining}", LogLevel.Debug);
                     }
                 }
 
@@ -355,7 +371,8 @@ namespace AndroidConsolizer.Patches
             catch (Exception ex)
             {
                 Monitor.Log($"Error in shop purchase prefix: {ex.Message}", LogLevel.Error);
-                Monitor.Log(ex.StackTrace, LogLevel.Debug);
+                if (ModEntry.Config.VerboseLogging)
+                    Monitor.Log(ex.StackTrace, LogLevel.Debug);
                 return true; // On error, let vanilla handle it
             }
         }
@@ -392,7 +409,8 @@ namespace AndroidConsolizer.Patches
             if (sellPrice <= 0)
             {
                 Game1.playSound("cancel");
-                Monitor.Log($"Sell tab: {sellItem.DisplayName} cannot be sold (price={sellPrice})", LogLevel.Debug);
+                if (ModEntry.Config.VerboseLogging)
+                    Monitor.Log($"Sell tab: {sellItem.DisplayName} cannot be sold (price={sellPrice})", LogLevel.Debug);
                 return false;
             }
 
@@ -401,7 +419,7 @@ namespace AndroidConsolizer.Patches
             if (sellItem.Stack > 1)
             {
                 sellItem.Stack -= 1;
-                Monitor.Log($"Sold 1x {sellItem.DisplayName} for {sellPrice}g ({sellItem.Stack} remaining)", LogLevel.Debug);
+                Monitor.Log($"Sold 1x {sellItem.DisplayName} for {sellPrice}g ({sellItem.Stack} remaining)", LogLevel.Info);
             }
             else
             {
@@ -410,7 +428,7 @@ namespace AndroidConsolizer.Patches
                 if (idx >= 0)
                     Game1.player.Items[idx] = null;
                 HoveredItemField?.SetValue(shop, null);
-                Monitor.Log($"Sold last {sellItem.DisplayName} for {sellPrice}g", LogLevel.Debug);
+                Monitor.Log($"Sold last {sellItem.DisplayName} for {sellPrice}g", LogLevel.Info);
             }
 
             Game1.playSound("purchaseClick");

@@ -70,18 +70,9 @@ namespace AndroidConsolizer
         public bool EnableCarpenterMenuFix { get; set; } = true;
 
         /*********
-        ** Legacy Settings (kept for compatibility but not used)
-        *********/
-        public bool EnableBuySellToggle { get; set; } = false;
-        public SButton BuySellToggleButton { get; set; } = SButton.ControllerY;
-        public bool EnableChestOrganizeFix { get; set; } = true;
-        public SButton ChestOrganizeButton { get; set; } = SButton.ControllerX;
-        public SButton AddToStacksButton { get; set; } = SButton.ControllerY;
-
-        /*********
         ** Debug Settings
         *********/
         /// <summary>Whether to log verbose debug information.</summary>
-        public bool VerboseLogging { get; set; } = true;
+        public bool VerboseLogging { get; set; } = false;
     }
 }
