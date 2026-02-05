@@ -150,9 +150,17 @@ namespace AndroidConsolizer.Patches
                 // Deduct money
                 ShopMenu.chargePlayer(Game1.player, __instance.currency, totalCost);
 
-                // Add item(s) to inventory
-                if (selectedItem is Item purchaseItem)
+                // Call actionWhenPurchased — handles recipes, tool upgrades, trash can upgrades, etc.
+                string shopId = __instance.ShopId;
+                bool handled = selectedItem.actionWhenPurchased(shopId);
+
+                if (handled)
                 {
+                    Monitor.Log($"actionWhenPurchased handled {selectedItem.DisplayName} (shopId={shopId})", LogLevel.Debug);
+                }
+                else if (selectedItem is Item purchaseItem)
+                {
+                    // Item wasn't handled by special logic — add to inventory normally
                     var newItem = purchaseItem.getOne();
                     newItem.Stack = quantity;
                     Game1.player.addItemToInventoryBool(newItem);
