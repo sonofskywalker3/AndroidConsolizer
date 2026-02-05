@@ -343,6 +343,36 @@ RE-IMPLEMENT (was in v2.9.0, lost in revert)
 
 ---
 
+## Optimization
+
+Performance investigation (v2.7.14 session): Game starts at 60fps, degrades to ~53fps over a play session with periodic frame hitches. Root cause is a combination of per-tick overhead and log I/O pressure.
+
+### O1. Cache Reflection in InventoryManagementPatches — FIXED in v2.7.15
+- `ClearHoverState()` does 4 uncached `AccessTools.Field()` lookups per call — runs every tick while A is held
+- `TriggerHoverTooltip()` does up to 5 uncached `AccessTools.Field()` lookups when slot changes — runs every tick while A is NOT held
+- Every tick in the inventory menu does 4-5 reflection lookups at 60/sec
+- **Fix:** Cache all fields as statics in `Apply()`, same pattern as ShopMenuPatches
+
+### O2. Remove GamePad.GetState() from Draw Postfix
+- `InventoryManagementPatches.InventoryPage_Draw_Postfix` (line 123) calls `GamePad.GetState()` every frame just to check if A is pressed
+- This is a second gamepad query per frame (the first is in `OnUpdateTicked` at line 190). On Android, `GamePad.GetState()` is a JNI call through MonoGame
+- **Fix:** Store the A-button state in a static bool from `OnUpdateTicked` and read it in the draw postfix instead of re-querying the gamepad
+- **File:** `Patches/InventoryManagementPatches.cs`
+
+### O3. Cache Reflection in HandleShopBumperQuantity
+- `ModEntry.cs:HandleShopBumperQuantity` calls `AccessTools.Field()` for `inventoryVisible` and `quantityToBuy` on every bumper press instead of caching
+- Low impact (only fires on discrete button presses, not per-frame) but still worth caching for consistency
+- **Fix:** Cache fields as statics in ModEntry or reuse the cached fields from ShopMenuPatches
+- **File:** `ModEntry.cs`
+
+### O4. VerboseLogging I/O Pressure
+- When VerboseLogging is enabled, every button press logs a line (`ModEntry.cs:245`), trigger values log per-tick when non-zero (`ModEntry.cs:202`), and inventory hold logging fires periodically
+- Over a long session the SMAPI log file grows large (63k+ tokens observed). Periodic hitches likely correlate with log buffer flushes to disk
+- **Not a code bug** — inherent to having VerboseLogging enabled. Turn off VerboseLogging in GMCM when playing for fun
+- **Possible future improvement:** Add a less-verbose logging tier that only logs on state transitions (button pressed/released) rather than every tick, or batch log writes
+
+---
+
 ## Not Needed / Working Fine / Intentionally Different
 - ~~Last shipped display~~ - Works correctly
 - ~~Non-shippable items~~ - Properly greyed out
