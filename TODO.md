@@ -111,17 +111,25 @@ RE-IMPLEMENT (was in v2.9.0, lost in revert)
 - **Root cause:** `HandleShopBumperQuantity` in ModEntry.cs runs on any LB/RB press in ShopMenu without checking `inventoryVisible`. Additionally, the vanilla game's trigger input modifies `quantityToBuy` regardless of which tab is active.
 - **Fix (v2.7.14):** Guard `HandleShopBumperQuantity` with `inventoryVisible` check (return early if on sell tab). Also reset `quantityToBuy` to 1 in `Update_Postfix` whenever `inventoryVisible` is true, to catch vanilla trigger input leaking to the buy quantity while on sell tab.
 
-### 5d. Console-Style Shop Selling
-- **Desired behavior (matches console):**
-  - **A** on a sell-tab item sells the whole stack immediately
-  - **Y** sells one item from the stack
-  - **Hold Y** sells multiple items (hold-to-repeat, same timing as buy: ~333ms initial delay, ~50ms repeat)
-  - A hovering tooltip or info panel shows the sell price of the currently selected item (console shows a tooltip; Android touch shows a quantity dialog with sell price — the touch dialog is not suitable for controller)
-- **Current behavior (v2.7.13):** Controller A presses on the sell tab pass through to vanilla but do nothing. User must use touch to sell (tapping brings up a quantity/price dialog). There is no way to see sell prices or sell items with the controller.
-- **Sell price display options:** (1) Tooltip that follows the selected item showing sell price per unit and stack total, (2) Fixed info panel somewhere on the screen that updates based on selection, (3) Replicate the console tooltip style. Need to decide approach — any is acceptable as long as the price is visible.
-- **File:** `Patches/ShopMenuPatches.cs` — extend the existing prefix to handle A/Y on sell tab items. May need to call `ShopMenu.receiveLeftClick` with item coordinates to trigger the vanilla sell path, or directly call the sell logic.
-- **Implementation notes:** The sell price for an item is available via `ISalable.sellToStorePrice()` or similar. On console, pressing A on a sell-tab item calls the shop's sell method which deducts the item and credits gold. Need to investigate the exact vanilla sell path on Android.
-- **This only touches ShopMenuPatches.cs (and ModConfig.cs for GMCM toggle if needed).**
+### 5d. Console-Style Shop Selling — DONE (v2.7.16-v2.7.20)
+- **A** sells the full stack, **Y** sells one, **Hold Y** sells repeatedly (~333ms delay, ~50ms repeat)
+- Sell price tooltip: custom-drawn box positioned next to the selected inventory slot showing per-unit and stack total
+- **Key finding (v2.7.19):** `hoveredItem` is NEVER set on the sell tab with controller — `performHoverAction` uses mouse position which doesn't track snap navigation on Android. All sell-tab item detection uses `GetSellTabSelectedItem()` which reads `currentlySnappedComponent` and maps it to the inventory slot index.
+- Sell price: `Object.sellToStorePrice()` for Object items (accounts for quality/professions), `salePrice()/2` for non-Object items (rings, boots, weapons)
+- **File:** `Patches/ShopMenuPatches.cs`
+
+### 5e. Shop Buy List Right Stick Scrolling
+- **Symptom:** Right thumbstick does not scroll the shop buy list. On console, right stick scrolls the item list up/down. On Android, it has zero effect.
+- **Log evidence (v2.7.19):** At Pierre's buy tab, user pressed RightThumbstickDown (14:01:34), then RightThumbstickUp x2, RightThumbstickDown, RightThumbstickRight, RightThumbstickLeft, RightThumbstickUp, RightThumbstickRight, and RightThumbstickDown+Right simultaneously (14:01:34-14:01:41) — all directions tried, no scrolling occurred. User then resorted to spamming LeftThumbstickDown ~50 times (14:01:42-14:02:01) to navigate through Pierre's long item list (SVE adds many items).
+- **Impact:** With SVE installed, Pierre's has a very long item list. Without right stick scrolling, navigating requires dozens of left stick presses through one-item-at-a-time snap navigation. This is extremely tedious.
+- **Root cause hypothesis:** On console, `ShopMenu.receiveGamePadButton` or `ShopMenu.update` reads the right stick Y axis and scrolls `currentItemIndex` to move the visible window of `forSaleButtons`. The Android port likely stripped this or the right stick input never reaches the shop's scroll handler.
+- **Investigation needed:**
+  - Check if `ShopMenu.update` or `receiveGamePadButton` reads right stick input for scrolling
+  - Check if `GamePad.GetState().ThumbSticks.Right.Y` returns non-zero values on Android when the right stick is moved
+  - Look for a `currentItemIndex` field or `scrollBarRunner` / scroll-related fields on ShopMenu
+  - The scroll logic may need to be added in `Update_Postfix`: read right stick Y axis, if above threshold scroll `currentItemIndex` up/down with debounce
+- **Implementation approach:** Likely a postfix on `ShopMenu.update` that reads `GamePad.GetState().ThumbSticks.Right.Y`, applies a dead zone threshold, and adjusts `currentItemIndex` to scroll the buy list. Need debounce/repeat timing to prevent scrolling too fast. Only active on the buy tab (`inventoryVisible=False`).
+- **File:** `Patches/ShopMenuPatches.cs`
 
 ---
 
