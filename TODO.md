@@ -102,7 +102,26 @@ RE-IMPLEMENT (was in v2.9.0, lost in revert)
 - **Log evidence (v2.7.2):** MouseLeft events at 21:25:14 and 21:25:22 in Pierre's ShopMenu — user tapped the inventory/sell tab button on the touchscreen. No mod log output suggests the tap was handled by the game but the controller snap navigation didn't update to the inventory grid.
 - **Root cause:** The shop has two modes — buy (forSale list) and sell (player inventory). Pressing Y switches modes correctly and snap navigation works in sell mode. But tapping the inventory tab button via touchscreen doesn't trigger whatever Y does to set up snap navigation for the inventory grid.
 - **Confirmed again (v2.7.9):** User tapped the inventory button (top-left of shop UI) with touchscreen. Controller navigation did not work on the resulting sell screen, unlike pressing Y which works correctly.
+- **Log evidence (v2.7.13):** At Pierre's, user pressed Y (11:33:28) to switch to sell tab, then pressed A 8 times (11:33:31-35) — all correctly detected as sell tab (`inventoryVisible=True — on sell tab, passing A to vanilla`) but vanilla does nothing with controller A on the sell tab. User navigated with thumbstick (11:33:38-39), pressed A again (11:33:46) — same result. Then fell back to touch (MouseLeft at 11:33:51, 11:33:54) which brought up the touch sell quantity dialog. Also pressed B (11:33:46) which didn't switch back to buy tab.
 - **Fix:** Detect when the shop switches to inventory/sell mode (regardless of whether it was triggered by Y or touch) and ensure snap navigation is properly initialized. May need to patch the tab button click handler or detect the mode change in `Update_Postfix`. The `inventoryVisible` field (discovered in v2.7.8 diagnostic) tracks buy/sell state and could be polled in Update_Postfix to detect mode changes.
+
+### 5c. Buy Quantity Bleeds to Sell Tab — FIXED in v2.7.14
+- **Symptom:** When on the sell tab, bumpers and triggers still adjust the buy quantity (`quantityToBuy` field). If the touch sell quantity dialog is open, triggers move both the sell dialog slider AND the buy quantity simultaneously.
+- **Log evidence (v2.7.13):** RightShoulder pressed twice (11:33:59) while on sell tab at Pierre's. The touch sell dialog's quantity slider moved, and the buy quantity was also affected.
+- **Root cause:** `HandleShopBumperQuantity` in ModEntry.cs runs on any LB/RB press in ShopMenu without checking `inventoryVisible`. Additionally, the vanilla game's trigger input modifies `quantityToBuy` regardless of which tab is active.
+- **Fix (v2.7.14):** Guard `HandleShopBumperQuantity` with `inventoryVisible` check (return early if on sell tab). Also reset `quantityToBuy` to 1 in `Update_Postfix` whenever `inventoryVisible` is true, to catch vanilla trigger input leaking to the buy quantity while on sell tab.
+
+### 5d. Console-Style Shop Selling
+- **Desired behavior (matches console):**
+  - **A** on a sell-tab item sells the whole stack immediately
+  - **Y** sells one item from the stack
+  - **Hold Y** sells multiple items (hold-to-repeat, same timing as buy: ~333ms initial delay, ~50ms repeat)
+  - A hovering tooltip or info panel shows the sell price of the currently selected item (console shows a tooltip; Android touch shows a quantity dialog with sell price — the touch dialog is not suitable for controller)
+- **Current behavior (v2.7.13):** Controller A presses on the sell tab pass through to vanilla but do nothing. User must use touch to sell (tapping brings up a quantity/price dialog). There is no way to see sell prices or sell items with the controller.
+- **Sell price display options:** (1) Tooltip that follows the selected item showing sell price per unit and stack total, (2) Fixed info panel somewhere on the screen that updates based on selection, (3) Replicate the console tooltip style. Need to decide approach — any is acceptable as long as the price is visible.
+- **File:** `Patches/ShopMenuPatches.cs` — extend the existing prefix to handle A/Y on sell tab items. May need to call `ShopMenu.receiveLeftClick` with item coordinates to trigger the vanilla sell path, or directly call the sell logic.
+- **Implementation notes:** The sell price for an item is available via `ISalable.sellToStorePrice()` or similar. On console, pressing A on a sell-tab item calls the shop's sell method which deducts the item and credits gold. Need to investigate the exact vanilla sell path on Android.
+- **This only touches ShopMenuPatches.cs (and ModConfig.cs for GMCM toggle if needed).**
 
 ---
 

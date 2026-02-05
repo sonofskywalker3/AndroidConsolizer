@@ -365,6 +365,11 @@ namespace AndroidConsolizer
         {
             try
             {
+                // Don't adjust buy quantity when on the sell tab
+                var invVisField = HarmonyLib.AccessTools.Field(typeof(ShopMenu), "inventoryVisible");
+                if (invVisField != null && (bool)invVisField.GetValue(shopMenu))
+                    return;
+
                 // Get the quantityToBuy field via reflection
                 var quantityField = HarmonyLib.AccessTools.Field(typeof(ShopMenu), "quantityToBuy");
                 if (quantityField == null)
