@@ -11,18 +11,13 @@ Items marked with RE-IMPLEMENT were working in v2.9.0 but lost when reverting to
 These need to be re-implemented **one at a time, one per 0.0.1 patch, each committed separately.**
 
 ### From v2.9.0 — Must Re-implement
-1. **Robin's Building Menu Fix** — CarpenterMenu instantly closes when opened with A button
-   - **What it did:** Prefix patch on `CarpenterMenu.receiveLeftClick` with 15-tick grace period after menu opens. Toggleable via `EnableCarpenterMenuFix`.
-   - **File needed:** New `Patches/CarpenterMenuPatches.cs`
-   - **Config:** Add `EnableCarpenterMenuFix` to ModConfig.cs
-   - **Implementation notes:** Track `Game1.ticks` at menu open, block `receiveLeftClick` for 15 ticks. Simple prefix patch. Add GMCM toggle.
-   - **This is a standalone fix — touches CarpenterMenuPatches.cs, ModConfig.cs, ModEntry.cs only.**
+1. ~~**Robin's Building Menu Fix**~~ — **DONE in v2.7.2-v2.7.4**
+   - Prefix patches on `releaseLeftClick`, `leftClickHeld`, and `exitThisMenu` with 20-tick grace period.
+   - **File:** `Patches/CarpenterMenuPatches.cs`
 
-2. **Shop Purchase Flow Fix (CRITICAL)** — Purchases don't call `actionWhenPurchased()`, don't consume trade items
-   - **What it did:** Purchase logic now calls `actionWhenPurchased(shopId)`, checks/consumes trade items (`TradeItem`/`TradeItemCount`), and handles inventory-full refunds.
+2. ~~**Shop Purchase Flow Fix (CRITICAL)**~~ — **DONE in v2.7.5-v2.7.14**
+   - Purchase logic calls `actionWhenPurchased(shopId)`, checks/consumes trade items, handles inventory-full refunds.
    - **File:** `Patches/ShopMenuPatches.cs`
-   - **Implementation notes:** After charging player and adding item, must: (1) call `actionWhenPurchased(shopId)` on the ISalable, (2) check `TradeItem`/`TradeItemCount` in ItemStockInformation and deduct from player inventory, (3) handle tool upgrades (toolUpgradeForSale flow), (4) on inventory full, refund money AND trade items.
-   - **This only touches ShopMenuPatches.cs.**
 
 3. ~~**Fishing Mini-Game Button Fix**~~ — **DONE in v2.7.1**
    - Fixed in `GameplayButtonPatches.cs`: X/Y swap now applies when `BobberBar` is active.
@@ -69,21 +64,16 @@ These need to be re-implemented **one at a time, one per 0.0.1 patch, each commi
 - **Implementation approach:** Likely need a postfix on `CarpenterMenu.update(GameTime)` that reads left stick direction and calls `Game1.panScreen(direction, speed)` when in move-buildings mode. Need to detect the move-buildings state (probably a field like `moving` or `demolishing` on CarpenterMenu).
 - **File:** `Patches/CarpenterMenuPatches.cs`
 
-### 2. Shop Purchase Flow Bug (CRITICAL)
-RE-IMPLEMENT (was in v2.9.0, lost in revert)
-- Purchase logic needs to call `actionWhenPurchased(shopId)`, check/consume trade items (`TradeItem`/`TradeItemCount`), and handle inventory-full refunds
-- Tool upgrades, recipes, and all special purchase behaviors need to work correctly
-- **Previous implementation:** Used Option B in ShopMenuPatches.cs — purchase logic calls `actionWhenPurchased(shopId)`, checks/consumes trade items, handles inventory-full refunds.
-- **Sell-tab buy bug:** `ReceiveGamePadButton_Postfix` fires on ALL A presses in ShopMenu, including the sell/inventory tab. Must detect buy vs sell mode before purchasing.
-- **CRITICAL ANDROID FINDING (v2.7.5):** All `forSaleButtons` have `myID=-500` on Android. Cannot use `forSaleButtons.FindIndex(btn => btn.myID == snapped.myID)` to match — it will never match. The snapped component IDs are different values (5, 7, 19, 3546 observed). 37 forSaleButtons for 32 items.
-- **Working approach:** Use `hoveredItem` field (game sets this correctly based on cursor position) but validate it's in the `forSale` list. Inventory items won't be in `forSale`, so this naturally prevents the sell-tab bug. `__instance.forSale.Contains(hoveredItem)` is the correct guard.
-- **Failed approach (v2.7.5):** Matching `snappedComponent.myID` against `forSaleButtons[n].myID` — broke all purchases because IDs never match on Android.
+### 2. Shop Purchase Flow Bug (CRITICAL) — FIXED in v2.7.5-v2.7.14
+- Purchase logic calls `actionWhenPurchased(shopId)`, checks/consumes trade items, handles inventory-full refunds.
+- Uses `hoveredItem` validated against `forSale` list (forSaleButtons myIDs are all -500 on Android).
+- Sell-tab detection via `inventoryVisible` field prevents phantom purchases.
+- Buy quantity reset on sell tab prevents trigger bleed.
 
 ### 3. Fishing Mini-Game Button Mismatch — DONE (v2.7.1)
 - Fixed: `GameplayButtonPatches.GetState_Postfix` now applies X/Y swap when `BobberBar` is active.
 
 ### 4. Shop Quantity Increment Enhancement
-RE-IMPLEMENT (was in v2.9.0, lost in revert)
 - Non-bumper mode: LB/RB = +/-10, bumper mode: LB/RB = +/-1
 - Hold-to-repeat with 333ms delay then 50ms repeat
 - Quantity limits respect stock, money, trade items, and stack size

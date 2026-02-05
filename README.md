@@ -2,7 +2,7 @@
 
 A SMAPI mod that brings console-style controller support to Android Stardew Valley. Play with a controller like you would on Nintendo Switch - 12-slot toolbar rows, proper shop purchasing, chest management, and more.
 
-## Current Version: 2.7.0
+## Current Version: 2.8.0
 
 ## Features
 
@@ -28,9 +28,13 @@ When "Use Bumpers Instead of Triggers" is enabled:
 - Enable this if your controller's triggers aren't detected (e.g., Xbox via Bluetooth)
 
 ### Shop Fixes
-- **A button**: Purchase items from any shop
+- **A button (buy tab)**: Purchase items from any shop
+- **A button (sell tab)**: Sell entire stack
+- **Y button (sell tab)**: Sell one item (hold Y for rapid sell)
 - **LT/RT** (or **LB/RB** in bumper mode): Adjust purchase quantity before buying
-- Respects available stock and player money
+- Sell price tooltip appears next to selected item on sell tab
+- Supports trade-item shops (Desert Trader), tool upgrades, recipes, and all special purchases
+- Respects available stock, player money, and trade item requirements
 
 ### Inventory & Chest Fixes
 - **X button (Inventory)**: Sort your inventory
@@ -53,6 +57,10 @@ When "Use Bumpers Instead of Triggers" is enabled:
 - Tooltips appear on hover when navigating with controller
 - Fishing rod tooltips shown when holding bait or tackle
 
+### Carpenter Menu Fix
+- Prevents Robin's building menu from instantly closing when opened with controller
+- Configurable grace period blocks input carry-over from dialogue
+
 ### Fishing Rod Bait/Tackle Fix
 - **A button on bait/tackle**: Pick up to cursor for attachment
 - **Y button on fishing rod**: Attach held bait/tackle, or detach to cursor if nothing held
@@ -68,8 +76,10 @@ When "Use Bumpers Instead of Triggers" is enabled:
 | **Gameplay** | RB | Switch to next toolbar row |
 | **Gameplay** | LT | Move left in toolbar row |
 | **Gameplay** | RT | Move right in toolbar row |
-| **Shop** | A | Purchase selected quantity |
-| **Shop** | LT/RT | Adjust purchase quantity |
+| **Shop (buy)** | A | Purchase selected quantity |
+| **Shop (buy)** | LT/RT | Adjust purchase quantity |
+| **Shop (sell)** | A | Sell entire stack |
+| **Shop (sell)** | Y | Sell one item (hold for rapid sell) |
 | **Inventory** | X | Sort inventory |
 | **Chest** | X | Sort chest contents |
 | **Chest** | Y | Add to existing stacks |
@@ -131,6 +141,7 @@ Edit `config.json` or use Generic Mod Config Menu in-game:
   "EnableShippingBinFix": true,
   "EnableFishingRodBaitFix": true,
   "EnableConsoleInventoryFix": true,
+  "EnableCarpenterMenuFix": true,
   "VerboseLogging": false
 }
 ```
@@ -147,6 +158,7 @@ Edit `config.json` or use Generic Mod Config Menu in-game:
 | `EnableShippingBinFix` | A button stacks items in shipping bin |
 | `EnableFishingRodBaitFix` | Y button attaches/detaches bait and tackle from fishing rods |
 | `EnableConsoleInventoryFix` | Console-style A button pick up/place/swap in inventory |
+| `EnableCarpenterMenuFix` | Prevent Robin's building menu from instantly closing |
 | `VerboseLogging` | Enable detailed debug logging |
 
 ## Building from Source
@@ -188,6 +200,37 @@ Output: `bin/Release/net6.0/AndroidConsolizer X.X.X.zip`
 - **Generic Mod Config Menu**: Compatible (optional)
 - **Star Control**: NOT compatible with Android (don't use together)
 
+## Known Issues
+
+- Move Buildings mode in Robin's menu doesn't respond to joystick panning
+- Shop sell tab not navigable when switched via touchscreen tap (Y button works)
+- Right stick scrolls shop buy list view but selection doesn't follow
+- Furniture pickup/placement rapid-toggles with Y button (missing debounce)
+- Equipment slots not accessible via A button in inventory
+- Community Center bundle navigation and cursor issues
+- Trash can and sort button unreachable in chest/ItemGrabMenu contexts
+- Chest color picker unreachable with controller
+- Social tab cursor doesn't visually follow when switching tabs with LB/RB
+- Held items can be orphaned if touch input interrupts controller selection
+- Geode breaking menu works but has no visual feedback with controller
+- Analog triggers register multiple presses on some controllers (use Bumper Mode as workaround)
+- Trash can lid animation doesn't play on Android with controller hover
+
+## TODO / Roadmap
+
+- Shop quantity adjustment with LB/RB (+/-10 in non-bumper mode)
+- Cutscene skip with controller (Start button)
+- Console-style chest item transfer (direct A/Y transfer without selection step)
+- Right joystick free cursor mode for menus and gameplay
+- Zoom control slider in options menu
+- Intentional item drop with controller (L3 while holding item)
+- Museum donation menu controller support
+- Settings menu snap navigation
+- Disable touchscreen option (GMCM toggle)
+- Lock inventory slots
+- Save inventory layout profiles
+- Expanded controller testing (8BitDo, DualSense, etc.)
+
 ## Why "Consolizer"?
 
 Android Stardew Valley has broken controller support that makes it nearly unplayable when docked to a TV (no touchscreen). This mod "consolizes" the experience - making it play like the Nintendo Switch version when using a controller.
@@ -203,6 +246,28 @@ Android Stardew Valley has broken controller support that makes it nearly unplay
 MIT License - Feel free to modify and redistribute.
 
 ## Changelog
+
+### 2.8.0
+- **Release cleanup** - No behavior changes
+  - Debug/Trace logging silenced by default (VerboseLogging now defaults to false)
+  - All debug logs gated behind VerboseLogging toggle — enable in GMCM when needed
+  - Removed unused legacy config properties
+  - Y-sell feedback promoted to INFO for consistency with A-sell
+
+### 2.7.x (2.7.1 — 2.7.21)
+- **Carpenter Menu Fix** (v2.7.2-v2.7.4) - Robin's building menu no longer instantly closes
+- **Fishing Mini-Game Fix** (v2.7.1) - X/Y button swap now applies during bobber bar
+- **Shop Purchase Overhaul** (v2.7.5-v2.7.14) - Complete rewrite of purchase logic
+  - Trade item shops (Desert Trader) now work correctly
+  - Tool upgrades, recipes, and special purchases handled via actionWhenPurchased
+  - Inventory-full refunds return both money and trade items
+  - Fixed phantom purchases when switching between buy/sell tabs
+  - Buy quantity no longer bleeds to sell tab
+- **Console-Style Shop Selling** (v2.7.16-v2.7.21) - Full sell-tab controller support
+  - A sells entire stack, Y sells one, hold Y for rapid sell
+  - Sell price tooltip with gold coin icon positioned next to selected item
+  - Snap-navigation-based item detection (hoveredItem doesn't work on Android sell tab)
+- **Performance** (v2.7.15) - Cached reflection fields in InventoryManagementPatches
 
 ### 2.7.0
 - **Console-Style Inventory Management** - A button now works like Nintendo Switch
