@@ -506,26 +506,41 @@ namespace AndroidConsolizer.Patches
                 if (sellPrice <= 0)
                     return;
 
-                string description = sellItem.getDescription() ?? "";
+                // Build compact sell price text
+                string priceText;
+                int total = sellPrice * sellItem.Stack;
                 if (sellItem.Stack > 1)
-                {
-                    int totalValue = sellPrice * sellItem.Stack;
-                    description += $"\n\nStack of {sellItem.Stack}: {totalValue}g total";
-                }
+                    priceText = $"{total}g ({sellPrice}g each)";
+                else
+                    priceText = $"{sellPrice}g";
 
-                IClickableMenu.drawToolTip(
-                    b,
-                    description,
-                    sellItem.DisplayName,
-                    sellItem,
-                    false,      // heldItem
-                    0,          // currencySymbol (0 = gold)
-                    0,          // extraItemToShowIndex
-                    null,       // extraItemToShowAmount
-                    sellPrice,  // moneyAmountToDisplayAtBottom
-                    null,       // boldTitleText
-                    -1          // healAmountToDisplay
-                );
+                // Manually position a small tooltip box near the selected inventory slot
+                // (drawToolTip/drawHoverText position at mouse cursor which is wrong on sell tab)
+                var snapped = __instance.currentlySnappedComponent;
+                if (snapped == null)
+                    return;
+
+                Vector2 textSize = Game1.smallFont.MeasureString(priceText);
+                int pad = 24;
+                int boxW = (int)textSize.X + pad * 2;
+                int boxH = (int)textSize.Y + pad * 2;
+
+                // Position to the right of the selected slot
+                int boxX = snapped.bounds.Right + 8;
+                int boxY = snapped.bounds.Center.Y - boxH / 2;
+
+                // Keep on screen
+                if (boxX + boxW > Game1.uiViewport.Width)
+                    boxX = snapped.bounds.Left - boxW - 8;
+                if (boxY < 0)
+                    boxY = 0;
+                if (boxY + boxH > Game1.uiViewport.Height)
+                    boxY = Game1.uiViewport.Height - boxH;
+
+                IClickableMenu.drawTextureBox(b, Game1.menuTexture, new Rectangle(0, 256, 60, 60),
+                    boxX, boxY, boxW, boxH, Color.White);
+                Utility.drawTextWithShadow(b, priceText, Game1.smallFont,
+                    new Vector2(boxX + pad, boxY + pad), Game1.textColor);
             }
             catch
             {
