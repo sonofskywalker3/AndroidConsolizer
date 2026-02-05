@@ -279,8 +279,20 @@ namespace AndroidConsolizer.Patches
         /// <summary>Postfix for update to handle held A button for continuous purchasing.</summary>
         private static void Update_Postfix(ShopMenu __instance, GameTime time)
         {
-            // This could be extended to support held-button bulk purchasing
-            // For MVP, single purchases are sufficient
+            // Reset buy quantity to 1 while on sell tab — prevents vanilla trigger input
+            // from modifying quantityToBuy while the sell tab is active
+            if (InvVisibleField != null && QuantityToBuyField != null)
+            {
+                bool inventoryVisible = (bool)InvVisibleField.GetValue(__instance);
+                if (inventoryVisible)
+                {
+                    int qty = (int)QuantityToBuyField.GetValue(__instance);
+                    if (qty != 1)
+                    {
+                        QuantityToBuyField.SetValue(__instance, 1);
+                    }
+                }
+            }
         }
     }
 }
