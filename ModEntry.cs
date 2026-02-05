@@ -61,6 +61,7 @@ namespace AndroidConsolizer
             Patches.GameplayButtonPatches.Apply(harmony, this.Monitor);
             Patches.FishingRodPatches.Apply(harmony, this.Monitor);
             Patches.InventoryManagementPatches.Apply(harmony, this.Monitor);
+            Patches.CarpenterMenuPatches.Apply(harmony, this.Monitor);
 
             // Register events
             helper.Events.GameLoop.GameLaunched += this.OnGameLaunched;
@@ -111,6 +112,16 @@ namespace AndroidConsolizer
             {
                 Patches.InventoryManagementPatches.OnMenuClosed();
                 Patches.FishingRodPatches.ClearSelection();
+            }
+
+            // Track CarpenterMenu open/close for grace period fix
+            if (e.NewMenu is CarpenterMenu)
+            {
+                Patches.CarpenterMenuPatches.OnMenuOpened();
+            }
+            if (e.OldMenu is CarpenterMenu)
+            {
+                Patches.CarpenterMenuPatches.OnMenuClosed();
             }
         }
 
@@ -847,6 +858,14 @@ namespace AndroidConsolizer
                               "Press Y on rod with nothing held = detach (bait first, then tackle).",
                 getValue: () => Config.EnableFishingRodBaitFix,
                 setValue: value => Config.EnableFishingRodBaitFix = value
+            );
+
+            configMenu.AddBoolOption(
+                mod: this.ModManifest,
+                name: () => "Enable Carpenter Menu Fix",
+                tooltip: () => "Prevents Robin's building menu from instantly closing when opened with A button",
+                getValue: () => Config.EnableCarpenterMenuFix,
+                setValue: value => Config.EnableCarpenterMenuFix = value
             );
 
             configMenu.AddBoolOption(

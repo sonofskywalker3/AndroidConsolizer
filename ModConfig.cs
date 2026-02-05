@@ -66,6 +66,9 @@ namespace AndroidConsolizer
         /// <summary>Whether to enable console-style inventory management (A picks up items, A again places/swaps).</summary>
         public bool EnableConsoleInventoryFix { get; set; } = true;
 
+        /// <summary>Whether to enable the carpenter menu fix (prevents Robin's building menu from instantly closing).</summary>
+        public bool EnableCarpenterMenuFix { get; set; } = true;
+
         /*********
         ** Legacy Settings (kept for compatibility but not used)
         *********/
