@@ -50,12 +50,14 @@ namespace AndroidConsolizer.Patches
                 Buttons remapped = ButtonRemapper.Remap(b);
 
                 // Log all button presses in chest menu for debugging
-                Monitor.Log($"ItemGrabMenu button: {b} (remapped={remapped})", LogLevel.Debug);
+                if (ModEntry.Config.VerboseLogging)
+                    Monitor.Log($"ItemGrabMenu button: {b} (remapped={remapped})", LogLevel.Debug);
 
                 // X button (after remapping) = Sort chest (and block the original to prevent deletion)
                 if (remapped == Buttons.X && ModEntry.Config.EnableSortFix)
                 {
-                    Monitor.Log($"{b} remapped to X - sorting chest (blocking original)", LogLevel.Debug);
+                    if (ModEntry.Config.VerboseLogging)
+                        Monitor.Log($"{b} remapped to X - sorting chest (blocking original)", LogLevel.Debug);
                     OrganizeChest(__instance);
                     return false; // Block original method to prevent item deletion
                 }
@@ -63,7 +65,8 @@ namespace AndroidConsolizer.Patches
                 // Y button (after remapping) = Add to existing stacks
                 if (remapped == Buttons.Y && ModEntry.Config.EnableAddToStacksFix)
                 {
-                    Monitor.Log($"{b} remapped to Y - adding to stacks (blocking original)", LogLevel.Debug);
+                    if (ModEntry.Config.VerboseLogging)
+                        Monitor.Log($"{b} remapped to Y - adding to stacks (blocking original)", LogLevel.Debug);
                     AddToExistingStacks(__instance);
                     return false; // Block original method
                 }
@@ -71,7 +74,8 @@ namespace AndroidConsolizer.Patches
             catch (Exception ex)
             {
                 Monitor.Log($"Error in chest controller handler: {ex.Message}", LogLevel.Error);
-                Monitor.Log(ex.StackTrace, LogLevel.Debug);
+                if (ModEntry.Config.VerboseLogging)
+                    Monitor.Log(ex.StackTrace, LogLevel.Debug);
             }
 
             return true; // Let original method run for other buttons
@@ -82,7 +86,8 @@ namespace AndroidConsolizer.Patches
         {
             try
             {
-                Monitor.Log("OrganizeChest called", LogLevel.Debug);
+                if (ModEntry.Config.VerboseLogging)
+                    Monitor.Log("OrganizeChest called", LogLevel.Debug);
 
                 // Try ItemGrabMenu.organizeItemsInList as static method
                 var chestInventory = GetChestInventory(menu);
@@ -97,7 +102,8 @@ namespace AndroidConsolizer.Patches
                     }
                     catch (Exception ex)
                     {
-                        Monitor.Log($"organizeItemsInList failed: {ex.Message}", LogLevel.Debug);
+                        if (ModEntry.Config.VerboseLogging)
+                            Monitor.Log($"organizeItemsInList failed: {ex.Message}", LogLevel.Debug);
                     }
 
                     // Fallback: manual sort
@@ -131,7 +137,8 @@ namespace AndroidConsolizer.Patches
         {
             try
             {
-                Monitor.Log("AddToExistingStacks called", LogLevel.Debug);
+                if (ModEntry.Config.VerboseLogging)
+                    Monitor.Log("AddToExistingStacks called", LogLevel.Debug);
 
                 // Try calling FillOutStacks method directly
                 try
@@ -147,7 +154,8 @@ namespace AndroidConsolizer.Patches
                 }
                 catch (Exception ex)
                 {
-                    Monitor.Log($"FillOutStacks failed: {ex.Message}", LogLevel.Debug);
+                    if (ModEntry.Config.VerboseLogging)
+                        Monitor.Log($"FillOutStacks failed: {ex.Message}", LogLevel.Debug);
                 }
 
                 // Fallback: manually add to stacks
@@ -200,7 +208,8 @@ namespace AndroidConsolizer.Patches
                 else
                 {
                     Game1.playSound("cancel");
-                    Monitor.Log("No matching stacks found", LogLevel.Debug);
+                    if (ModEntry.Config.VerboseLogging)
+                        Monitor.Log("No matching stacks found", LogLevel.Debug);
                 }
             }
             catch (Exception ex)
@@ -230,7 +239,8 @@ namespace AndroidConsolizer.Patches
             }
             catch (Exception ex)
             {
-                Monitor.Log($"Error getting chest inventory: {ex.Message}", LogLevel.Debug);
+                if (ModEntry.Config.VerboseLogging)
+                    Monitor.Log($"Error getting chest inventory: {ex.Message}", LogLevel.Debug);
                 return null;
             }
         }

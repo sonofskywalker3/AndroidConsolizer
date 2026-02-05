@@ -77,7 +77,8 @@ namespace AndroidConsolizer.Patches
         public static void OnMenuOpened()
         {
             MenuOpenTick = Game1.ticks;
-            Monitor.Log($"CarpenterMenu opened at tick {MenuOpenTick}. Grace period: {GracePeriodTicks} ticks.", LogLevel.Debug);
+            if (ModEntry.Config.VerboseLogging)
+                Monitor.Log($"CarpenterMenu opened at tick {MenuOpenTick}. Grace period: {GracePeriodTicks} ticks.", LogLevel.Debug);
         }
 
         /// <summary>Called from ModEntry.OnMenuChanged when the CarpenterMenu closes.</summary>
@@ -86,7 +87,8 @@ namespace AndroidConsolizer.Patches
             if (MenuOpenTick >= 0)
             {
                 int duration = Game1.ticks - MenuOpenTick;
-                Monitor.Log($"CarpenterMenu closed after {duration} ticks (grace was {GracePeriodTicks}).", LogLevel.Debug);
+                if (ModEntry.Config.VerboseLogging)
+                    Monitor.Log($"CarpenterMenu closed after {duration} ticks (grace was {GracePeriodTicks}).", LogLevel.Debug);
             }
             MenuOpenTick = -1;
         }
@@ -105,7 +107,8 @@ namespace AndroidConsolizer.Patches
 
             if (IsInGracePeriod())
             {
-                Monitor.Log($"[CarpenterMenu] BLOCKED releaseLeftClick at ({x},{y}) — grace period ({Game1.ticks - MenuOpenTick}/{GracePeriodTicks} ticks)", LogLevel.Debug);
+                if (ModEntry.Config.VerboseLogging)
+                    Monitor.Log($"[CarpenterMenu] BLOCKED releaseLeftClick at ({x},{y}) — grace period ({Game1.ticks - MenuOpenTick}/{GracePeriodTicks} ticks)", LogLevel.Debug);
                 return false;
             }
 
@@ -120,7 +123,8 @@ namespace AndroidConsolizer.Patches
 
             if (IsInGracePeriod())
             {
-                Monitor.Log($"[CarpenterMenu] BLOCKED leftClickHeld — grace period", LogLevel.Trace);
+                if (ModEntry.Config.VerboseLogging)
+                    Monitor.Log($"[CarpenterMenu] BLOCKED leftClickHeld — grace period", LogLevel.Trace);
                 return false;
             }
 
@@ -142,7 +146,8 @@ namespace AndroidConsolizer.Patches
 
             if (IsInGracePeriod())
             {
-                Monitor.Log($"[CarpenterMenu] BLOCKED exitThisMenu — grace period ({Game1.ticks - MenuOpenTick}/{GracePeriodTicks} ticks)", LogLevel.Debug);
+                if (ModEntry.Config.VerboseLogging)
+                    Monitor.Log($"[CarpenterMenu] BLOCKED exitThisMenu — grace period ({Game1.ticks - MenuOpenTick}/{GracePeriodTicks} ticks)", LogLevel.Debug);
                 return false;
             }
 
