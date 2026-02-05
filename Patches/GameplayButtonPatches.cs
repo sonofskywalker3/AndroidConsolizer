@@ -98,8 +98,8 @@ namespace AndroidConsolizer.Patches
                 // A/B swap applies everywhere (main menu, game menus, gameplay)
                 bool swapAB = ShouldSwapAB();
 
-                // X/Y swap only during gameplay - menus use ButtonRemapper for X/Y
-                bool swapXY = (Game1.activeClickableMenu == null) && ShouldSwapXY();
+                // X/Y swap during gameplay and BobberBar (fishing mini-game uses gameplay buttons)
+                bool swapXY = ShouldSwapXY() && (Game1.activeClickableMenu == null || Game1.activeClickableMenu is BobberBar);
 
                 // Nothing to do if no swapping needed
                 if (!swapXY && !swapAB)
