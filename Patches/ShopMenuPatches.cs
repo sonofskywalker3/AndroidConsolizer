@@ -68,53 +68,24 @@ namespace AndroidConsolizer.Patches
                 // Log shop state
                 Monitor.Log($"Shop state: currentItemIndex={__instance.currentItemIndex}, forSale count={__instance.forSale?.Count ?? -1}", LogLevel.Debug);
 
-                // Try to find the currently snapped/selected component
-                var snapped = __instance.currentlySnappedComponent;
-                Monitor.Log($"currentlySnappedComponent: {snapped?.myID ?? -1}, name={snapped?.name ?? "null"}", LogLevel.Debug);
-
-                // List the forSaleButtons
-                if (__instance.forSaleButtons != null)
-                {
-                    Monitor.Log($"forSaleButtons count: {__instance.forSaleButtons.Count}", LogLevel.Debug);
-                    for (int i = 0; i < Math.Min(3, __instance.forSaleButtons.Count); i++)
-                    {
-                        var btn = __instance.forSaleButtons[i];
-                        Monitor.Log($"  Button {i}: myID={btn.myID}, bounds={btn.bounds}", LogLevel.Debug);
-                    }
-                }
-
-                // Try to determine which item is selected
+                // Use hoveredItem to find the selected item.
+                // On Android, forSaleButtons all have myID=-500, so we can't match snapped
+                // components to buttons. hoveredItem is set by the game's own navigation.
+                // Validate it's in the forSale list to prevent sell-tab purchases.
                 ISalable selectedItem = null;
-
-                // Check if snapped component is a forSaleButton.
-                // If not, we're on the sell/inventory tab — do NOT attempt a purchase.
-                // (Previous fallbacks to hoveredItem/first-visible caused the sell-tab buy bug:
-                // pressing A on inventory items triggered purchases using stale buy-list data.)
-                if (snapped != null && __instance.forSaleButtons != null)
+                var hoveredField = AccessTools.Field(typeof(ShopMenu), "hoveredItem");
+                if (hoveredField != null)
                 {
-                    int btnIndex = __instance.forSaleButtons.FindIndex(btn => btn.myID == snapped.myID);
-                    if (btnIndex >= 0)
-                    {
-                        int itemIndex = __instance.currentItemIndex + btnIndex;
-                        if (itemIndex >= 0 && itemIndex < __instance.forSale.Count)
-                        {
-                            selectedItem = __instance.forSale[itemIndex];
-                            Monitor.Log($"Found item via snapped button: {selectedItem?.DisplayName}", LogLevel.Debug);
-                        }
-                    }
+                    selectedItem = hoveredField.GetValue(__instance) as ISalable;
                 }
 
-                if (selectedItem == null)
+                if (selectedItem == null || !__instance.forSale.Contains(selectedItem))
                 {
-                    Monitor.Log($"Snapped component {snapped?.myID ?? -1} is not a forSale button — not in buy mode, skipping purchase", LogLevel.Trace);
+                    Monitor.Log($"hoveredItem '{selectedItem?.DisplayName ?? "null"}' is not in forSale list — not in buy mode, skipping", LogLevel.Trace);
                     return;
                 }
 
-                if (selectedItem == null)
-                {
-                    Monitor.Log("Could not determine selected item", LogLevel.Warn);
-                    return;
-                }
+                Monitor.Log($"Selected item: {selectedItem.DisplayName}", LogLevel.Debug);
 
                 // Get price info
                 if (!__instance.itemPriceAndStock.TryGetValue(selectedItem, out var priceAndStock))
