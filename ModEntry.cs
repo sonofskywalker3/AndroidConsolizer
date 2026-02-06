@@ -39,6 +39,12 @@ namespace AndroidConsolizer
         /// <summary>Threshold for trigger activation (0.0 to 1.0).</summary>
         private const float TriggerThreshold = 0.5f;
 
+        /// <summary>Tick when Start was first pressed during a skippable event (for double-press skip).</summary>
+        private int cutsceneSkipFirstPressTick = -1;
+
+        /// <summary>Whether the skip confirmation is pending (waiting for second press).</summary>
+        private bool cutsceneSkipPending = false;
+
         /*********
         ** Public methods
         *********/
@@ -322,6 +328,16 @@ namespace AndroidConsolizer
                 HandleShopQuantityNonBumper(e, shopMenuNonBumper);
             }
 
+            // Cutscene skip - Start button skips events (double-press to confirm)
+            if (Config.EnableCutsceneSkip && Game1.CurrentEvent != null)
+            {
+                if (e.Pressed.Contains(SButton.ControllerStart))
+                {
+                    this.Helper.Input.Suppress(SButton.ControllerStart);
+                    HandleCutsceneSkip();
+                }
+            }
+
             // Journal button - Start opens Quest Log during gameplay
             if (Config.EnableJournalButton && Game1.activeClickableMenu == null && Context.IsPlayerFree)
             {
@@ -363,6 +379,75 @@ namespace AndroidConsolizer
             catch (Exception ex)
             {
                 this.Monitor.Log($"Failed to open Quest Log: {ex.Message}", LogLevel.Error);
+            }
+        }
+
+        /// <summary>Handle cutscene skip with Start button (double-press to confirm).</summary>
+        private void HandleCutsceneSkip()
+        {
+            try
+            {
+                var currentEvent = Game1.CurrentEvent;
+                if (currentEvent == null)
+                    return;
+
+                // Check if the event is skippable
+                var skippableField = AccessTools.Field(typeof(Event), "skippable");
+                if (skippableField == null)
+                {
+                    if (Config.VerboseLogging)
+                        this.Monitor.Log("Could not find Event.skippable field", LogLevel.Debug);
+                    return;
+                }
+
+                bool isSkippable = (bool)skippableField.GetValue(currentEvent);
+                if (!isSkippable)
+                {
+                    if (Config.VerboseLogging)
+                        this.Monitor.Log("Current event is not skippable", LogLevel.Debug);
+                    return;
+                }
+
+                int currentTick = Game1.ticks;
+                int ticksSinceFirstPress = currentTick - cutsceneSkipFirstPressTick;
+                const int skipWindowTicks = 180; // 3 seconds at 60fps
+
+                if (cutsceneSkipPending && ticksSinceFirstPress <= skipWindowTicks)
+                {
+                    // Second press within window - skip the event
+                    var skippedField = AccessTools.Field(typeof(Event), "skipped");
+                    if (skippedField != null)
+                    {
+                        skippedField.SetValue(currentEvent, true);
+                        this.Monitor.Log("Cutscene skipped (Start pressed twice)", LogLevel.Info);
+                    }
+
+                    // Also try calling skipEvent() method if it exists
+                    var skipMethod = AccessTools.Method(typeof(Event), "skipEvent");
+                    if (skipMethod != null)
+                    {
+                        skipMethod.Invoke(currentEvent, null);
+                    }
+
+                    cutsceneSkipPending = false;
+                    cutsceneSkipFirstPressTick = -1;
+                }
+                else
+                {
+                    // First press - show skip prompt and start timer
+                    cutsceneSkipFirstPressTick = currentTick;
+                    cutsceneSkipPending = true;
+
+                    // Show HUD message to indicate skip is pending
+                    Game1.addHUDMessage(new HUDMessage("Press Start again to skip", HUDMessage.newQuest_type) { noIcon = true });
+
+                    if (Config.VerboseLogging)
+                        this.Monitor.Log("Cutscene skip pending - press Start again within 3 seconds to confirm", LogLevel.Debug);
+                }
+            }
+            catch (Exception ex)
+            {
+                this.Monitor.Log($"Error in cutscene skip: {ex.Message}", LogLevel.Error);
             }
         }
 
@@ -819,6 +904,15 @@ namespace AndroidConsolizer
                 tooltip: () => "Start button opens the Quest Log/Journal instead of inventory",
                 getValue: () => Config.EnableJournalButton,
                 setValue: value => Config.EnableJournalButton = value
+            );
+
+            configMenu.AddBoolOption(
+                mod: this.ModManifest,
+                name: () => "Start Skips Cutscenes",
+                tooltip: () => "Press Start twice during a skippable cutscene to skip it.\n" +
+                              "First press shows confirmation, second press within 3 seconds skips.",
+                getValue: () => Config.EnableCutsceneSkip,
+                setValue: value => Config.EnableCutsceneSkip = value
             );
 
             // Inventory/Chest Settings
