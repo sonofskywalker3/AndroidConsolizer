@@ -40,6 +40,9 @@ namespace AndroidConsolizer
         /// <summary>Whether Start button opens the Quest Log/Journal instead of inventory.</summary>
         public bool EnableJournalButton { get; set; } = true;
 
+        /// <summary>Whether Start button can skip cutscenes (press twice to skip).</summary>
+        public bool EnableCutsceneSkip { get; set; } = true;
+
         /// <summary>
         /// Use bumpers (LB/RB) instead of triggers (LT/RT) for controls.
         /// Toolbar: D-Pad Up/Down switches rows, bumpers move within row.
