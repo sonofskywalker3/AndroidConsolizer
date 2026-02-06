@@ -678,9 +678,23 @@ namespace AndroidConsolizer.Patches
         }
 
         /// <summary>
-        /// Draw postfix — shows sell price tooltip when hovering items on the sell tab.
-        /// Redraws the tooltip on top of vanilla's (which has no price) with the sell price
-        /// added via moneyAmountToDisplayAtBottom, matching the buy tab's coin icon style.
+        /// Get the label for the tab-switch button based on controller layout.
+        /// The tab-switch is the physical top button, which is Buttons.Y in the OS.
+        /// </summary>
+        private static string GetTabButtonLabel()
+        {
+            var layout = ModEntry.Config?.ControllerLayout ?? ControllerLayout.Switch;
+            return layout switch
+            {
+                ControllerLayout.Switch => "X",
+                ControllerLayout.PlayStation => "\u25B3", // △
+                _ => "Y"
+            };
+        }
+
+        /// <summary>
+        /// Draw postfix — shows controller tab-switch button hint on the inventoryButton,
+        /// and sell price tooltip when hovering items on the sell tab.
         /// </summary>
         private static void ShopMenu_Draw_Postfix(ShopMenu __instance, SpriteBatch b)
         {
@@ -688,6 +702,30 @@ namespace AndroidConsolizer.Patches
             {
                 if (!ModEntry.Config?.EnableShopPurchaseFix ?? true)
                     return;
+
+                // Draw controller button icon on the inventoryButton
+                if (GamePad.GetState(PlayerIndex.One).IsConnected && InventoryButtonField != null)
+                {
+                    var invButton = InventoryButtonField.GetValue(__instance) as ClickableComponent;
+                    if (invButton != null && invButton.bounds.Width > 0)
+                    {
+                        string btnLabel = GetTabButtonLabel();
+                        Vector2 btnTextSize = Game1.smallFont.MeasureString(btnLabel);
+                        int btnPad = 8;
+                        int btnBoxW = (int)btnTextSize.X + btnPad * 2;
+                        int btnBoxH = (int)btnTextSize.Y + btnPad * 2;
+
+                        // Position at the right edge of the inventoryButton, vertically centered
+                        int btnBoxX = invButton.bounds.Right - btnBoxW - 4;
+                        int btnBoxY = invButton.bounds.Center.Y - btnBoxH / 2;
+
+                        IClickableMenu.drawTextureBox(b, Game1.menuTexture, new Rectangle(0, 256, 60, 60),
+                            btnBoxX, btnBoxY, btnBoxW, btnBoxH, Color.White);
+                        Utility.drawTextWithShadow(b, btnLabel, Game1.smallFont,
+                            new Vector2(btnBoxX + btnPad, btnBoxY + btnPad),
+                            Game1.textColor);
+                    }
+                }
 
                 if (InvVisibleField == null)
                     return;
