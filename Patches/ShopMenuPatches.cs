@@ -65,6 +65,13 @@ namespace AndroidConsolizer.Patches
                     postfix: new HarmonyMethod(typeof(ShopMenuPatches), nameof(Update_Postfix))
                 );
 
+                // DIAGNOSTIC: Patch receiveLeftClick to log touch tab button behavior
+                harmony.Patch(
+                    original: AccessTools.Method(typeof(ShopMenu), nameof(ShopMenu.receiveLeftClick)),
+                    prefix: new HarmonyMethod(typeof(ShopMenuPatches), nameof(ReceiveLeftClick_DiagPrefix)),
+                    postfix: new HarmonyMethod(typeof(ShopMenuPatches), nameof(ReceiveLeftClick_DiagPostfix))
+                );
+
                 // Patch draw to show sell price tooltip on sell tab
                 harmony.Patch(
                     original: AccessTools.Method(typeof(ShopMenu), nameof(ShopMenu.draw), new[] { typeof(SpriteBatch) }),
@@ -764,5 +771,68 @@ namespace AndroidConsolizer.Patches
                 // Silently ignore tooltip draw errors — never crash the draw loop
             }
         }
+
+        // ===================== DIAGNOSTIC — REMOVE AFTER TESTING =====================
+
+        private static bool _diagInvVisibleBefore;
+
+        /// <summary>DIAGNOSTIC: Log state before receiveLeftClick to detect touch tab toggle.</summary>
+        private static void ReceiveLeftClick_DiagPrefix(ShopMenu __instance, int x, int y)
+        {
+            try
+            {
+                bool invVisible = InvVisibleField != null && (bool)InvVisibleField.GetValue(__instance);
+                _diagInvVisibleBefore = invVisible;
+                Monitor.Log($"[DIAG] receiveLeftClick({x}, {y}) — inventoryVisible BEFORE: {invVisible}", LogLevel.Info);
+
+                // Log the upperRightCloseButton bounds if it exists
+                if (__instance.upperRightCloseButton != null)
+                {
+                    var b = __instance.upperRightCloseButton.bounds;
+                    Monitor.Log($"[DIAG]   upperRightCloseButton: ({b.X},{b.Y},{b.Width},{b.Height}) name={__instance.upperRightCloseButton.name}", LogLevel.Info);
+                }
+
+                // Log all named clickable components on the menu
+                foreach (var field in typeof(ShopMenu).GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance))
+                {
+                    if (field.FieldType == typeof(ClickableComponent) || field.FieldType == typeof(ClickableTextureComponent))
+                    {
+                        var comp = field.GetValue(__instance) as ClickableComponent;
+                        if (comp != null)
+                        {
+                            bool hit = comp.containsPoint(x, y);
+                            Monitor.Log($"[DIAG]   field={field.Name} myID={comp.myID} bounds=({comp.bounds.X},{comp.bounds.Y},{comp.bounds.Width},{comp.bounds.Height}) name=\"{comp.name}\" HIT={hit}", LogLevel.Info);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Monitor.Log($"[DIAG] prefix error: {ex.Message}", LogLevel.Error);
+            }
+        }
+
+        /// <summary>DIAGNOSTIC: Log state after receiveLeftClick to detect if inventoryVisible changed.</summary>
+        private static void ReceiveLeftClick_DiagPostfix(ShopMenu __instance, int x, int y)
+        {
+            try
+            {
+                bool invVisibleAfter = InvVisibleField != null && (bool)InvVisibleField.GetValue(__instance);
+                if (invVisibleAfter != _diagInvVisibleBefore)
+                {
+                    Monitor.Log($"[DIAG] *** inventoryVisible CHANGED: {_diagInvVisibleBefore} -> {invVisibleAfter} *** click=({x},{y})", LogLevel.Warn);
+                }
+                else
+                {
+                    Monitor.Log($"[DIAG] inventoryVisible unchanged: {invVisibleAfter}", LogLevel.Info);
+                }
+            }
+            catch (Exception ex)
+            {
+                Monitor.Log($"[DIAG] postfix error: {ex.Message}", LogLevel.Error);
+            }
+        }
+
+        // ===================== END DIAGNOSTIC =====================
     }
 }
