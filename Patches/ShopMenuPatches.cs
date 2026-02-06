@@ -37,8 +37,6 @@ namespace AndroidConsolizer.Patches
         private const int QuantityHoldDelay = 20;   // ~333ms at 60fps before repeat starts
         private const int QuantityRepeatRate = 3;   // ~50ms at 60fps between repeats
 
-        // Track sell tab state (for potential future fixes)
-        private static bool _wasOnSellTab = false;
 
         /// <summary>Apply Harmony patches.</summary>
         public static void Apply(Harmony harmony, IMonitor monitor)
@@ -650,8 +648,6 @@ namespace AndroidConsolizer.Patches
                     }
                 }
 
-                // Track sell tab state for potential future use
-                _wasOnSellTab = inventoryVisible;
             }
         }
 
