@@ -22,10 +22,9 @@ These need to be re-implemented **one at a time, one per 0.0.1 patch, each commi
 3. ~~**Fishing Mini-Game Button Fix**~~ — **DONE in v2.7.1**
    - Fixed in `GameplayButtonPatches.cs`: X/Y swap now applies when `BobberBar` is active.
 
-4. **Shop Quantity Enhancement** — LB/RB adjusts quantity by +/-10, hold-to-repeat
-   - **What it did:** Non-bumper mode: LB/RB = +/-10. Hold-to-repeat with 333ms initial delay then 50ms repeat. Quantity limits respect stock, money, trade items, and stack size.
+4. ~~**Shop Quantity Enhancement**~~ — **DONE (never lost, confirmed working v2.8.9)**
+   - Non-bumper mode: LB/RB = +/-10. Hold-to-repeat with 333ms initial delay then 50ms repeat. Quantity limits respect stock, money, trade items, and stack size.
    - **Files:** `ModEntry.cs` (initial press in OnButtonsChanged), `Patches/ShopMenuPatches.cs` (auto-repeat in Update_Postfix)
-   - **This touches ModEntry.cs and ShopMenuPatches.cs.**
 
 ### From v2.8.0 — DO NOT Re-implement (Caused the Regression)
 5. **Logic Extraction Refactor** — ~~Extracted pure logic into Logic/ helper classes~~
@@ -73,11 +72,11 @@ These need to be re-implemented **one at a time, one per 0.0.1 patch, each commi
 ### 3. Fishing Mini-Game Button Mismatch — DONE (v2.7.1)
 - Fixed: `GameplayButtonPatches.GetState_Postfix` now applies X/Y swap when `BobberBar` is active.
 
-### 4. Shop Quantity Increment Enhancement
+### 4. Shop Quantity Increment Enhancement — DONE (confirmed working v2.8.9)
 - Non-bumper mode: LB/RB = +/-10, bumper mode: LB/RB = +/-1
 - Hold-to-repeat with 333ms delay then 50ms repeat
 - Quantity limits respect stock, money, trade items, and stack size
-- **Previous implementation:** Initial press in `ModEntry.OnButtonsChanged`, auto-repeat in `ShopMenuPatches.Update_Postfix`
+- **Implementation:** Initial press in `ModEntry.OnButtonsChanged`, auto-repeat in `ShopMenuPatches.Update_Postfix`
 
 ### 5. Cutscene Skip with Controller
 - **Desired behavior:** Press Start once to show the skip button, press Start again within 3 seconds to confirm skip. Double-press-to-skip prevents accidental skips.
@@ -87,13 +86,11 @@ These need to be re-implemented **one at a time, one per 0.0.1 patch, each commi
 - **Implementation approach:** When a skippable event is active and Start is pressed, simulate the skip button click. First press: call whatever shows the skip button. Second press within 3 seconds: call whatever confirms the skip. Need to find the exact method — likely `Event.skipEvent()` or `Event.receiveLeftClick()` at the skip button coordinates.
 - **Next step:** Decompile or inspect `Event` class to find the skip mechanism. Look for `skippable`, `skipEvent`, `skipped` fields/methods.
 
-### 5b. Shop Inventory Tab Broken with Controller
-- **Symptom:** Tapping the "inventory" button in the shop interface (to switch to sell mode via touch) doesn't draw the controller cursor or let you select inventory items the way pressing Y does.
-- **Log evidence (v2.7.2):** MouseLeft events at 21:25:14 and 21:25:22 in Pierre's ShopMenu — user tapped the inventory/sell tab button on the touchscreen. No mod log output suggests the tap was handled by the game but the controller snap navigation didn't update to the inventory grid.
-- **Root cause:** The shop has two modes — buy (forSale list) and sell (player inventory). Pressing Y switches modes correctly and snap navigation works in sell mode. But tapping the inventory tab button via touchscreen doesn't trigger whatever Y does to set up snap navigation for the inventory grid.
-- **Confirmed again (v2.7.9):** User tapped the inventory button (top-left of shop UI) with touchscreen. Controller navigation did not work on the resulting sell screen, unlike pressing Y which works correctly.
-- **Log evidence (v2.7.13):** At Pierre's, user pressed Y (11:33:28) to switch to sell tab, then pressed A 8 times (11:33:31-35) — all correctly detected as sell tab (`inventoryVisible=True — on sell tab, passing A to vanilla`) but vanilla does nothing with controller A on the sell tab. User navigated with thumbstick (11:33:38-39), pressed A again (11:33:46) — same result. Then fell back to touch (MouseLeft at 11:33:51, 11:33:54) which brought up the touch sell quantity dialog. Also pressed B (11:33:46) which didn't switch back to buy tab.
-- **Fix:** Detect when the shop switches to inventory/sell mode (regardless of whether it was triggered by Y or touch) and ensure snap navigation is properly initialized. May need to patch the tab button click handler or detect the mode change in `Update_Postfix`. The `inventoryVisible` field (discovered in v2.7.8 diagnostic) tracks buy/sell state and could be polled in Update_Postfix to detect mode changes.
+### 5b. Shop Inventory Tab Broken with Controller — FIXED in v2.8.9
+- Touch tab button disabled (snap methods don't work on Android ShopMenu). Tab switching now handled entirely by controller button (Y/X/Square depending on layout).
+- Prefix injects `receiveGamePadButton(Buttons.Y)` with bypass flag, fixing tab switching for all layouts (previously failed on Xbox/PS because vanilla got raw Buttons.X).
+- Controller button icon drawn on shop UI showing which button switches tabs.
+- Touch-triggered `inventoryVisible` changes are reverted in `Update_Postfix`.
 
 ### 5c. Buy Quantity Bleeds to Sell Tab — FIXED in v2.7.14
 - **Symptom:** When on the sell tab, bumpers and triggers still adjust the buy quantity (`quantityToBuy` field). If the touch sell quantity dialog is open, triggers move both the sell dialog slider AND the buy quantity simultaneously.
