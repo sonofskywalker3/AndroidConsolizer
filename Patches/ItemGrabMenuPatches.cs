@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using HarmonyLib;
+using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Input;
 using StardewModdingAPI;
 using StardewValley;
@@ -27,19 +28,16 @@ namespace AndroidConsolizer.Patches
         /// <summary>Flag to let a synthetic B press bypass our prefix.</summary>
         private static bool _bypassPrefix = false;
 
-        /// <summary>Whether the color picker is currently open and we're navigating swatches.
-        /// When true, left thumbstick is suppressed at the GamePad.GetState level (to prevent
-        /// the game's separate nav code from also moving the cursor), and our prefix handles
-        /// all navigation manually.</summary>
+        /// <summary>Whether the color picker is currently open and we're navigating swatches.</summary>
         private static bool _colorPickerOpen = false;
-
-        /// <summary>Returns true when left thumbstick should be zeroed in GamePad.GetState.
-        /// Called from GameplayButtonPatches.GetState_Postfix.</summary>
-        internal static bool ShouldSuppressLeftStick() => _colorPickerOpen;
 
         /// <summary>Saved color toggle neighbors to restore when picker closes.</summary>
         private static int _colorToggleSavedUp = -1;
         private static int _colorToggleSavedDown = -1;
+
+        /// <summary>Original swatch bounds saved before relocating to visual grid positions.
+        /// Key is myID, value is the original bounds rectangle.</summary>
+        private static Dictionary<int, Microsoft.Xna.Framework.Rectangle> _savedSwatchBounds = new Dictionary<int, Microsoft.Xna.Framework.Rectangle>();
 
         /// <summary>Game tick when Close X was pressed. FixSnapNavigation checks this
         /// to auto-close a chest that reopened because A also fires "interact."</summary>
@@ -429,16 +427,40 @@ namespace AndroidConsolizer.Patches
 
                 // Arrange as 7 columns x 3 rows grid
                 // Swatches are sorted by X — first 7 are row 0, next 7 row 1, last 7 row 2
-                // But they're all at the same Y, so we just split the sorted list into rows of 7
+                // All swatches share the same Y in their component bounds (flat row at Y:106),
+                // even though the game RENDERS them as a 7x3 visual grid. We must relocate
+                // each swatch's bounds to its visual grid position so snapCursorToCurrentSnappedComponent
+                // positions the cursor correctly when the game's own navigation moves between swatches.
                 int cols = 7;
                 int rows = swatches.Count / cols; // should be 3
                 if (rows < 1) rows = 1;
+
+                // Use the first swatch's bounds as the anchor for the grid layout
+                int gridX = swatches[0].bounds.X;        // leftmost X
+                int gridY = swatches[0].bounds.Y;        // baseline Y
+                int swatchW = swatches[0].bounds.Width;   // swatch width (80)
+                int swatchH = swatches[0].bounds.Height;  // swatch height (72)
+                int strideX = swatchW + 4;                // horizontal spacing
+                int strideY = swatchH + 4;                // vertical spacing
+
+                _savedSwatchBounds.Clear();
 
                 for (int i = 0; i < swatches.Count; i++)
                 {
                     int row = i / cols;
                     int col = i % cols;
                     var s = swatches[i];
+
+                    // Save original bounds for restoration
+                    _savedSwatchBounds[s.myID] = s.bounds;
+
+                    // Relocate bounds to visual grid position
+                    s.bounds = new Rectangle(
+                        gridX + col * strideX,
+                        gridY + row * strideY,
+                        swatchW,
+                        swatchH
+                    );
 
                     // Left/right within row — edges do NOT wrap or escape
                     s.leftNeighborID = (col > 0) ? swatches[i - 1].myID : -1;
@@ -452,7 +474,6 @@ namespace AndroidConsolizer.Patches
                 }
 
                 // Make color toggle NOT navigable while picker is open
-                // (no swatch points to it, and we'll block navigation away from the grid)
                 if (_colorToggleButton != null)
                 {
                     _colorToggleButton.upNeighborID = -1;
@@ -463,19 +484,24 @@ namespace AndroidConsolizer.Patches
 
                 if (verbose)
                 {
-                    Monitor.Log($"[ChestNav] Wired {swatches.Count} swatches as {cols}x{rows} grid", LogLevel.Debug);
+                    Monitor.Log($"[ChestNav] Wired {swatches.Count} swatches as {cols}x{rows} grid, bounds relocated (stride {strideX}x{strideY} from {gridX},{gridY})", LogLevel.Debug);
                     for (int i = 0; i < swatches.Count; i++)
                     {
                         var s = swatches[i];
-                        Monitor.Log($"[ChestNav]   swatch[{i}] ID={s.myID} L={s.leftNeighborID} R={s.rightNeighborID} U={s.upNeighborID} D={s.downNeighborID}", LogLevel.Debug);
+                        Monitor.Log($"[ChestNav]   swatch[{i}] ID={s.myID} bounds=({s.bounds.X},{s.bounds.Y},{s.bounds.Width},{s.bounds.Height}) L={s.leftNeighborID} R={s.rightNeighborID} U={s.upNeighborID} D={s.downNeighborID}", LogLevel.Debug);
                     }
                 }
             }
             else
             {
-                // Remove swatches from side button objects
+                // Remove swatches from side button objects and restore original bounds
                 foreach (var s in swatches)
+                {
                     _sideButtonObjects.Remove(s);
+                    if (_savedSwatchBounds.TryGetValue(s.myID, out var originalBounds))
+                        s.bounds = originalBounds;
+                }
+                _savedSwatchBounds.Clear();
 
                 // Restore color toggle's saved neighbors
                 if (_colorToggleButton != null)
@@ -487,7 +513,7 @@ namespace AndroidConsolizer.Patches
                 _colorPickerOpen = false;
 
                 if (verbose)
-                    Monitor.Log("[ChestNav] Unwired color swatches, restored toggle neighbors", LogLevel.Debug);
+                    Monitor.Log("[ChestNav] Unwired color swatches, restored toggle neighbors and bounds", LogLevel.Debug);
             }
         }
 
@@ -540,13 +566,25 @@ namespace AndroidConsolizer.Patches
                     }
 
                     // A on a swatch selects that color
+                    // Use the ORIGINAL swatch bounds for the click target, not the
+                    // relocated grid bounds (the game's click handler checks the original
+                    // DiscreteColorPicker layout, not our relocated snap positions).
                     if (remapped == Buttons.A)
                     {
                         var snapped = __instance.currentlySnappedComponent;
                         if (snapped != null && snapped.myID >= 4343 && snapped.myID <= 4363)
                         {
-                            int cx = snapped.bounds.Center.X;
-                            int cy = snapped.bounds.Center.Y;
+                            int cx, cy;
+                            if (_savedSwatchBounds.TryGetValue(snapped.myID, out var origBounds))
+                            {
+                                cx = origBounds.Center.X;
+                                cy = origBounds.Center.Y;
+                            }
+                            else
+                            {
+                                cx = snapped.bounds.Center.X;
+                                cy = snapped.bounds.Center.Y;
+                            }
                             if (ModEntry.Config.VerboseLogging)
                                 Monitor.Log($"[ChestNav] A on color swatch {snapped.myID} — click at ({cx},{cy})", LogLevel.Debug);
                             __instance.receiveLeftClick(cx, cy);
@@ -554,41 +592,22 @@ namespace AndroidConsolizer.Patches
                         return false;
                     }
 
-                    // D-pad/thumbstick navigation: handle manually within the swatch grid.
-                    // Left thumbstick is suppressed at the GamePad.GetState level (via
-                    // ShouldSuppressLeftStick) so the game's separate nav code can't move
-                    // the cursor. We handle all movement here. D-pad events still arrive
-                    // via receiveGamePadButton even with thumbstick suppressed.
+                    // D-pad/thumbstick navigation: let the game's own nav handle movement.
+                    // Swatch bounds have been relocated to visual 7x3 grid positions, so
+                    // snapCursorToCurrentSnappedComponent() will position the cursor correctly.
+                    // The game's separate nav code (outside receiveGamePadButton) moves the
+                    // cursor using our wired neighbor IDs. We just block the original
+                    // ItemGrabMenu.receiveGamePadButton to prevent any undesired side effects.
+                    // Edge neighbors are -1 so the game's nav stays within the grid.
                     if (remapped == Buttons.DPadUp || remapped == Buttons.DPadDown ||
                         remapped == Buttons.DPadLeft || remapped == Buttons.DPadRight ||
                         remapped == Buttons.LeftThumbstickUp || remapped == Buttons.LeftThumbstickDown ||
                         remapped == Buttons.LeftThumbstickLeft || remapped == Buttons.LeftThumbstickRight)
                     {
-                        var snapped = __instance.currentlySnappedComponent;
-                        if (snapped == null)
-                            return false;
-
-                        int targetId = -1;
-                        if (remapped == Buttons.DPadUp || remapped == Buttons.LeftThumbstickUp)
-                            targetId = snapped.upNeighborID;
-                        else if (remapped == Buttons.DPadDown || remapped == Buttons.LeftThumbstickDown)
-                            targetId = snapped.downNeighborID;
-                        else if (remapped == Buttons.DPadLeft || remapped == Buttons.LeftThumbstickLeft)
-                            targetId = snapped.leftNeighborID;
-                        else if (remapped == Buttons.DPadRight || remapped == Buttons.LeftThumbstickRight)
-                            targetId = snapped.rightNeighborID;
-
-                        // Only navigate if the target is a valid swatch (stay within grid)
-                        if (targetId >= 4343 && targetId <= 4363)
+                        if (ModEntry.Config.VerboseLogging)
                         {
-                            var target = FindSwatchById(__instance, targetId);
-                            if (target != null)
-                            {
-                                __instance.currentlySnappedComponent = target;
-                                __instance.snapCursorToCurrentSnappedComponent();
-                                if (ModEntry.Config.VerboseLogging)
-                                    Monitor.Log($"[ChestNav] Picker nav: {snapped.myID} → {targetId}", LogLevel.Debug);
-                            }
+                            var snapped = __instance.currentlySnappedComponent;
+                            Monitor.Log($"[ChestNav] Picker nav: snapped={snapped?.myID ?? -1}, bounds=({snapped?.bounds.X},{snapped?.bounds.Y})", LogLevel.Debug);
                         }
                         return false;
                     }
