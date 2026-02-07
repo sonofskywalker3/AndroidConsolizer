@@ -106,6 +106,23 @@ namespace AndroidConsolizer.Patches
                         sideButtons[i].downNeighborID = sideButtons[i + 1].myID;
                 }
 
+                // Wire top button UP to nearest chest slot, bottom button DOWN to nearest player slot
+                // This lets the user navigate back to the grids from the side buttons
+                if (menu.ItemsToGrabMenu?.inventory != null && menu.ItemsToGrabMenu.inventory.Count > 0)
+                {
+                    var topButton = sideButtons[0];
+                    var nearestChestSlot = FindNearestSlotByY(menu.ItemsToGrabMenu.inventory, topButton.bounds.Center.Y);
+                    if (nearestChestSlot != null)
+                        topButton.upNeighborID = nearestChestSlot.myID;
+                }
+                if (menu.inventory?.inventory != null && menu.inventory.inventory.Count > 0)
+                {
+                    var bottomButton = sideButtons[sideButtons.Count - 1];
+                    var nearestPlayerSlot = FindNearestSlotByY(menu.inventory.inventory, bottomButton.bounds.Center.Y);
+                    if (nearestPlayerSlot != null)
+                        bottomButton.downNeighborID = nearestPlayerSlot.myID;
+                }
+
                 // Determine grid width from player inventory
                 // Standard inventory is 12 columns, but detect it from slot positions
                 int playerCols = DetectGridColumns(menu.inventory?.inventory);
@@ -134,6 +151,23 @@ namespace AndroidConsolizer.Patches
                 if (ModEntry.Config.VerboseLogging)
                     Monitor.Log(ex.StackTrace, LogLevel.Debug);
             }
+        }
+
+        /// <summary>Find the slot nearest to a given Y coordinate (for connecting side buttons back to grids).</summary>
+        private static ClickableComponent FindNearestSlotByY(IList<ClickableComponent> slots, int targetY)
+        {
+            ClickableComponent nearest = null;
+            int nearestDist = int.MaxValue;
+            foreach (var slot in slots)
+            {
+                int dist = Math.Abs(slot.bounds.Center.Y - targetY);
+                if (dist < nearestDist)
+                {
+                    nearestDist = dist;
+                    nearest = slot;
+                }
+            }
+            return nearest;
         }
 
         /// <summary>Detect number of columns in a slot grid by counting slots on the first row (same Y position).</summary>
@@ -234,6 +268,33 @@ namespace AndroidConsolizer.Patches
                 // Log all button presses in chest menu for debugging
                 if (ModEntry.Config.VerboseLogging)
                     Monitor.Log($"ItemGrabMenu button: {b} (remapped={remapped})", LogLevel.Debug);
+
+                // A button on side buttons — simulate click at button position
+                // On Android, A generates receiveLeftClick at mouse position, which doesn't
+                // track snap navigation. We intercept and click at the correct coordinates.
+                if (remapped == Buttons.A && ModEntry.Config.EnableChestNavFix)
+                {
+                    var snapped = __instance.currentlySnappedComponent;
+                    if (snapped != null)
+                    {
+                        bool isSideButton =
+                            (__instance.organizeButton != null && snapped.myID == __instance.organizeButton.myID) ||
+                            (__instance.colorPickerToggleButton != null && snapped.myID == __instance.colorPickerToggleButton.myID) ||
+                            (__instance.fillStacksButton != null && snapped.myID == __instance.fillStacksButton.myID) ||
+                            (__instance.specialButton != null && snapped.myID == __instance.specialButton.myID) ||
+                            (__instance.trashCan != null && snapped.myID == __instance.trashCan.myID);
+
+                        if (isSideButton)
+                        {
+                            int cx = snapped.bounds.Center.X;
+                            int cy = snapped.bounds.Center.Y;
+                            if (ModEntry.Config.VerboseLogging)
+                                Monitor.Log($"[ChestNav] A pressed on side button {snapped.myID} — simulating click at ({cx},{cy})", LogLevel.Debug);
+                            __instance.receiveLeftClick(cx, cy);
+                            return false;
+                        }
+                    }
+                }
 
                 // X button (after remapping) = Sort chest (and block the original to prevent deletion)
                 if (remapped == Buttons.X && ModEntry.Config.EnableSortFix)
