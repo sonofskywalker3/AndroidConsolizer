@@ -32,6 +32,11 @@ namespace AndroidConsolizer.Patches
         /// <summary>Whether the color picker is currently open and we're navigating swatches.</summary>
         private static bool _colorPickerOpen = false;
 
+        /// <summary>Game tick when B closed the color picker. exitThisMenu blocks one call
+        /// on this exact tick to prevent the game's separate B-close path from also closing
+        /// the chest within the same frame.</summary>
+        private static int _pickerClosedTick = -100;
+
         /// <summary>Saved color toggle neighbors to restore when picker closes.</summary>
         private static int _colorToggleSavedUp = -1;
         private static int _colorToggleSavedDown = -1;
@@ -65,6 +70,14 @@ namespace AndroidConsolizer.Patches
                 harmony.Patch(
                     original: AccessTools.Method(typeof(ItemGrabMenu), nameof(ItemGrabMenu.receiveGamePadButton)),
                     prefix: new HarmonyMethod(typeof(ItemGrabMenuPatches), nameof(ReceiveGamePadButton_Prefix))
+                );
+
+                // Patch exitThisMenu to block same-frame exit when B closes the color picker.
+                // The game's update loop has a separate B-close path that reads already-cached
+                // gamepad state, so GetState suppression alone can't prevent it.
+                harmony.Patch(
+                    original: AccessTools.Method(typeof(IClickableMenu), nameof(IClickableMenu.exitThisMenu)),
+                    prefix: new HarmonyMethod(typeof(ItemGrabMenuPatches), nameof(ExitThisMenu_Prefix))
                 );
 
                 Monitor.Log("ItemGrabMenu patches applied successfully.", LogLevel.Trace);
@@ -584,6 +597,22 @@ namespace AndroidConsolizer.Patches
             }
         }
 
+        /// <summary>Prefix for exitThisMenu to block same-frame exit when B closes the color picker.
+        /// The game's update loop processes B through a separate code path that reads gamepad state
+        /// cached at the start of the frame (before our receiveGamePadButton prefix could suppress it).
+        /// This blocks one exitThisMenu call on the exact tick the picker was closed.</summary>
+        private static bool ExitThisMenu_Prefix(IClickableMenu __instance)
+        {
+            if (__instance is ItemGrabMenu && Game1.ticks == _pickerClosedTick)
+            {
+                _pickerClosedTick = -100; // one-shot: only block one call
+                if (ModEntry.Config.VerboseLogging)
+                    Monitor.Log("[ChestNav] Blocked exitThisMenu — B was closing picker, not chest", LogLevel.Debug);
+                return false;
+            }
+            return true;
+        }
+
         /// <summary>Prefix for receiveGamePadButton to handle chest management.</summary>
         /// <returns>False to block the original method (prevents Android X-delete bug), true to let it run.</returns>
         private static bool ReceiveGamePadButton_Prefix(ItemGrabMenu __instance, Buttons b)
@@ -623,10 +652,9 @@ namespace AndroidConsolizer.Patches
                         Game1.playSound("drumkit6");
                         WireColorSwatches(__instance, false);
 
-                        // Suppress B at GetState level until released — prevents
-                        // other code paths from also seeing B and closing the chest
-                        GameplayButtonPatches.SuppressBUntilRelease = true;
-                        GameplayButtonPatches.InvalidateCache();
+                        // Block exitThisMenu for this tick — the game's update loop has
+                        // a separate B-close path that uses already-cached gamepad state
+                        _pickerClosedTick = Game1.ticks;
 
                         // Snap cursor back to color toggle button
                         if (_colorToggleButton != null)
