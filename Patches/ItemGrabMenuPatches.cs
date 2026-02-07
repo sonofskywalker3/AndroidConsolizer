@@ -52,6 +52,15 @@ namespace AndroidConsolizer.Patches
         private static int _probedCenterX0 = -1;
         private static int _probedCenterY0 = -1;
 
+        // Y button hold-to-repeat for single-item transfer
+        private static bool _yTransferHeld;
+        private static int _yTransferTicks;
+        private static Buttons _yTransferRawButton;
+        private static int _yTransferSlotIndex;
+        private static bool _yTransferFromChest; // true = chest→player, false = player→chest
+        private const int TransferHoldDelay = 20;   // ~333ms at 60fps before repeat starts
+        private const int TransferRepeatRate = 3;    // ~50ms at 60fps between repeats
+
         // Unique IDs assigned to buttons with duplicate or sentinel myIDs
         private const int ID_SORT_CHEST = 54106;    // was 106
         private const int ID_SORT_INV = 54206;       // was 106
@@ -78,6 +87,12 @@ namespace AndroidConsolizer.Patches
                 harmony.Patch(
                     original: AccessTools.Method(typeof(IClickableMenu), nameof(IClickableMenu.exitThisMenu)),
                     prefix: new HarmonyMethod(typeof(ItemGrabMenuPatches), nameof(ExitThisMenu_Prefix))
+                );
+
+                // Patch update for Y-button hold-to-repeat in chest transfer
+                harmony.Patch(
+                    original: AccessTools.Method(typeof(ItemGrabMenu), nameof(ItemGrabMenu.update)),
+                    postfix: new HarmonyMethod(typeof(ItemGrabMenuPatches), nameof(Update_Postfix))
                 );
 
                 Monitor.Log("ItemGrabMenu patches applied successfully.", LogLevel.Trace);
@@ -807,7 +822,14 @@ namespace AndroidConsolizer.Patches
                                 if (remapped == Buttons.A)
                                     TransferFromChest(__instance, chestSlotIndex);
                                 else
+                                {
                                     TransferOneFromChest(__instance, chestSlotIndex);
+                                    _yTransferHeld = true;
+                                    _yTransferTicks = 0;
+                                    _yTransferRawButton = b;
+                                    _yTransferSlotIndex = chestSlotIndex;
+                                    _yTransferFromChest = true;
+                                }
                                 return false;
                             }
                             else if (playerSlotIndex >= 0)
@@ -815,7 +837,14 @@ namespace AndroidConsolizer.Patches
                                 if (remapped == Buttons.A)
                                     TransferToChest(__instance, playerSlotIndex);
                                 else
+                                {
                                     TransferOneToChest(__instance, playerSlotIndex);
+                                    _yTransferHeld = true;
+                                    _yTransferTicks = 0;
+                                    _yTransferRawButton = b;
+                                    _yTransferSlotIndex = playerSlotIndex;
+                                    _yTransferFromChest = false;
+                                }
                                 return false;
                             }
                         }
@@ -848,6 +877,52 @@ namespace AndroidConsolizer.Patches
             }
 
             return true; // Let original method run for other buttons
+        }
+
+        /// <summary>Postfix for update — Y-button hold-to-repeat for single-item transfer.</summary>
+        private static void Update_Postfix(ItemGrabMenu __instance, GameTime time)
+        {
+            if (!_yTransferHeld || !ModEntry.Config.EnableChestTransferFix)
+                return;
+
+            if (__instance.shippingBin)
+            {
+                _yTransferHeld = false;
+                return;
+            }
+
+            var gpState = GamePad.GetState(PlayerIndex.One);
+            bool yStillHeld = gpState.IsButtonDown(_yTransferRawButton);
+
+            if (yStillHeld)
+            {
+                _yTransferTicks++;
+
+                if (_yTransferTicks > TransferHoldDelay &&
+                    (_yTransferTicks - TransferHoldDelay) % TransferRepeatRate == 0)
+                {
+                    if (_yTransferFromChest)
+                    {
+                        var chestInv = __instance.ItemsToGrabMenu?.actualInventory;
+                        if (chestInv != null && _yTransferSlotIndex < chestInv.Count && chestInv[_yTransferSlotIndex] != null)
+                            TransferOneFromChest(__instance, _yTransferSlotIndex);
+                        else
+                            _yTransferHeld = false;
+                    }
+                    else
+                    {
+                        if (_yTransferSlotIndex < Game1.player.Items.Count && Game1.player.Items[_yTransferSlotIndex] != null)
+                            TransferOneToChest(__instance, _yTransferSlotIndex);
+                        else
+                            _yTransferHeld = false;
+                    }
+                }
+            }
+            else
+            {
+                _yTransferHeld = false;
+                _yTransferTicks = 0;
+            }
         }
 
         /// <summary>Organize the chest contents.</summary>
