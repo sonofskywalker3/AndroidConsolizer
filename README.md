@@ -2,7 +2,7 @@
 
 A SMAPI mod that brings console-style controller support to Android Stardew Valley. Play with a controller like you would on Nintendo Switch - 12-slot toolbar rows, proper shop purchasing, chest management, and more.
 
-## Current Version: 2.8.0
+## Current Version: 2.9.0
 
 ## Features
 
@@ -31,8 +31,11 @@ When "Use Bumpers Instead of Triggers" is enabled:
 - **A button (buy tab)**: Purchase items from any shop
 - **A button (sell tab)**: Sell entire stack
 - **Y button (sell tab)**: Sell one item (hold Y for rapid sell)
-- **LT/RT** (or **LB/RB** in bumper mode): Adjust purchase quantity before buying
-- Sell price tooltip appears next to selected item on sell tab
+- **LB/RB**: Adjust purchase quantity (+/-1 in bumper mode, +/-10 otherwise), hold to repeat
+- **Right stick**: Jump 5 items at a time on buy tab (hold to repeat)
+- **Y button icon**: Visual tab-switch hint on the inventory button (adapts to controller layout)
+- Touch tab-switch button blocked when controller is connected (prevents accidental taps)
+- Sell price tooltip with gold coin icon appears next to selected item on sell tab
 - Supports trade-item shops (Desert Trader), tool upgrades, recipes, and all special purchases
 - Respects available stock, player money, and trade item requirements
 
@@ -77,7 +80,9 @@ When "Use Bumpers Instead of Triggers" is enabled:
 | **Gameplay** | LT | Move left in toolbar row |
 | **Gameplay** | RT | Move right in toolbar row |
 | **Shop (buy)** | A | Purchase selected quantity |
-| **Shop (buy)** | LT/RT | Adjust purchase quantity |
+| **Shop (buy)** | LB/RB | Adjust purchase quantity (hold to repeat) |
+| **Shop (buy)** | Right stick | Jump 5 items up/down (hold to repeat) |
+| **Shop** | Y | Switch between buy/sell tabs (icon shown on button) |
 | **Shop (sell)** | A | Sell entire stack |
 | **Shop (sell)** | Y | Sell one item (hold for rapid sell) |
 | **Inventory** | X | Sort inventory |
@@ -204,7 +209,6 @@ Output: `bin/Release/net6.0/AndroidConsolizer X.X.X.zip`
 
 - Move Buildings mode in Robin's menu doesn't respond to joystick panning
 - Shop sell tab not navigable when switched via touchscreen tap (Y button works)
-- Right stick scrolls shop buy list view but selection doesn't follow
 - Furniture pickup/placement rapid-toggles with Y button (missing debounce)
 - Equipment slots not accessible via A button in inventory
 - Community Center bundle navigation and cursor issues
@@ -218,8 +222,6 @@ Output: `bin/Release/net6.0/AndroidConsolizer X.X.X.zip`
 
 ## TODO / Roadmap
 
-- Shop quantity adjustment with LB/RB (+/-10 in non-bumper mode)
-- Cutscene skip with controller (Start button)
 - Console-style chest item transfer (direct A/Y transfer without selection step)
 - Right joystick free cursor mode for menus and gameplay
 - Zoom control slider in options menu
@@ -246,6 +248,17 @@ Android Stardew Valley has broken controller support that makes it nearly unplay
 MIT License - Feel free to modify and redistribute.
 
 ## Changelog
+
+### 2.9.0
+- **Shop Controls Overhaul** - Major improvements to shop controller experience
+  - **LB/RB quantity adjustment** with hold-to-repeat (+/-1 in bumper mode, +/-10 otherwise)
+  - **Right stick fast navigation** on buy tab — jump 5 items at a time with hold-to-repeat
+  - **Controller button icon** on the tab-switch button — shows Y/X/square depending on layout, dims correctly on sell tab
+  - **Touch tab button blocked** when controller connected — prevents accidental touchscreen taps toggling tabs
+  - **Grayed-out item sell fix** — shops no longer let you sell items they don't accept
+  - **Cutscene skip** — press Start twice to skip cutscenes
+  - Right stick vanilla scroll desync fully fixed (vanilla scroll blocked at GamePad.GetState level)
+  - Sell tooltip for unsellable items no longer shows
 
 ### 2.8.0
 - **Release cleanup** - No behavior changes
