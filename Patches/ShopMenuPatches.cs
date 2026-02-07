@@ -575,10 +575,17 @@ namespace AndroidConsolizer.Patches
             {
                 Buttons btn = count > 0 ? Buttons.DPadDown : Buttons.DPadUp;
                 int steps = Math.Abs(count);
+
+                // Mute during loop so 5 nav sounds don't stack, play one at the end
+                float savedVolume = Game1.options.soundVolumeLevel;
+                Game1.options.soundVolumeLevel = 0f;
                 for (int i = 0; i < steps; i++)
                 {
                     shop.receiveGamePadButton(btn);
                 }
+                Game1.options.soundVolumeLevel = savedVolume;
+                Game1.playSound("shiny4");
+
                 if (ModEntry.Config.VerboseLogging)
                     Monitor.Log($"Right stick: jumped {count} items", LogLevel.Trace);
             }
