@@ -23,8 +23,16 @@ namespace AndroidConsolizer.Patches
         private static FieldInfo InventoryButtonField;
 
 
-        // Flag read by GameplayButtonPatches.GetState_Postfix to zero right stick on shop buy tab
-        internal static bool SuppressRightStick;
+        /// <summary>Check if the active menu is a ShopMenu on the buy tab (right stick should be suppressed).</summary>
+        internal static bool ShouldSuppressRightStick()
+        {
+            if (Game1.activeClickableMenu is ShopMenu shop && InvVisibleField != null)
+            {
+                bool inventoryVisible = (bool)InvVisibleField.GetValue(shop);
+                return !inventoryVisible; // suppress on buy tab (inventoryVisible=false)
+            }
+            return false;
+        }
 
         // Y button sell-one hold tracking
         private static bool _yHeldOnSellTab;
@@ -75,11 +83,9 @@ namespace AndroidConsolizer.Patches
                     prefix: new HarmonyMethod(typeof(ShopMenuPatches), nameof(ReceiveGamePadButton_Prefix))
                 );
 
-                // Patch update — prefix saves currentItemIndex (to undo vanilla right stick scroll),
-                // postfix handles hold-to-repeat and right stick navigation
+                // Patch update — postfix handles hold-to-repeat and right stick navigation
                 harmony.Patch(
                     original: AccessTools.Method(typeof(ShopMenu), nameof(ShopMenu.update)),
-                    prefix: new HarmonyMethod(typeof(ShopMenuPatches), nameof(Update_Prefix)),
                     postfix: new HarmonyMethod(typeof(ShopMenuPatches), nameof(Update_Postfix))
                 );
 
@@ -616,13 +622,6 @@ namespace AndroidConsolizer.Patches
             _rbHoldTicks = 0;
         }
 
-        /// <summary>Prefix for update — sets SuppressRightStick flag so GamePad.GetState zeroes right stick on buy tab.</summary>
-        private static void Update_Prefix(ShopMenu __instance)
-        {
-            bool onBuyTab = InvVisibleField == null || !(bool)InvVisibleField.GetValue(__instance);
-            SuppressRightStick = onBuyTab;
-        }
-
         /// <summary>Postfix for update — hold-to-repeat, right stick navigation, quantity reset.</summary>
         private static void Update_Postfix(ShopMenu __instance, GameTime time)
         {
@@ -765,9 +764,6 @@ namespace AndroidConsolizer.Patches
                 }
             }
 
-            // Clear suppression flag after our postfix runs — ensures it's only active
-            // between prefix and postfix of ShopMenu.update, not during draw/other frames
-            SuppressRightStick = false;
         }
 
         /// <summary>

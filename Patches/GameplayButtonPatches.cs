@@ -101,10 +101,10 @@ namespace AndroidConsolizer.Patches
                 // Cache raw right stick Y before any suppression, so ShopMenuPatches can use it
                 RawRightStickY = __result.ThumbSticks.Right.Y;
 
-                // Zero out right thumbstick when ShopMenuPatches requests it (buy tab).
-                // This prevents vanilla from scrolling currentItemIndex via right stick;
-                // our own navigation code reads RawRightStickY directly.
-                if (ShopMenuPatches.SuppressRightStick && __result.ThumbSticks.Right != Vector2.Zero)
+                // Zero out right thumbstick when ShopMenu is on buy tab.
+                // This prevents vanilla (and Game1's scroll-wheel conversion) from scrolling
+                // currentItemIndex via right stick; our own navigation reads RawRightStickY.
+                if (ShopMenuPatches.ShouldSuppressRightStick() && __result.ThumbSticks.Right != Vector2.Zero)
                 {
                     __result = new GamePadState(
                         new GamePadThumbSticks(__result.ThumbSticks.Left, Vector2.Zero),
