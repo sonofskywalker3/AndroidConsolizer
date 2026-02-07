@@ -38,6 +38,15 @@ namespace AndroidConsolizer.Patches
         private const int QuantityHoldDelay = 20;   // ~333ms at 60fps before repeat starts
         private const int QuantityRepeatRate = 3;   // ~50ms at 60fps between repeats
 
+        // Right stick buy-tab navigation (jump 5 items)
+        private static bool _rsDown;
+        private static bool _rsUp;
+        private static int _rsHoldTicks;
+        private const int RStickHoldDelay = 15;    // ~250ms before repeat starts
+        private const int RStickRepeatRate = 6;    // ~100ms between repeats
+        private const float RStickThreshold = 0.5f;
+        private const int RStickJumpCount = 5;
+
 
         /// <summary>Apply Harmony patches.</summary>
         public static void Apply(Harmony harmony, IMonitor monitor)
@@ -556,6 +565,29 @@ namespace AndroidConsolizer.Patches
             }
         }
 
+        /// <summary>
+        /// Jump the shop buy list selection by N items using simulated DPad presses.
+        /// Positive count = down, negative = up.
+        /// </summary>
+        private static void JumpShopSelection(ShopMenu shop, int count)
+        {
+            try
+            {
+                Buttons btn = count > 0 ? Buttons.DPadDown : Buttons.DPadUp;
+                int steps = Math.Abs(count);
+                for (int i = 0; i < steps; i++)
+                {
+                    shop.receiveGamePadButton(btn);
+                }
+                if (ModEntry.Config.VerboseLogging)
+                    Monitor.Log($"Right stick: jumped {count} items", LogLevel.Trace);
+            }
+            catch (Exception ex)
+            {
+                Monitor.Log($"Error in JumpShopSelection: {ex.Message}", LogLevel.Error);
+            }
+        }
+
         /// <summary>Start tracking LB hold for repeat quantity adjustment.</summary>
         public static void StartLBHold()
         {
@@ -575,11 +607,6 @@ namespace AndroidConsolizer.Patches
         {
             // Get gamepad state once for all hold-to-repeat checks
             var gpState = GamePad.GetState(PlayerIndex.One);
-
-            // NOTE: Right stick page navigation (5e) and sell tab snap fix (5b) were attempted
-            // but setCurrentlySnappedComponentTo/snapCursorToCurrentSnappedComponent don't work
-            // on Android's ShopMenu. These are vanilla Android controller bugs that need a
-            // different approach (possibly simulating button presses instead of calling snap methods).
 
             // Y button sell hold-to-repeat
             if (_yHeldOnSellTab)
@@ -657,6 +684,46 @@ namespace AndroidConsolizer.Patches
                 {
                     _rbHeld = false;
                     _rbHoldTicks = 0;
+                }
+            }
+
+            // Right stick navigation — jump 5 items at a time on buy tab
+            // Simulates DPad presses since setCurrentlySnappedComponentTo doesn't work
+            // on Android's ShopMenu (snap methods are broken on Android).
+            if (onBuyTab)
+            {
+                float rsY = gpState.ThumbSticks.Right.Y;
+                bool stickDown = rsY < -RStickThreshold;
+                bool stickUp = rsY > RStickThreshold;
+
+                if (stickDown || stickUp)
+                {
+                    bool directionChanged = (stickDown && !_rsDown) || (stickUp && !_rsUp);
+                    bool justStarted = directionChanged || (!_rsDown && !_rsUp);
+
+                    _rsDown = stickDown;
+                    _rsUp = stickUp;
+
+                    if (justStarted)
+                    {
+                        _rsHoldTicks = 0;
+                        JumpShopSelection(__instance, stickDown ? RStickJumpCount : -RStickJumpCount);
+                    }
+                    else
+                    {
+                        _rsHoldTicks++;
+                        if (_rsHoldTicks > RStickHoldDelay &&
+                            (_rsHoldTicks - RStickHoldDelay) % RStickRepeatRate == 0)
+                        {
+                            JumpShopSelection(__instance, stickDown ? RStickJumpCount : -RStickJumpCount);
+                        }
+                    }
+                }
+                else
+                {
+                    _rsDown = false;
+                    _rsUp = false;
+                    _rsHoldTicks = 0;
                 }
             }
 
