@@ -452,17 +452,6 @@ namespace AndroidConsolizer.Patches
                         if (colorField != null)
                         {
                             int savedColor = (int)colorField.GetValue(picker);
-
-                            // Save chest color — receiveLeftClick changes the chest's
-                            // actual color as a side effect, not just colorSelection
-                            Color savedChestColor = default;
-                            bool hadChestColor = false;
-                            if (menu.context is StardewValley.Objects.Chest probeChest)
-                            {
-                                savedChestColor = probeChest.playerChoiceColor.Value;
-                                hadChestColor = true;
-                            }
-
                             int pX = picker.xPositionOnScreen;
                             int pY = picker.yPositionOnScreen;
                             int probeY = pY + 50; // safely in row 0
@@ -490,12 +479,6 @@ namespace AndroidConsolizer.Patches
                                 if (sel == 14 && rowMid12 < 0) { rowMid12 = py; break; }
                             }
 
-                            colorField.SetValue(picker, savedColor);
-
-                            // Restore chest color after probing
-                            if (hadChestColor && menu.context is StardewValley.Objects.Chest restoreChest)
-                                restoreChest.playerChoiceColor.Value = savedChestColor;
-
                             if (colMid01 > 0 && colMid12 > 0 && rowMid01 > 0 && rowMid12 > 0)
                             {
                                 _probedStrideX = colMid12 - colMid01;
@@ -508,6 +491,25 @@ namespace AndroidConsolizer.Patches
                             else
                             {
                                 Monitor.Log("[ChestNav] Swatch probe failed, using fallback stride", LogLevel.Warn);
+                            }
+
+                            // Restore the original color by clicking at its grid position.
+                            // This restores both colorSelection AND the chest's visual color,
+                            // regardless of how the picker stores the chest reference internally.
+                            if (savedColor >= 0 && _probedStrideX > 0 && _probedStrideY > 0)
+                            {
+                                int restoreCol = savedColor % 7;
+                                int restoreRow = savedColor / 7;
+                                int restoreX = _probedCenterX0 + restoreCol * _probedStrideX;
+                                int restoreY = _probedCenterY0 + restoreRow * _probedStrideY;
+                                picker.receiveLeftClick(restoreX, restoreY, false);
+                                if (verbose)
+                                    Monitor.Log($"[ChestNav] Restored color {savedColor} via click at ({restoreX},{restoreY})", LogLevel.Debug);
+                            }
+                            else
+                            {
+                                // Fallback: at least restore colorSelection via reflection
+                                colorField.SetValue(picker, savedColor);
                             }
                         }
                     }
