@@ -789,6 +789,39 @@ namespace AndroidConsolizer.Patches
                     }
                 }
 
+                // A/Y on grid slots — console-style chest item transfer
+                // A = transfer full stack, Y = transfer one item
+                if ((remapped == Buttons.A || remapped == Buttons.Y) && ModEntry.Config.EnableChestTransferFix)
+                {
+                    // Don't interfere if player has item on cursor
+                    if (Game1.player.CursorSlotItem == null)
+                    {
+                        var snapped = __instance.currentlySnappedComponent;
+                        if (snapped != null)
+                        {
+                            int chestSlotIndex = __instance.ItemsToGrabMenu?.inventory?.IndexOf(snapped) ?? -1;
+                            int playerSlotIndex = __instance.inventory?.inventory?.IndexOf(snapped) ?? -1;
+
+                            if (chestSlotIndex >= 0)
+                            {
+                                if (remapped == Buttons.A)
+                                    TransferFromChest(__instance, chestSlotIndex);
+                                else
+                                    TransferOneFromChest(__instance, chestSlotIndex);
+                                return false;
+                            }
+                            else if (playerSlotIndex >= 0)
+                            {
+                                if (remapped == Buttons.A)
+                                    TransferToChest(__instance, playerSlotIndex);
+                                else
+                                    TransferOneToChest(__instance, playerSlotIndex);
+                                return false;
+                            }
+                        }
+                    }
+                }
+
                 // X button (after remapping) = Sort chest (and block the original to prevent deletion)
                 if (remapped == Buttons.X && ModEntry.Config.EnableSortFix)
                 {
@@ -978,6 +1011,205 @@ namespace AndroidConsolizer.Patches
                 if (ModEntry.Config.VerboseLogging)
                     Monitor.Log($"Error getting chest inventory: {ex.Message}", LogLevel.Debug);
                 return null;
+            }
+        }
+
+        /// <summary>Transfer full stack from chest to player inventory.</summary>
+        private static void TransferFromChest(ItemGrabMenu menu, int slotIndex)
+        {
+            var chestInv = menu.ItemsToGrabMenu?.actualInventory;
+            if (chestInv == null || slotIndex >= chestInv.Count) return;
+
+            Item item = chestInv[slotIndex];
+            if (item == null)
+            {
+                Game1.playSound("cancel");
+                return;
+            }
+
+            int stackBefore = item.Stack;
+            Item leftover = Game1.player.addItemToInventory(item);
+
+            if (leftover == null || leftover.Stack <= 0)
+            {
+                chestInv[slotIndex] = null;
+                Game1.playSound("stoneStep");
+                if (ModEntry.Config.VerboseLogging)
+                    Monitor.Log($"[ChestTransfer] Took {stackBefore}x {item.DisplayName} from chest", LogLevel.Debug);
+            }
+            else if (leftover.Stack < stackBefore)
+            {
+                // Partial — leftover stays in chest (same reference, already updated)
+                Game1.playSound("stoneStep");
+                if (ModEntry.Config.VerboseLogging)
+                    Monitor.Log($"[ChestTransfer] Partial: took {stackBefore - leftover.Stack}x {item.DisplayName}, {leftover.Stack} remain in chest", LogLevel.Debug);
+            }
+            else
+            {
+                // Nothing transferred — player inventory full
+                Game1.playSound("cancel");
+                if (ModEntry.Config.VerboseLogging)
+                    Monitor.Log($"[ChestTransfer] Inventory full, cannot take {item.DisplayName}", LogLevel.Debug);
+            }
+        }
+
+        /// <summary>Transfer one item from chest to player inventory.</summary>
+        private static void TransferOneFromChest(ItemGrabMenu menu, int slotIndex)
+        {
+            var chestInv = menu.ItemsToGrabMenu?.actualInventory;
+            if (chestInv == null || slotIndex >= chestInv.Count) return;
+
+            Item item = chestInv[slotIndex];
+            if (item == null)
+            {
+                Game1.playSound("cancel");
+                return;
+            }
+
+            Item one = item.getOne();
+            Item leftover = Game1.player.addItemToInventory(one);
+
+            if (leftover == null || leftover.Stack <= 0)
+            {
+                item.Stack--;
+                if (item.Stack <= 0)
+                    chestInv[slotIndex] = null;
+                Game1.playSound("stoneStep");
+                if (ModEntry.Config.VerboseLogging)
+                    Monitor.Log($"[ChestTransfer] Took 1x {one.DisplayName} from chest ({item?.Stack ?? 0} remain)", LogLevel.Debug);
+            }
+            else
+            {
+                Game1.playSound("cancel");
+                if (ModEntry.Config.VerboseLogging)
+                    Monitor.Log($"[ChestTransfer] Inventory full, cannot take 1x {one.DisplayName}", LogLevel.Debug);
+            }
+        }
+
+        /// <summary>Transfer full stack from player inventory to chest.</summary>
+        private static void TransferToChest(ItemGrabMenu menu, int slotIndex)
+        {
+            var chestInv = menu.ItemsToGrabMenu?.actualInventory;
+            if (chestInv == null) return;
+
+            if (slotIndex >= Game1.player.Items.Count) return;
+            Item item = Game1.player.Items[slotIndex];
+            if (item == null)
+            {
+                Game1.playSound("cancel");
+                return;
+            }
+
+            int stackBefore = item.Stack;
+
+            // Try stacking onto existing chest items first
+            for (int i = 0; i < chestInv.Count && item.Stack > 0; i++)
+            {
+                if (chestInv[i] != null && chestInv[i].canStackWith(item))
+                {
+                    int space = chestInv[i].maximumStackSize() - chestInv[i].Stack;
+                    if (space > 0)
+                    {
+                        int toMove = Math.Min(space, item.Stack);
+                        chestInv[i].Stack += toMove;
+                        item.Stack -= toMove;
+                    }
+                }
+            }
+
+            // Then try an empty slot for the remainder
+            if (item.Stack > 0)
+            {
+                for (int i = 0; i < chestInv.Count; i++)
+                {
+                    if (chestInv[i] == null)
+                    {
+                        chestInv[i] = item;
+                        item = null;
+                        break;
+                    }
+                }
+            }
+
+            if (item == null || item.Stack <= 0)
+            {
+                Game1.player.Items[slotIndex] = null;
+                Game1.playSound("stoneStep");
+                if (ModEntry.Config.VerboseLogging)
+                    Monitor.Log($"[ChestTransfer] Put {stackBefore}x into chest from player", LogLevel.Debug);
+            }
+            else if (item.Stack < stackBefore)
+            {
+                // Partial — some stacked but chest has no empty slots for remainder
+                Game1.playSound("stoneStep");
+                if (ModEntry.Config.VerboseLogging)
+                    Monitor.Log($"[ChestTransfer] Partial: put {stackBefore - item.Stack}x into chest, {item.Stack} remain in player", LogLevel.Debug);
+            }
+            else
+            {
+                Game1.playSound("cancel");
+                if (ModEntry.Config.VerboseLogging)
+                    Monitor.Log("[ChestTransfer] Chest full, cannot place item", LogLevel.Debug);
+            }
+        }
+
+        /// <summary>Transfer one item from player inventory to chest.</summary>
+        private static void TransferOneToChest(ItemGrabMenu menu, int slotIndex)
+        {
+            var chestInv = menu.ItemsToGrabMenu?.actualInventory;
+            if (chestInv == null) return;
+
+            if (slotIndex >= Game1.player.Items.Count) return;
+            Item item = Game1.player.Items[slotIndex];
+            if (item == null)
+            {
+                Game1.playSound("cancel");
+                return;
+            }
+
+            Item one = item.getOne();
+            bool placed = false;
+
+            // Try stacking first
+            for (int i = 0; i < chestInv.Count; i++)
+            {
+                if (chestInv[i] != null && chestInv[i].canStackWith(one) &&
+                    chestInv[i].Stack < chestInv[i].maximumStackSize())
+                {
+                    chestInv[i].Stack++;
+                    placed = true;
+                    break;
+                }
+            }
+
+            // Then try empty slot
+            if (!placed)
+            {
+                for (int i = 0; i < chestInv.Count; i++)
+                {
+                    if (chestInv[i] == null)
+                    {
+                        chestInv[i] = one;
+                        placed = true;
+                        break;
+                    }
+                }
+            }
+
+            if (placed)
+            {
+                item.Stack--;
+                if (item.Stack <= 0)
+                    Game1.player.Items[slotIndex] = null;
+                Game1.playSound("stoneStep");
+                if (ModEntry.Config.VerboseLogging)
+                    Monitor.Log($"[ChestTransfer] Put 1x {one.DisplayName} into chest ({item?.Stack ?? 0} remain in player)", LogLevel.Debug);
+            }
+            else
+            {
+                Game1.playSound("cancel");
+                if (ModEntry.Config.VerboseLogging)
+                    Monitor.Log("[ChestTransfer] Chest full, cannot place 1 item", LogLevel.Debug);
             }
         }
     }

@@ -953,6 +953,14 @@ namespace AndroidConsolizer
 
             configMenu.AddBoolOption(
                 mod: this.ModManifest,
+                name: () => "Enable Chest Transfer (A/Y)",
+                tooltip: () => "A button instantly transfers full stack between chest and inventory. Y button transfers one item. (Console-style behavior)",
+                getValue: () => Config.EnableChestTransferFix,
+                setValue: value => Config.EnableChestTransferFix = value
+            );
+
+            configMenu.AddBoolOption(
+                mod: this.ModManifest,
                 name: () => "Enable Shipping Bin Fix",
                 tooltip: () => "A button ships items, Y button ships one item (console-style controls)",
                 getValue: () => Config.EnableShippingBinFix,
