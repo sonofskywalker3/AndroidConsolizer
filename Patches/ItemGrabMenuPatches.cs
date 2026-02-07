@@ -457,6 +457,17 @@ namespace AndroidConsolizer.Patches
                         if (colorField != null)
                         {
                             int savedColor = (int)colorField.GetValue(picker);
+
+                            // Save chest color — receiveLeftClick changes the chest's
+                            // actual color as a side effect, not just colorSelection
+                            Color savedChestColor = default;
+                            bool hadChestColor = false;
+                            if (menu.context is StardewValley.Objects.Chest probeChest)
+                            {
+                                savedChestColor = probeChest.playerChoiceColor.Value;
+                                hadChestColor = true;
+                            }
+
                             int pX = picker.xPositionOnScreen;
                             int pY = picker.yPositionOnScreen;
                             int probeY = pY + 50; // safely in row 0
@@ -485,6 +496,10 @@ namespace AndroidConsolizer.Patches
                             }
 
                             colorField.SetValue(picker, savedColor);
+
+                            // Restore chest color after probing
+                            if (hadChestColor && menu.context is StardewValley.Objects.Chest restoreChest)
+                                restoreChest.playerChoiceColor.Value = savedChestColor;
 
                             if (colMid01 > 0 && colMid12 > 0 && rowMid01 > 0 && rowMid12 > 0)
                             {
