@@ -2,7 +2,7 @@
 
 A SMAPI mod that brings console-style controller support to Android Stardew Valley. Play with a controller like you would on Nintendo Switch - 12-slot toolbar rows, proper shop purchasing, chest management, and more.
 
-## Current Version: 2.9.0
+## Current Version: 3.0.0
 
 ## Features
 
@@ -39,11 +39,17 @@ When "Use Bumpers Instead of Triggers" is enabled:
 - Supports trade-item shops (Desert Trader), tool upgrades, recipes, and all special purchases
 - Respects available stock, player money, and trade item requirements
 
-### Inventory & Chest Fixes
-- **X button (Inventory)**: Sort your inventory
-- **X button (Chest)**: Sort chest contents
-- **Y button (Chest)**: Add matching items to existing stacks
+### Chest Controls (Console-Style)
+- **A button**: Instantly transfer full stack between chest and inventory (no selection step)
+- **Y button**: Transfer one item (hold Y for rapid single-item transfer)
+- **X button**: Sort chest contents
+- **RB**: Snap cursor to Fill Stacks button
+- **Sidebar buttons**: Sort Chest, Fill Stacks, Color Toggle, Sort Inventory, Trash, Close X — all reachable via controller navigation
+- **Color picker**: Full 7x3 swatch grid navigation when picker is open. B closes picker only (not the chest)
 - **X button deletion bug fixed**: The vanilla Android bug where X deletes items is completely blocked
+
+### Inventory Fixes
+- **X button**: Sort your inventory
 
 ### Shipping Bin Fix (Console-Style)
 - **A button**: Ship entire stack from selected inventory slot
@@ -86,8 +92,10 @@ When "Use Bumpers Instead of Triggers" is enabled:
 | **Shop (sell)** | A | Sell entire stack |
 | **Shop (sell)** | Y | Sell one item (hold for rapid sell) |
 | **Inventory** | X | Sort inventory |
+| **Chest** | A | Transfer full stack (chest↔inventory) |
+| **Chest** | Y | Transfer one item (hold for rapid transfer) |
 | **Chest** | X | Sort chest contents |
-| **Chest** | Y | Add to existing stacks |
+| **Chest** | RB | Snap to Fill Stacks button |
 | **Inventory** | A | Pick up / place / swap item |
 | **Inventory** | Y | Pick up single from stack (hold for continuous) |
 | **Shipping Bin** | A | Ship entire stack |
@@ -143,6 +151,8 @@ Edit `config.json` or use Generic Mod Config Menu in-game:
   "UseBumpersInsteadOfTriggers": false,
   "EnableSortFix": true,
   "EnableAddToStacksFix": true,
+  "EnableChestNavFix": true,
+  "EnableChestTransferFix": true,
   "EnableShippingBinFix": true,
   "EnableFishingRodBaitFix": true,
   "EnableConsoleInventoryFix": true,
@@ -159,7 +169,9 @@ Edit `config.json` or use Generic Mod Config Menu in-game:
 | `EnableToolbarNavFix` | Console-style toolbar with LB/RB/LT/RT |
 | `UseBumpersInsteadOfTriggers` | Use LB/RB instead of LT/RT (for Xbox Bluetooth controllers) |
 | `EnableSortFix` | X button sorts inventory/chests |
-| `EnableAddToStacksFix` | Y button adds to stacks in chests |
+| `EnableAddToStacksFix` | Y button adds to stacks in chests (fallback when not on grid slot) |
+| `EnableChestNavFix` | Sidebar buttons (sort, fill stacks, color picker, trash, close) reachable via controller |
+| `EnableChestTransferFix` | Console-style A/Y transfer + RB snap to Fill Stacks |
 | `EnableShippingBinFix` | A button stacks items in shipping bin |
 | `EnableFishingRodBaitFix` | Y button attaches/detaches bait and tackle from fishing rods |
 | `EnableConsoleInventoryFix` | Console-style A button pick up/place/swap in inventory |
@@ -212,8 +224,6 @@ Output: `bin/Release/net6.0/AndroidConsolizer X.X.X.zip`
 - Furniture pickup/placement rapid-toggles with Y button (missing debounce)
 - Equipment slots not accessible via A button in inventory
 - Community Center bundle navigation and cursor issues
-- Trash can and sort button unreachable in chest/ItemGrabMenu contexts
-- Chest color picker unreachable with controller
 - Social tab cursor doesn't visually follow when switching tabs with LB/RB
 - Held items can be orphaned if touch input interrupts controller selection
 - Geode breaking menu works but has no visual feedback with controller
@@ -222,15 +232,14 @@ Output: `bin/Release/net6.0/AndroidConsolizer X.X.X.zip`
 
 ## TODO / Roadmap
 
-- Console-style chest item transfer (direct A/Y transfer without selection step)
 - Right joystick free cursor mode for menus and gameplay
 - Zoom control slider in options menu
 - Intentional item drop with controller (L3 while holding item)
 - Museum donation menu controller support
 - Settings menu snap navigation
-- Disable touchscreen option (GMCM toggle)
-- Lock inventory slots
-- Save inventory layout profiles
+- Cutscene skip visual fix (skip button renders behind dialogue)
+- Furniture placement debounce
+- Equipment slot A-button fix
 - Expanded controller testing (8BitDo, DualSense, etc.)
 
 ## Why "Consolizer"?
@@ -248,6 +257,22 @@ Android Stardew Valley has broken controller support that makes it nearly unplay
 MIT License - Feel free to modify and redistribute.
 
 ## Changelog
+
+### 3.0.0
+- **Console-Style Chest Item Transfer** - Chests now work like Nintendo Switch
+  - **A button** instantly transfers full stack between chest and inventory (no selection step)
+  - **Y button** transfers one item (hold Y for rapid single-item transfer)
+  - **RB** snaps cursor to Fill Stacks button
+  - Works bidirectionally for all chest types (regular chests, fishing treasure, fridge, etc.)
+- **Chest Sidebar Navigation** - All sidebar buttons reachable via controller
+  - Sort Chest, Fill Stacks, Color Toggle, Sort Inventory, Trash, Close X
+  - Close X properly closes chest without reopening (A suppress-until-release)
+- **Color Picker Swatch Navigation** - Full 7x3 grid navigation
+  - Cursor snaps to first swatch on open, A selects color
+  - B closes picker only (not the chest) via exitThisMenu same-tick guard
+  - Visual stride detection probes picker at runtime for correct cursor positioning
+  - Color preserved after probe (click at saved position to restore)
+- New config toggles: `EnableChestNavFix`, `EnableChestTransferFix`
 
 ### 2.9.0
 - **Shop Controls Overhaul** - Major improvements to shop controller experience

@@ -2,6 +2,21 @@
 
 All notable changes to Android Consolizer will be documented in this file.
 
+## [3.0.0] - 2026-02-07
+
+### Added
+- **Console-style chest item transfer** — A button instantly transfers full stack between chest and inventory. Y button transfers one item. Hold Y for rapid single-item transfer. No selection step needed.
+- **RB snaps to Fill Stacks** — Right bumper snaps cursor to the Fill Stacks sidebar button in chests
+- **Chest sidebar navigation** — Sort Chest, Fill Stacks, Color Toggle, Sort Inventory, Trash, and Close X buttons all reachable via controller snap navigation
+- **Color picker swatch navigation** — Full 7x3 grid with correct neighbors. A selects color. B closes picker only (not the chest). Runtime stride detection for correct cursor positioning. Color preserved after probe.
+- **Close X button** — Properly closes chest via simulated B press with A suppress-until-release (no reopen)
+- **exitThisMenu same-tick guard** — Prevents B from closing both the color picker AND the chest in the same frame
+- New config toggles: `EnableChestNavFix`, `EnableChestTransferFix`
+
+### Changed
+- Sort Chest button up-neighbor now goes to Close X (more natural sidebar flow)
+- Y button on chest grid slots now transfers one item instead of triggering global add-to-stacks (add-to-stacks still available via Fill Stacks sidebar button or RB shortcut)
+
 ## [2.1.0] - 2026-02-01
 
 ### Changed

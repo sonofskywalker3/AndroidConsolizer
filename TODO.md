@@ -141,6 +141,13 @@ These need to be re-implemented **one at a time, one per 0.0.1 patch, each commi
   - Item should attach to the cursor (not red selection box) for visual consistency with console behavior.
 - **Scope:** Applies to all `ItemGrabMenu` instances — regular chests, fishing treasure chests, fridge, etc. Must work bidirectionally (chest->inventory AND inventory->chest).
 - **Implementation:** Patch `ItemGrabMenu` to intercept A/Y on both chest and inventory items and call the appropriate transfer method instead of the default select behavior. Use cursor-attached visual rather than red outline.
+- **DONE in v2.9.31.** A/Y intercept in `ReceiveGamePadButton_Prefix` after side-button handler. Four transfer methods handle full-stack and single-item in both directions. Config toggle: `EnableChestTransferFix`.
+
+### 7b. RB Snaps to Fill Stacks Button in Chest
+- **Console behavior:** Right bumper is a shortcut to snap the cursor to the "Add to Stacks" (Fill Stacks) sidebar button.
+- **Why needed:** v2.9.31 repurposed Y on grid slots for single-item transfer, making the previous Y=add-to-stacks shortcut effectively unreachable (cursor is almost always on a grid slot). RB restores quick access to fill stacks.
+- **Implementation:** In `ReceiveGamePadButton_Prefix`, intercept RB when `EnableChestTransferFix` is enabled. Snap cursor to `__instance.fillStacksButton` via `currentlySnappedComponent` + `snapCursorToCurrentSnappedComponent()`. Skip when color picker is open.
+- **File:** `Patches/ItemGrabMenuPatches.cs`
 
 ### 8. Equipment Slot Placement Bug
 - Can navigate to equipment slots but A button does nothing
@@ -213,6 +220,11 @@ These need to be re-implemented **one at a time, one per 0.0.1 patch, each commi
 - **Close X reopen fix (v2.9.28):** Replaced 120-tick hack with suppress-A-until-release at GetState level. Clean, no timing window.
 - **Color preservation (v2.9.30):** Probe changes chest color as side effect. Fixed by clicking at saved color's grid position after probe. `menu.context` is NOT a Chest on Android.
 - **File:** `Patches/ItemGrabMenuPatches.cs`, `Patches/GameplayButtonPatches.cs`
+
+### 13c. Color Picker Cursor Position Slightly Off
+- **Minimal priority — cosmetic annoyance only.** Functionality is correct (A selects the right color), but the visible cursor doesn't align perfectly with the swatch grid during navigation.
+- Likely caused by the gap between the relocated component bounds (used for snap positioning) and the actual rendered swatch visuals. The probed stride values may not perfectly match the picker's internal rendering offsets.
+- **Not blocking anything.** Swatches select correctly, navigation works, colors apply. Just visually imprecise.
 
 ### 14. Gift Log / Social Tab Cursor Fix
 - Cursor doesn't follow when switching tabs with LB/RB
