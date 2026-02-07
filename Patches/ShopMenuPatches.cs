@@ -721,8 +721,8 @@ namespace AndroidConsolizer.Patches
 
                 // Draw controller button icon on the inventoryButton (tab-switch hint)
                 // Design values from preview_button_icon.html:
-                //   radius=18, thickness=3, yOffset=+3, xFromRight=40, font=bold
-                // TODO: Add X (Xbox) and Square (PlayStation) variants based on ControllerLayout
+                //   radius=18, thickness=3, yOffset=+5, xOffset=+2, xFromRight=40, font=bold
+                // Switch=Y, Xbox=X, PlayStation=Square (filled)
                 if (GamePad.GetState(PlayerIndex.One).IsConnected && InventoryButtonField != null)
                 {
                     var invButton = InventoryButtonField.GetValue(__instance) as ClickableComponent;
@@ -730,7 +730,6 @@ namespace AndroidConsolizer.Patches
                     {
                         const int iconRadius = 18;
                         const int iconThickness = 3;
-                        const int iconYOffset = 3;   // nudge letter down to look visually centered
                         const int iconXFromRight = 40;
 
                         int cx = invButton.bounds.Right - iconXFromRight;
@@ -738,13 +737,31 @@ namespace AndroidConsolizer.Patches
 
                         DrawCircleOutline(b, cx, cy, iconRadius, Game1.textColor, iconThickness);
 
-                        // Faux-bold: draw text at multiple 1px offsets for thicker appearance
-                        Vector2 ySize = Game1.smallFont.MeasureString("Y");
-                        float tx = cx - ySize.X / 2;
-                        float ty = cy - ySize.Y / 2 + iconYOffset;
-                        Utility.drawTextWithShadow(b, "Y", Game1.smallFont, new Vector2(tx, ty), Game1.textColor);
-                        Utility.drawTextWithShadow(b, "Y", Game1.smallFont, new Vector2(tx + 1, ty), Game1.textColor);
-                        Utility.drawTextWithShadow(b, "Y", Game1.smallFont, new Vector2(tx, ty + 1), Game1.textColor);
+                        var layout = ModEntry.Config?.ControllerLayout ?? ControllerLayout.Switch;
+                        if (layout == ControllerLayout.PlayStation)
+                        {
+                            // Filled square centered in the circle
+                            int sqSize = iconRadius; // half the diameter looks proportional
+                            int sqX = cx - sqSize / 2 + 1;
+                            int sqY = cy - sqSize / 2 + 1;
+                            b.Draw(Game1.staminaRect, new Rectangle(sqX, sqY, sqSize, sqSize), Game1.textColor);
+                        }
+                        else
+                        {
+                            // Letter icon: Y for Switch, X for Xbox
+                            string letter = layout == ControllerLayout.Xbox ? "X" : "Y";
+                            const int iconYOffset = 5;  // nudge down — game font has more ascender than descender
+                            const int iconXOffset = 2;  // nudge right — shadow shifts perceived center left
+
+                            Vector2 letterSize = Game1.smallFont.MeasureString(letter);
+                            float tx = cx - letterSize.X / 2 + iconXOffset;
+                            float ty = cy - letterSize.Y / 2 + iconYOffset;
+
+                            // Faux-bold: draw at multiple 1px offsets for thicker appearance
+                            Utility.drawTextWithShadow(b, letter, Game1.smallFont, new Vector2(tx, ty), Game1.textColor);
+                            Utility.drawTextWithShadow(b, letter, Game1.smallFont, new Vector2(tx + 1, ty), Game1.textColor);
+                            Utility.drawTextWithShadow(b, letter, Game1.smallFont, new Vector2(tx, ty + 1), Game1.textColor);
+                        }
                     }
                 }
 
