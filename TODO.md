@@ -164,7 +164,7 @@ These need to be re-implemented **one at a time, one per 0.0.1 patch, each commi
 
 ### 10. Trash Can / Sort Unreachable in Item Grab Menus — FIXED in v2.9.8
 - **Fixed:** Sidebar buttons (Sort Chest, Fill Stacks, Color Toggle, Sort Inventory, Trash, Close X) are now reachable via snap navigation.
-- Close X required special handling — A simulates B press + tick-based reopen suppression (v2.9.13).
+- Close X: A simulates B press + suppress-A-until-release at GetState level (v2.9.28). Replaces the old 120-tick reopen hack.
 - See `CHESTNAV_SPEC.md` for the full navigation wiring spec.
 
 ### 11. Touch Interrupt Returns Held Item + Intentional Item Drop
@@ -194,54 +194,25 @@ These need to be re-implemented **one at a time, one per 0.0.1 patch, each commi
   - Must subclass `OptionsSlider` with own value management since game's zoom handling may not be wired on Android
   - Note: GMCM's "Mod Options" button is partially cut off (1px visible) at bottom of Options page - scroll bounds don't account for injected elements. Our slider injection may need to fix scroll bounds too.
 
-### 13. Chest Sidebar Navigation — MOSTLY FIXED in v2.9.8-v2.9.13
+### 13. Chest Sidebar Navigation — FIXED in v2.9.8-v2.9.30
 - Sidebar buttons all navigable and functional: Sort Chest, Fill Stacks, Sort Inventory, Trash, Close X
 - Color toggle button opens/closes the DiscreteColorPicker via direct `.visible` toggle + "drumkit6" sound (v2.9.12)
 - `receiveLeftClick` does NOT work for the color toggle on Android — must toggle `.visible` directly
-- **REMAINING: Color picker swatch navigation (see #13b)**
+- Color picker swatch navigation: DONE (see #13b)
 
-### 13b. Color Picker Swatch Navigation — NEEDS IMPLEMENTATION
-- **Status:** The color toggle button WORKS (opens/closes the picker). But once the picker is open, there is no proper controller navigation of the color swatches. This is the last remaining piece of the chest navigation overhaul.
-- **Current broken behavior (v2.9.13):**
-  - `setCurrentlySnappedComponentTo()` does NOT move the cursor to the first swatch
-  - Pressing LEFT from the picker goes back to inventory slots
-  - Pressing RIGHT snaps to the first swatch then continues off-screen
-  - v2.9.13 wired swatches as a single row of 21 — but they're actually a **7-column x 3-row grid**
-  - Inventory slot navigation is NOT blocked while the picker is open, so the cursor wanders through inventory slots that overlap with the picker area
-- **What needs to happen:**
-  1. **Block inventory slot navigation** while the color picker is open — the cursor must stay within the swatch grid
-  2. **Snap cursor to swatch 1** when the picker first opens
-  3. **Wire swatches as a 7x3 grid** with correct left/right/up/down neighbors
-  4. **B button closes the picker** — not pressing the color toggle button again
-  5. **Color toggle button should NOT be navigable** while the picker is open
-  6. **A button on a swatch** should select that color (call `receiveLeftClick` at swatch center)
-- **Swatch details from v2.9.6 diagnostic dump:**
-  - 21 DiscreteColorPicker components, IDs 4343-4363
-  - All in `allClickableComponents` (even when picker is invisible)
-  - All at Y:106, each 80x72, spanning X:48 to X:1728
-  - DiscreteColorPicker bounds: (28, 86, 1214, 282)
-  - Grid is 7 columns x 3 rows (confirmed by user)
-  - Swatches are sorted by X position in allClickableComponents
-- **Implementation approach:**
-  - When color toggle is pressed and picker OPENS:
-    - Collect swatches from `allClickableComponents` (IDs 4343-4363), sort by X
-    - Arrange into 7x3 grid (first 7 = row 0, next 7 = row 1, last 7 = row 2)
-    - Wire left↔right within each row, up↔down between rows
-    - First swatch of row 0: leftNeighborID = last swatch of row 0 (or -1)
-    - Last swatch of row: rightNeighborID = first swatch of row (or -1)
-    - Row 0 UP = -1 (no escape up), Row 2 DOWN = -1 (no escape down)
-    - Add all swatches to `_sideButtonObjects`
-    - Snap cursor to first swatch
-    - Block navigation to inventory/sidebar while picker is open (must intercept D-pad/stick in prefix and only allow movement within swatch grid)
-  - When B is pressed while picker is open:
-    - Close the picker (`chestColorPicker.visible = false`)
-    - Remove swatches from `_sideButtonObjects`
-    - Restore color toggle neighbors
-    - Snap cursor back to color toggle button
-  - The B handler must be in `ReceiveGamePadButton_Prefix` — intercept B when picker is open BEFORE the original method (which would close the entire chest menu)
-- **Key pitfall from v2.9.13:** `setCurrentlySnappedComponentTo(id)` did NOT move the cursor. May need to use `snapToDefaultClickableComponent()` after setting `currentlySnappedComponent` directly, or call `snapCursorToCurrentSnappedComponent()` after setting it.
-- **File:** `Patches/ItemGrabMenuPatches.cs`
-- **Reference files:** `CHESTNAV_SPEC.md`, this TODO entry
+### 13b. Color Picker Swatch Navigation — FIXED in v2.9.14-v2.9.30
+- **All requirements implemented:**
+  1. Inventory/sidebar navigation blocked while picker is open (all D-pad/stick intercepted in prefix)
+  2. Cursor snaps to first swatch on picker open
+  3. Swatches wired as 7x3 grid with correct neighbors, edge neighbors = -1 (no escape)
+  4. B closes picker only (not the chest) — exitThisMenu patch blocks same-frame close
+  5. Color toggle not navigable while picker open (neighbors set to -1)
+  6. A on swatch selects color via `receiveLeftClick` at bounds.Center
+- **Visual stride detection (v2.9.20-v2.9.25):** Probes picker's nearest-color hit-test at runtime to find exact visual stride (104x80 on test device). Relocates swatch bounds to visual grid positions so `snapCursorToCurrentSnappedComponent()` positions cursor correctly.
+- **B-closes-whole-chest fix (v2.9.29):** Game's update loop has separate B-close path using pre-cached gamepad state. GetState suppression can't help. Fix: `exitThisMenu` prefix with same-tick guard.
+- **Close X reopen fix (v2.9.28):** Replaced 120-tick hack with suppress-A-until-release at GetState level. Clean, no timing window.
+- **Color preservation (v2.9.30):** Probe changes chest color as side effect. Fixed by clicking at saved color's grid position after probe. `menu.context` is NOT a Chest on Android.
+- **File:** `Patches/ItemGrabMenuPatches.cs`, `Patches/GameplayButtonPatches.cs`
 
 ### 14. Gift Log / Social Tab Cursor Fix
 - Cursor doesn't follow when switching tabs with LB/RB
