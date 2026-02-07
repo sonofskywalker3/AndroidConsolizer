@@ -47,10 +47,6 @@ namespace AndroidConsolizer.Patches
         private static int _probedCenterX0 = -1;
         private static int _probedCenterY0 = -1;
 
-        /// <summary>Game tick when Close X was pressed. FixSnapNavigation checks this
-        /// to auto-close a chest that reopened because A also fires "interact."</summary>
-        private static int _closeXPressedTick = -100;
-
         // Unique IDs assigned to buttons with duplicate or sentinel myIDs
         private const int ID_SORT_CHEST = 54106;    // was 106
         private const int ID_SORT_INV = 54206;       // was 106
@@ -97,20 +93,6 @@ namespace AndroidConsolizer.Patches
                 // Skip shipping bins — they have their own handler
                 if (menu.shippingBin)
                     return;
-
-                // Auto-close if this chest reopened because A triggered overworld
-                // interact after Close X closed it. A is still physically pressed
-                // so the game fires "interact with chest" — we catch it here and
-                // immediately close again. 120 ticks (~2s) covers Android input
-                // latency — 20 ticks was too small and the reopen slipped through.
-                if (Game1.ticks - _closeXPressedTick < 120)
-                {
-                    _closeXPressedTick = -100;
-                    if (ModEntry.Config.VerboseLogging)
-                        Monitor.Log("[ChestNav] Suppressing chest reopen after Close X", LogLevel.Debug);
-                    menu.exitThisMenu(true);
-                    return;
-                }
 
                 _sideButtonObjects.Clear();
                 _colorPickerOpen = false;
@@ -720,16 +702,15 @@ namespace AndroidConsolizer.Patches
                     var snapped = __instance.currentlySnappedComponent;
                     if (snapped != null && _sideButtonObjects.Contains(snapped))
                     {
-                        // --- Close X: simulate B press instead of receiveLeftClick ---
-                        // receiveLeftClick at the X button closes the menu, but A also
-                        // fires as "interact" in the overworld, immediately reopening
-                        // the chest. Sending B through the original handler closes the
-                        // menu via the normal path, and B doesn't trigger interact.
+                        // --- Close X: simulate B press to close the chest ---
+                        // Suppress A at GetState level until released so the overworld
+                        // never sees A and can't reopen the chest via "interact."
                         if (snapped == _closeXButton)
                         {
                             if (ModEntry.Config.VerboseLogging)
-                                Monitor.Log("[ChestNav] A on Close X — closing via B + reopen suppression", LogLevel.Debug);
-                            _closeXPressedTick = Game1.ticks;
+                                Monitor.Log("[ChestNav] A on Close X — closing via B + A suppress-until-release", LogLevel.Debug);
+                            GameplayButtonPatches.SuppressAUntilRelease = true;
+                            GameplayButtonPatches.InvalidateCache();
                             _bypassPrefix = true;
                             __instance.receiveGamePadButton(Buttons.B);
                             return false;
