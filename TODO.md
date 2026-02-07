@@ -210,6 +210,23 @@ These need to be re-implemented **one at a time, one per 0.0.1 patch, each commi
 - Precedent: ShippingBinPatches.cs already does this exact pattern
 - **Bundle with #10** — both require ItemGrabMenu snap navigation overhaul
 
+### 13b. Color Toggle A-Button Does Not Open Color Picker
+- **Status:** Navigation TO the color toggle button works (v2.9.7+). Pressing A does NOT open the color picker.
+- **What happens:** The A-button handler in `ReceiveGamePadButton_Prefix` correctly intercepts the press, identifies the snapped component as the color toggle (ID 27346), and calls `__instance.receiveLeftClick(1374, 337)` at the button's center coordinates. The click fires (confirmed in logs) but the DiscreteColorPicker does not open.
+- **Log evidence (v2.9.7):**
+  ```
+  [ChestNav] A on side button 27346 — click at (1374,337)
+  ```
+  This fired twice — no color picker either time.
+- **Button bounds:** X:1342 Y:305 Width:64 Height:64. Click coords (1374, 337) are the exact center.
+- **Possible root causes:**
+  1. `ItemGrabMenu.receiveLeftClick()` may not handle the color toggle button — the toggle might be handled in a different method (e.g., `receiveRightClick`, a specific gamepad handler, or a base class method)
+  2. The game might check a different field/flag (e.g., `chestColorPicker.visible`) that isn't toggled by `receiveLeftClick`
+  3. The color toggle might need its click routed through a different code path than `receiveLeftClick` on Android
+- **Investigation needed:** Decompile `ItemGrabMenu.receiveLeftClick()` to see if it checks `colorPickerToggleButton.containsPoint(x, y)`. If not, find where the toggle is handled. Also check if the original `receiveGamePadButton` had special color-toggle handling that we're blocking by returning false.
+- **Workaround:** None currently. Color picker is completely inaccessible via controller.
+- **File:** `Patches/ItemGrabMenuPatches.cs` — the A-button handler in `ReceiveGamePadButton_Prefix`
+
 ### 14. Gift Log / Social Tab Cursor Fix
 - Cursor doesn't follow when switching tabs with LB/RB
 - **Confirmed persists on Logitech G Cloud** (Feb 4 test). No longer conflicting — issue is real and reproducible across devices.
