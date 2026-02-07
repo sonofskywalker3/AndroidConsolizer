@@ -18,10 +18,11 @@ namespace AndroidConsolizer.Patches
         /// Stored by reference because some buttons share duplicate myID values.</summary>
         private static HashSet<ClickableComponent> _sideButtonObjects = new HashSet<ClickableComponent>();
 
-        // Unique IDs assigned to buttons that have duplicate myIDs
+        // Unique IDs assigned to buttons with duplicate or sentinel myIDs
         private const int ID_SORT_CHEST = 54106;    // was 106
         private const int ID_SORT_INV = 54206;       // was 106
         private const int ID_TRASH_PLAYER = 54105;   // was 105
+        private const int ID_CLOSE_X = 54500;        // was -500 (sentinel, not resolvable by getComponentWithID)
 
         /// <summary>Apply Harmony patches.</summary>
         public static void Apply(Harmony harmony, IMonitor monitor)
@@ -108,9 +109,10 @@ namespace AndroidConsolizer.Patches
                 if (sortChest != null) sortChest.myID = ID_SORT_CHEST;
                 if (sortInv != null) sortInv.myID = ID_SORT_INV;
                 if (trashPlayer != null) trashPlayer.myID = ID_TRASH_PLAYER;
+                if (closeX != null) closeX.myID = ID_CLOSE_X;
 
                 if (verbose)
-                    Monitor.Log($"[ChestNav] Reassigned IDs: sortChest={ID_SORT_CHEST}, sortInv={ID_SORT_INV}, trashPlayer={ID_TRASH_PLAYER}", LogLevel.Debug);
+                    Monitor.Log($"[ChestNav] Reassigned IDs: sortChest={ID_SORT_CHEST}, sortInv={ID_SORT_INV}, trashPlayer={ID_TRASH_PLAYER}, closeX={ID_CLOSE_X}", LogLevel.Debug);
 
                 // =====================================================
                 // Step 2b: Register buttons in allClickableComponents
