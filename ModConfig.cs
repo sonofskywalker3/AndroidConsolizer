@@ -63,6 +63,9 @@ namespace AndroidConsolizer
         /// <summary>Whether to enable chest navigation fix (trash can, sort button, color picker reachable via controller).</summary>
         public bool EnableChestNavFix { get; set; } = true;
 
+        /// <summary>Whether to enable console-style chest item transfer (A=transfer full stack, Y=transfer one).</summary>
+        public bool EnableChestTransferFix { get; set; } = true;
+
         /// <summary>Whether to enable shipping bin stacking fix (A button adds to existing stacks).</summary>
         public bool EnableShippingBinFix { get; set; } = true;
 
