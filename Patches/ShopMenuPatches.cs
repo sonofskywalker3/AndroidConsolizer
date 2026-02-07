@@ -740,18 +740,25 @@ namespace AndroidConsolizer.Patches
                         var layout = ModEntry.Config?.ControllerLayout ?? ControllerLayout.Switch;
                         if (layout == ControllerLayout.PlayStation)
                         {
-                            // Filled square centered in the circle
+                            // Outlined square centered in the circle, thickness matches circle
                             int sqSize = iconRadius; // half the diameter looks proportional
-                            int sqX = cx - sqSize / 2 + 1;
-                            int sqY = cy - sqSize / 2 + 1;
-                            b.Draw(Game1.staminaRect, new Rectangle(sqX, sqY, sqSize, sqSize), Game1.textColor);
+                            int sqX = cx - sqSize / 2 + 2; // +1 right from previous +1
+                            int sqY = cy - sqSize / 2 + 2; // +1 down from previous +1
+                            // Top edge
+                            b.Draw(Game1.staminaRect, new Rectangle(sqX, sqY, sqSize, iconThickness), Game1.textColor);
+                            // Bottom edge
+                            b.Draw(Game1.staminaRect, new Rectangle(sqX, sqY + sqSize - iconThickness, sqSize, iconThickness), Game1.textColor);
+                            // Left edge
+                            b.Draw(Game1.staminaRect, new Rectangle(sqX, sqY, iconThickness, sqSize), Game1.textColor);
+                            // Right edge
+                            b.Draw(Game1.staminaRect, new Rectangle(sqX + sqSize - iconThickness, sqY, iconThickness, sqSize), Game1.textColor);
                         }
                         else
                         {
                             // Letter icon: Y for Switch, X for Xbox
                             string letter = layout == ControllerLayout.Xbox ? "X" : "Y";
                             const int iconYOffset = 5;  // nudge down — game font has more ascender than descender
-                            const int iconXOffset = 2;  // nudge right — shadow shifts perceived center left
+                            const int iconXOffset = 3;  // nudge right — shadow shifts perceived center left
 
                             Vector2 letterSize = Game1.smallFont.MeasureString(letter);
                             float tx = cx - letterSize.X / 2 + iconXOffset;
