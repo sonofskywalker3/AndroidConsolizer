@@ -22,6 +22,11 @@ namespace AndroidConsolizer.Patches
         /// <summary>Raw right stick Y cached from GetState before suppression, for ShopMenuPatches navigation.</summary>
         internal static float RawRightStickY;
 
+        /// <summary>Cached swapped GamePadState to ensure all GetState() calls within the same tick return identical results.</summary>
+        private static GamePadState? _cachedState;
+        private static float _cachedRawRightStickY;
+        private static int _cachedTick = -1;
+
         /// <summary>Apply Harmony patches.</summary>
         public static void Apply(Harmony harmony, IMonitor monitor)
         {
@@ -98,6 +103,17 @@ namespace AndroidConsolizer.Patches
                 if (playerIndex != PlayerIndex.One)
                     return;
 
+                // Return cached state if we've already computed it this tick.
+                // This prevents intra-frame inconsistency when GetState() is called
+                // multiple times per frame, which caused tools to fire once before charging.
+                int currentTick = Game1.ticks;
+                if (_cachedState.HasValue && _cachedTick == currentTick)
+                {
+                    __result = _cachedState.Value;
+                    RawRightStickY = _cachedRawRightStickY;
+                    return;
+                }
+
                 // Cache raw right stick Y before any suppression, so ShopMenuPatches can use it
                 RawRightStickY = __result.ThumbSticks.Right.Y;
 
@@ -122,7 +138,12 @@ namespace AndroidConsolizer.Patches
 
                 // Nothing to do if no swapping needed
                 if (!swapXY && !swapAB)
+                {
+                    _cachedState = __result;
+                    _cachedRawRightStickY = RawRightStickY;
+                    _cachedTick = currentTick;
                     return;
+                }
 
                 // Get the original button states
                 bool originalA = __result.Buttons.A == ButtonState.Pressed;
@@ -138,7 +159,12 @@ namespace AndroidConsolizer.Patches
 
                 // Only reconstruct if something actually changed
                 if (finalA == originalA && finalB == originalB && finalX == originalX && finalY == originalY)
+                {
+                    _cachedState = __result;
+                    _cachedRawRightStickY = RawRightStickY;
+                    _cachedTick = currentTick;
                     return;
+                }
 
                 // Create new GamePadState with swapped buttons
                 var newButtons = new GamePadButtons(
@@ -161,6 +187,10 @@ namespace AndroidConsolizer.Patches
                     newButtons,
                     __result.DPad
                 );
+
+                _cachedState = __result;
+                _cachedRawRightStickY = RawRightStickY;
+                _cachedTick = currentTick;
             }
             catch
             {
