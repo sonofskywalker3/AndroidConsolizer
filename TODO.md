@@ -83,15 +83,16 @@ These need to be re-implemented **one at a time, one per 0.0.1 patch, each commi
 - On Android touchscreen, the skip button appears on screen and you tap it. With a controller, there's no way to activate the skip button.
 - **Log evidence (v2.7.2):** User entered Town at 21:22:44, cutscene triggered. Pressed ControllerStart 4 times (21:22:50-21:22:52) — no effect. Then tapped screen (MouseLeft x2 at 21:22:53-21:22:54) to skip. Cutscene ended at 21:22:55 ("Warping to Town").
 - **Mechanism:** Touchscreen skip uses `MouseLeft` (two taps — first shows skip button, second confirms). The cutscene is an `Event` object. The skip button is likely `Event.skippable` + a clickable component. On Android, `Event.receiveLeftClick` or similar handles the skip confirmation.
-- **Implementation approach:** When a skippable event is active and Start is pressed, simulate the skip button click. First press: call whatever shows the skip button. Second press within 3 seconds: call whatever confirms the skip. Need to find the exact method — likely `Event.skipEvent()` or `Event.receiveLeftClick()` at the skip button coordinates.
-- **Next step:** Decompile or inspect `Event` class to find the skip mechanism. Look for `skippable`, `skipEvent`, `skipped` fields/methods.
+- **Known issue (v2.8.2):** Current implementation shows "press Start again to skip" text, but it renders behind the dialogue text box and is not visible.
+- **Desired fix:** Remove the text prompt entirely. Instead, first Start press should show the same skip icon/button that the touchscreen tap shows (top-right corner of screen). Second Start press confirms the skip. This matches the touch UX — same visual, just triggered by Start instead of tap.
+- **Implementation approach:** When a skippable event is active and Start is pressed, show the vanilla skip button UI (same one touch uses, positioned top-right). Second press within 3 seconds confirms the skip. Need to find the exact method — likely `Event.skipEvent()` or `Event.receiveLeftClick()` at the skip button coordinates.
+- **Next step:** Decompile or inspect `Event` class to find the skip mechanism. Look for `skippable`, `skipEvent`, `skipped` fields/methods. Also find how the touch skip icon is shown/hidden to reuse it.
 
-### 5b. Shop Inventory Tab Broken with Controller — IMPLEMENTED in v2.8.9 (UNTESTED)
-- Touch tab button disabled (snap methods don't work on Android ShopMenu). Tab switching now handled entirely by controller button (Y/X/Square depending on layout).
-- Prefix injects `receiveGamePadButton(Buttons.Y)` with bypass flag, fixing tab switching for all layouts (previously failed on Xbox/PS because vanilla got raw Buttons.X).
-- Controller button icon drawn on shop UI showing which button switches tabs.
-- Touch-triggered `inventoryVisible` changes are reverted in `Update_Postfix`.
-- **NEEDS TESTING:** Verify (1) touch button is blocked, (2) controller button icon appears, (3) tab switching works on all layouts, (4) selling still works normally on sell tab.
+### 5b. Shop Inventory Tab Broken with Controller — DONE (v2.8.9-v2.8.17, shipped in v2.9.0)
+- Touch tab button blocked when controller connected (v2.8.12)
+- Controller button icon drawn on shop UI — Y/X/Square depending on layout, dims on sell tab (v2.8.13-v2.8.17)
+- Tab switching works via controller button for all layouts
+- Selling works normally on sell tab
 
 ### 5c. Buy Quantity Bleeds to Sell Tab — FIXED in v2.7.14
 - **Symptom:** When on the sell tab, bumpers and triggers still adjust the buy quantity (`quantityToBuy` field). If the touch sell quantity dialog is open, triggers move both the sell dialog slider AND the buy quantity simultaneously.
@@ -106,16 +107,12 @@ These need to be re-implemented **one at a time, one per 0.0.1 patch, each commi
 - Sell price: `Object.sellToStorePrice()` for Object items (accounts for quality/professions), `salePrice()/2` for non-Object items (rings, boots, weapons)
 - **File:** `Patches/ShopMenuPatches.cs`
 
-### 5e. Shop Buy List Right Stick Scrolling — Selection Desync
-- **Symptom:** Right thumbstick scrolls the VISIBLE VIEW of the shop buy list, but does NOT move the SELECTED ITEM. The cursor stays on the original item while the list scrolls underneath. This makes right stick scrolling useless — you end up looking at items you can't interact with, and the selected item scrolls off-screen.
-- **Log evidence (v2.7.19):** At Pierre's buy tab, user pressed RightThumbstick in all directions (14:01:34-14:01:41) — the view scrolled but selection didn't follow. User then resorted to spamming LeftThumbstickDown ~50 times (14:01:42-14:02:01) to navigate through Pierre's long item list one item at a time (SVE adds many items to Pierre's).
-- **Impact:** With SVE installed, Pierre's has a very long item list. The left stick navigates one item at a time through snap navigation, requiring dozens of presses to reach items at the bottom. Right stick scrolls the view but is useless because the selection doesn't follow.
-- **Options:**
-  1. **Disable right stick scrolling on buy tab** — simplest. Prevents the confusing desync. User navigates with left stick only (tedious but functional).
-  2. **Right stick scrolls by one page AND moves selection** — better UX. Right stick up/down scrolls by one page (however many items are visible at once, probably 4) and snaps selection to the first/last visible item. Needs debounce to prevent rapid-fire page scrolling.
-  3. **Right stick moves selection by page** — instead of scrolling the view, right stick up/down jumps the selection by N items (one page worth). The view follows the selection naturally through vanilla's snap navigation. Simplest to implement since it just simulates N down/up presses.
-- **Root cause:** The vanilla Android shop right stick handler scrolls `currentItemIndex` (the view offset) but doesn't update `currentlySnappedComponent` to match. On console, the right stick likely does both, or selection scrolling works differently.
-- **File:** `Patches/ShopMenuPatches.cs`
+### 5e. Shop Buy List Right Stick Scrolling — DONE (v2.8.18-v2.8.22, shipped in v2.9.0)
+- Vanilla right stick scroll blocked at GamePad.GetState level (`ShouldSuppressRightStick()` in ShopMenuPatches, zeroed in GameplayButtonPatches.GetState_Postfix)
+- Replaced with right stick jump-5-items navigation using simulated DPad presses (selection AND view move together)
+- Hold-to-repeat with 250ms delay, 100ms repeat rate
+- Raw right stick Y cached in `GameplayButtonPatches.RawRightStickY` for our navigation code
+- **File:** `Patches/ShopMenuPatches.cs`, `Patches/GameplayButtonPatches.cs`
 
 ---
 
@@ -313,7 +310,17 @@ These need to be re-implemented **one at a time, one per 0.0.1 patch, each commi
 
 ## Needs Investigation (May Be Engine-Level)
 
-### 25. Upgraded Tool Use While Moving
+### 25. Charging Tools Fire Once Before Charging (~50% of the time)
+- **Symptom:** Holding the tool button (Y on Switch layout) to charge an upgradeable tool (e.g., bronze watering can) causes the tool to fire once (single use) before the charge-up animation begins. Happens roughly half the time.
+- **Confirmed on:** v2.8.12 testing session. Bronze watering can pours a single tile before starting to charge.
+- **Confirmed mod-caused — GameplayButtonPatches X/Y swap.** Tested on v2.8.12:
+  - Switch layout (X/Y swap active): ~50% failure rate, single pour before charge starts
+  - Xbox layout (no X/Y swap): only 1 failure in many attempts, and that one was a different bug (autofire/repeated single pours while holding, not a single pour then charge)
+- **Root cause:** The `GetState_Postfix` in `GameplayButtonPatches.cs` reconstructs the entire `GamePadState` struct every frame when X/Y swap is active. The game detects "new press" vs "held" by comparing the current frame's state to the previous frame's. The reconstruction likely creates a 1-frame discontinuity — either from multiple `GetState()` calls per frame returning slightly different raw hardware data (each getting independently reconstructed), or from the new struct causing the game's press-detection to misfire. The result: the game sees a "press" (fires tool once) followed by "held" (starts charging) instead of just "held" from the start.
+- **Fix approach:** Cache the swapped `GamePadState` per frame (keyed on `Game1.ticks`). All `GetState()` calls within the same frame return the identical cached result, eliminating any intra-frame inconsistency from the reconstruction.
+- **File:** `Patches/GameplayButtonPatches.cs`
+
+### 25b. Upgraded Tool Use While Moving
 - Must stop completely to use upgraded tools
 - On Switch/PC, tools can be used while walking
 - May be engine-level Android difference
