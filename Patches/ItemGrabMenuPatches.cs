@@ -64,10 +64,11 @@ namespace AndroidConsolizer.Patches
                     prefix: new HarmonyMethod(typeof(ItemGrabMenuPatches), nameof(ReceiveGamePadButton_Prefix))
                 );
 
-                // Diagnostic: log touch coordinates when tapping on color picker swatches
+                // Diagnostic: log touch coordinates and color selection when tapping on color picker swatches
                 harmony.Patch(
                     original: AccessTools.Method(typeof(ItemGrabMenu), nameof(ItemGrabMenu.receiveLeftClick)),
-                    prefix: new HarmonyMethod(typeof(ItemGrabMenuPatches), nameof(ReceiveLeftClick_Diagnostic))
+                    prefix: new HarmonyMethod(typeof(ItemGrabMenuPatches), nameof(ReceiveLeftClick_Diagnostic)),
+                    postfix: new HarmonyMethod(typeof(ItemGrabMenuPatches), nameof(ReceiveLeftClick_DiagnosticPost))
                 );
 
                 Monitor.Log("ItemGrabMenu patches applied successfully.", LogLevel.Trace);
@@ -78,8 +79,8 @@ namespace AndroidConsolizer.Patches
             }
         }
 
-        /// <summary>Diagnostic: log touch coordinates when color picker is visible.
-        /// Tap each swatch in order (top-left to bottom-right) to map visual positions.</summary>
+        /// <summary>Diagnostic: log touch coordinates and resulting color selection.
+        /// Tap swatches to map visual positions and confirm hit-test formula.</summary>
         private static int _diagnosticTapCount = 0;
         private static void ReceiveLeftClick_Diagnostic(ItemGrabMenu __instance, int x, int y)
         {
@@ -89,7 +90,26 @@ namespace AndroidConsolizer.Patches
                 {
                     _diagnosticTapCount++;
                     var picker = __instance.chestColorPicker;
-                    Monitor.Log($"[DIAG] Tap #{_diagnosticTapCount} at ({x},{y}) — picker pos=({picker.xPositionOnScreen},{picker.yPositionOnScreen}) size=({picker.width},{picker.height})", LogLevel.Alert);
+                    // Read colorSelection BEFORE the click
+                    var colorField = picker.GetType().GetField("colorSelection", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                    int colorBefore = colorField != null ? (int)colorField.GetValue(picker) : -1;
+                    Monitor.Log($"[DIAG] Tap #{_diagnosticTapCount} at ({x},{y}) colorBefore={colorBefore}", LogLevel.Alert);
+                }
+            }
+            catch { }
+        }
+
+        /// <summary>Diagnostic postfix: log color selection AFTER the click.</summary>
+        private static void ReceiveLeftClick_DiagnosticPost(ItemGrabMenu __instance, int x, int y)
+        {
+            try
+            {
+                if (__instance.chestColorPicker != null && __instance.chestColorPicker.visible)
+                {
+                    var picker = __instance.chestColorPicker;
+                    var colorField = picker.GetType().GetField("colorSelection", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                    int colorAfter = colorField != null ? (int)colorField.GetValue(picker) : -1;
+                    Monitor.Log($"[DIAG] => colorAfter={colorAfter}", LogLevel.Alert);
                 }
             }
             catch { }
