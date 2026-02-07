@@ -88,8 +88,9 @@ namespace AndroidConsolizer.Patches
                 // Auto-close if this chest reopened because A triggered overworld
                 // interact after Close X closed it. A is still physically pressed
                 // so the game fires "interact with chest" — we catch it here and
-                // immediately close again.
-                if (Game1.ticks - _closeXPressedTick < 20)
+                // immediately close again. 120 ticks (~2s) covers Android input
+                // latency — 20 ticks was too small and the reopen slipped through.
+                if (Game1.ticks - _closeXPressedTick < 120)
                 {
                     _closeXPressedTick = -100;
                     if (ModEntry.Config.VerboseLogging)
@@ -546,40 +547,22 @@ namespace AndroidConsolizer.Patches
                         return false;
                     }
 
-                    // D-pad navigation: only allow movement within the swatch grid
-                    // Block ALL navigation buttons — the original method would let the
-                    // cursor wander into inventory slots that overlap the picker area.
-                    // Instead, we handle neighbor resolution ourselves.
+                    // D-pad/thumbstick navigation: block ItemGrabMenu.receiveGamePadButton
+                    // but do NOT manually navigate. The game has a SEPARATE nav code path
+                    // (outside receiveGamePadButton) that processes thumbstick input using
+                    // the neighbor IDs we wired on the swatches. If we also navigate here,
+                    // the cursor moves TWICE per input (v2.9.14 bug). Returning false blocks
+                    // ItemGrabMenu-specific processing while letting the game's own nav work.
+                    // Swatch edges are wired to -1 so the game's nav stays within the grid.
                     if (remapped == Buttons.DPadUp || remapped == Buttons.DPadDown ||
                         remapped == Buttons.DPadLeft || remapped == Buttons.DPadRight ||
                         remapped == Buttons.LeftThumbstickUp || remapped == Buttons.LeftThumbstickDown ||
                         remapped == Buttons.LeftThumbstickLeft || remapped == Buttons.LeftThumbstickRight)
                     {
-                        var snapped = __instance.currentlySnappedComponent;
-                        if (snapped == null)
-                            return false;
-
-                        int targetId = -1;
-                        if (remapped == Buttons.DPadUp || remapped == Buttons.LeftThumbstickUp)
-                            targetId = snapped.upNeighborID;
-                        else if (remapped == Buttons.DPadDown || remapped == Buttons.LeftThumbstickDown)
-                            targetId = snapped.downNeighborID;
-                        else if (remapped == Buttons.DPadLeft || remapped == Buttons.LeftThumbstickLeft)
-                            targetId = snapped.leftNeighborID;
-                        else if (remapped == Buttons.DPadRight || remapped == Buttons.LeftThumbstickRight)
-                            targetId = snapped.rightNeighborID;
-
-                        // Only navigate if the target is a valid swatch (stay within grid)
-                        if (targetId >= 4343 && targetId <= 4363)
+                        if (ModEntry.Config.VerboseLogging)
                         {
-                            var target = FindSwatchById(__instance, targetId);
-                            if (target != null)
-                            {
-                                __instance.currentlySnappedComponent = target;
-                                __instance.snapCursorToCurrentSnappedComponent();
-                                if (ModEntry.Config.VerboseLogging)
-                                    Monitor.Log($"[ChestNav] Picker nav: {snapped.myID} → {targetId}", LogLevel.Debug);
-                            }
+                            var snapped = __instance.currentlySnappedComponent;
+                            Monitor.Log($"[ChestNav] Picker nav blocked for game handling: snapped={snapped?.myID ?? -1}", LogLevel.Debug);
                         }
                         return false;
                     }
