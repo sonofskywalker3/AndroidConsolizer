@@ -113,6 +113,31 @@ namespace AndroidConsolizer.Patches
                     Monitor.Log($"[ChestNav] Reassigned IDs: sortChest={ID_SORT_CHEST}, sortInv={ID_SORT_INV}, trashPlayer={ID_TRASH_PLAYER}", LogLevel.Debug);
 
                 // =====================================================
+                // Step 2b: Register buttons in allClickableComponents
+                // The game's getComponentWithID() searches this list.
+                // sortChest, sortInv, and trashPlayer aren't in it by
+                // default, so snap navigation can't find them by ID.
+                // fillStacks and colorToggle are already present.
+                // =====================================================
+                if (menu.allClickableComponents != null)
+                {
+                    // Add missing buttons (avoid duplicates by checking if already present)
+                    void EnsureRegistered(ClickableComponent comp, string label)
+                    {
+                        if (comp != null && !menu.allClickableComponents.Contains(comp))
+                        {
+                            menu.allClickableComponents.Add(comp);
+                            if (verbose)
+                                Monitor.Log($"[ChestNav] Registered {label} (ID={comp.myID}) in allClickableComponents", LogLevel.Debug);
+                        }
+                    }
+                    EnsureRegistered(sortChest, "sortChest");
+                    EnsureRegistered(sortInv, "sortInv");
+                    EnsureRegistered(trashPlayer, "trashPlayer");
+                    EnsureRegistered(closeX, "closeX");
+                }
+
+                // =====================================================
                 // Step 3: Wire sidebar vertical chain
                 // Sort Chest ↔ Fill Stacks ↔ Color Toggle ↔ Sort Inv ↔ Trash Player
                 // Close X sits above Sort Chest
