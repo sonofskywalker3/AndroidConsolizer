@@ -14,8 +14,14 @@ namespace AndroidConsolizer.Patches
     {
         private static IMonitor Monitor;
 
-        /// <summary>Side button IDs discovered by FixSnapNavigation, used by A-button handler.</summary>
-        private static HashSet<int> _sideButtonIds = new HashSet<int>();
+        /// <summary>Side button objects discovered by FixSnapNavigation, used by A-button handler.
+        /// Stored by reference because some buttons share duplicate myID values.</summary>
+        private static HashSet<ClickableComponent> _sideButtonObjects = new HashSet<ClickableComponent>();
+
+        // Unique IDs assigned to buttons that have duplicate myIDs
+        private const int ID_SORT_CHEST = 54106;    // was 106
+        private const int ID_SORT_INV = 54206;       // was 106
+        private const int ID_TRASH_PLAYER = 54105;   // was 105
 
         /// <summary>Apply Harmony patches.</summary>
         public static void Apply(Harmony harmony, IMonitor monitor)
@@ -58,141 +64,184 @@ namespace AndroidConsolizer.Patches
                 if (menu.shippingBin)
                     return;
 
+                _sideButtonObjects.Clear();
+                bool verbose = ModEntry.Config.VerboseLogging;
+
                 // =====================================================
-                // v2.9.6 DIAGNOSTIC BUILD — dump everything, fix nothing
+                // Step 1: Get sidebar buttons by OBJECT REFERENCE
+                // Do NOT scan allClickableComponents — the buttons we
+                // need (organizeButton, trashCan) aren't in that list,
+                // and IDs 105/106 are duplicated across chest/player.
                 // =====================================================
-                Monitor.Log("[ChestNav] === v2.9.6 DIAGNOSTIC DUMP START ===", LogLevel.Debug);
+                // InventoryMenu.organizeButton and .trashCan aren't publicly accessible
+                // in this build — use Harmony reflection to grab them by field name.
+                var organizeField = AccessTools.Field(typeof(InventoryMenu), "organizeButton");
+                var trashCanField = AccessTools.Field(typeof(InventoryMenu), "trashCan");
 
-                // --- Section 1: Field references on ItemGrabMenu ---
-                Monitor.Log("[ChestNav] --- FIELD REFERENCES ---", LogLevel.Debug);
-                LogComponent("fillStacksButton", menu.fillStacksButton);
-                LogComponent("colorPickerToggleButton", menu.colorPickerToggleButton);
-                LogComponent("trashCan", menu.trashCan);
-                LogComponent("organizeButton", menu.organizeButton);
-                LogComponent("specialButton", menu.specialButton);
-                LogComponent("okButton", menu.okButton);
-                LogComponent("upperRightCloseButton", menu.upperRightCloseButton);
+                var sortChest = menu.ItemsToGrabMenu != null && organizeField != null
+                    ? organizeField.GetValue(menu.ItemsToGrabMenu) as ClickableComponent
+                    : null;                                              // ID 106, Y~86
+                var fillStacks = menu.fillStacksButton;                  // ID 12952
+                var colorToggle = menu.colorPickerToggleButton;          // ID 27346
+                var sortInv = menu.inventory != null && organizeField != null
+                    ? organizeField.GetValue(menu.inventory) as ClickableComponent
+                    : null;                                              // ID 106, Y~471
+                var trashPlayer = menu.inventory != null && trashCanField != null
+                    ? trashCanField.GetValue(menu.inventory) as ClickableComponent
+                    : null;                                              // ID 105, Y~673
+                var closeX = menu.upperRightCloseButton;                 // ID -500
 
-                // Check the player inventory's own fields
-                if (menu.inventory != null)
+                if (verbose)
                 {
-                    Monitor.Log("[ChestNav] --- PLAYER InventoryMenu FIELDS ---", LogLevel.Debug);
-                    // InventoryMenu inherits from IClickableMenu, check for organize/drop buttons
-                    var invType = menu.inventory.GetType();
-                    foreach (var field in invType.GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance))
-                    {
-                        if (typeof(ClickableComponent).IsAssignableFrom(field.FieldType))
-                        {
-                            var val = field.GetValue(menu.inventory) as ClickableComponent;
-                            LogComponent($"inventory.{field.Name}", val);
-                        }
-                    }
+                    Monitor.Log("[ChestNav] === v2.9.7 SIDEBAR BUTTONS ===", LogLevel.Debug);
+                    LogComponent("sortChest", sortChest);
+                    LogComponent("fillStacks", fillStacks);
+                    LogComponent("colorToggle", colorToggle);
+                    LogComponent("sortInv", sortInv);
+                    LogComponent("trashPlayer", trashPlayer);
+                    LogComponent("closeX", closeX);
                 }
 
-                // Check the chest InventoryMenu's own fields
-                if (menu.ItemsToGrabMenu != null)
-                {
-                    Monitor.Log("[ChestNav] --- CHEST InventoryMenu FIELDS ---", LogLevel.Debug);
-                    var grabType = menu.ItemsToGrabMenu.GetType();
-                    foreach (var field in grabType.GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance))
-                    {
-                        if (typeof(ClickableComponent).IsAssignableFrom(field.FieldType))
-                        {
-                            var val = field.GetValue(menu.ItemsToGrabMenu) as ClickableComponent;
-                            LogComponent($"ItemsToGrabMenu.{field.Name}", val);
-                        }
-                    }
-                }
+                // =====================================================
+                // Step 2: Assign unique IDs to resolve duplicates
+                // =====================================================
+                if (sortChest != null) sortChest.myID = ID_SORT_CHEST;
+                if (sortInv != null) sortInv.myID = ID_SORT_INV;
+                if (trashPlayer != null) trashPlayer.myID = ID_TRASH_PLAYER;
 
-                // --- Section 2: Grid slots ---
-                Monitor.Log("[ChestNav] --- CHEST GRID SLOTS ---", LogLevel.Debug);
+                if (verbose)
+                    Monitor.Log($"[ChestNav] Reassigned IDs: sortChest={ID_SORT_CHEST}, sortInv={ID_SORT_INV}, trashPlayer={ID_TRASH_PLAYER}", LogLevel.Debug);
+
+                // =====================================================
+                // Step 3: Wire sidebar vertical chain
+                // Sort Chest ↔ Fill Stacks ↔ Color Toggle ↔ Sort Inv ↔ Trash Player
+                // Close X sits above Sort Chest
+                // =====================================================
+
+                // Detect grid layout for neighbor references
+                int chestCols = 0;
                 if (menu.ItemsToGrabMenu?.inventory != null)
-                {
-                    int chestCols = DetectGridColumns(menu.ItemsToGrabMenu.inventory);
-                    Monitor.Log($"[ChestNav] Chest grid: {menu.ItemsToGrabMenu.inventory.Count} slots, {chestCols} cols", LogLevel.Debug);
-                    // Log only rightmost column (the ones that need right-neighbor wiring)
-                    if (chestCols > 0)
-                    {
-                        for (int i = chestCols - 1; i < menu.ItemsToGrabMenu.inventory.Count; i += chestCols)
-                        {
-                            var slot = menu.ItemsToGrabMenu.inventory[i];
-                            int row = i / chestCols;
-                            Monitor.Log($"[ChestNav]   Chest rightmost row{row}: myID={slot.myID}, bounds={slot.bounds}, right={slot.rightNeighborID}, left={slot.leftNeighborID}, up={slot.upNeighborID}, down={slot.downNeighborID}", LogLevel.Debug);
-                        }
-                    }
-                }
-
-                Monitor.Log("[ChestNav] --- PLAYER GRID SLOTS ---", LogLevel.Debug);
+                    chestCols = DetectGridColumns(menu.ItemsToGrabMenu.inventory);
+                int playerCols = 0;
                 if (menu.inventory?.inventory != null)
+                    playerCols = DetectGridColumns(menu.inventory.inventory);
+
+                // Helper: get rightmost slot in a given row
+                ClickableComponent GetRightmost(IList<ClickableComponent> grid, int cols, int row)
                 {
-                    int playerCols = DetectGridColumns(menu.inventory.inventory);
-                    Monitor.Log($"[ChestNav] Player grid: {menu.inventory.inventory.Count} slots, {playerCols} cols", LogLevel.Debug);
-                    if (playerCols > 0)
+                    if (grid == null || cols <= 0) return null;
+                    int idx = (row + 1) * cols - 1;
+                    return idx < grid.Count ? grid[idx] : null;
+                }
+
+                var chestRow0Right = GetRightmost(menu.ItemsToGrabMenu?.inventory, chestCols, 0); // 53921
+                var chestRow1Right = GetRightmost(menu.ItemsToGrabMenu?.inventory, chestCols, 1); // 53933
+                var chestRow2Right = GetRightmost(menu.ItemsToGrabMenu?.inventory, chestCols, 2); // 53945
+                var playerRow0Right = GetRightmost(menu.inventory?.inventory, playerCols, 0);      // 11
+                var playerRow1Right = GetRightmost(menu.inventory?.inventory, playerCols, 1);      // 23
+                var playerRow2Right = GetRightmost(menu.inventory?.inventory, playerCols, 2);      // 35
+
+                // --- Sort Chest ---
+                if (sortChest != null)
+                {
+                    sortChest.leftNeighborID = chestRow0Right?.myID ?? sortChest.leftNeighborID;
+                    sortChest.rightNeighborID = closeX?.myID ?? sortChest.rightNeighborID;
+                    sortChest.upNeighborID = chestRow0Right?.myID ?? sortChest.upNeighborID;
+                    sortChest.downNeighborID = fillStacks?.myID ?? sortChest.downNeighborID;
+                    _sideButtonObjects.Add(sortChest);
+                }
+
+                // --- Fill Stacks ---
+                if (fillStacks != null)
+                {
+                    fillStacks.leftNeighborID = chestRow1Right?.myID ?? fillStacks.leftNeighborID;
+                    fillStacks.upNeighborID = sortChest?.myID ?? fillStacks.upNeighborID;
+                    fillStacks.downNeighborID = colorToggle?.myID ?? fillStacks.downNeighborID;
+                    _sideButtonObjects.Add(fillStacks);
+                }
+
+                // --- Color Toggle ---
+                if (colorToggle != null)
+                {
+                    colorToggle.leftNeighborID = chestRow2Right?.myID ?? colorToggle.leftNeighborID;
+                    colorToggle.upNeighborID = fillStacks?.myID ?? colorToggle.upNeighborID;
+                    colorToggle.downNeighborID = sortInv?.myID ?? colorToggle.downNeighborID;
+                    _sideButtonObjects.Add(colorToggle);
+                }
+
+                // --- Sort Inventory ---
+                if (sortInv != null)
+                {
+                    sortInv.leftNeighborID = playerRow0Right?.myID ?? sortInv.leftNeighborID;
+                    sortInv.upNeighborID = colorToggle?.myID ?? sortInv.upNeighborID;
+                    sortInv.downNeighborID = trashPlayer?.myID ?? sortInv.downNeighborID;
+                    _sideButtonObjects.Add(sortInv);
+                }
+
+                // --- Trash Player ---
+                if (trashPlayer != null)
+                {
+                    trashPlayer.leftNeighborID = playerRow1Right?.myID ?? trashPlayer.leftNeighborID;
+                    trashPlayer.upNeighborID = sortInv?.myID ?? trashPlayer.upNeighborID;
+                    trashPlayer.downNeighborID = playerRow2Right?.myID ?? trashPlayer.downNeighborID;
+                    _sideButtonObjects.Add(trashPlayer);
+                }
+
+                // --- Close X ---
+                if (closeX != null)
+                {
+                    closeX.leftNeighborID = sortChest?.myID ?? closeX.leftNeighborID;
+                    closeX.downNeighborID = sortChest?.myID ?? closeX.downNeighborID;
+                    _sideButtonObjects.Add(closeX);
+                }
+
+                // =====================================================
+                // Step 4: Wire grid rightmost → sidebar (RIGHT)
+                // Do NOT touch -7777 sentinel values on up/down.
+                // =====================================================
+                if (chestRow0Right != null && sortChest != null)
+                    chestRow0Right.rightNeighborID = sortChest.myID;
+                if (chestRow1Right != null && fillStacks != null)
+                    chestRow1Right.rightNeighborID = fillStacks.myID;
+                if (chestRow2Right != null && colorToggle != null)
+                    chestRow2Right.rightNeighborID = colorToggle.myID;
+                if (playerRow0Right != null && sortInv != null)
+                    playerRow0Right.rightNeighborID = sortInv.myID;
+                if (playerRow1Right != null && trashPlayer != null)
+                    playerRow1Right.rightNeighborID = trashPlayer.myID;
+                if (playerRow2Right != null && trashPlayer != null)
+                    playerRow2Right.rightNeighborID = trashPlayer.myID;
+
+                // =====================================================
+                // Step 5: Verbose logging of final wiring
+                // =====================================================
+                if (verbose)
+                {
+                    Monitor.Log("[ChestNav] === FINAL WIRING ===", LogLevel.Debug);
+                    void LogWiring(string label, ClickableComponent c)
                     {
-                        for (int i = playerCols - 1; i < menu.inventory.inventory.Count; i += playerCols)
-                        {
-                            var slot = menu.inventory.inventory[i];
-                            int row = i / playerCols;
-                            Monitor.Log($"[ChestNav]   Player rightmost row{row}: myID={slot.myID}, bounds={slot.bounds}, right={slot.rightNeighborID}, left={slot.leftNeighborID}, up={slot.upNeighborID}, down={slot.downNeighborID}", LogLevel.Debug);
-                        }
+                        if (c != null)
+                            Monitor.Log($"[ChestNav]   {label}: myID={c.myID}, L={c.leftNeighborID}, R={c.rightNeighborID}, U={c.upNeighborID}, D={c.downNeighborID}", LogLevel.Debug);
                     }
+                    LogWiring("Sort Chest", sortChest);
+                    LogWiring("Fill Stacks", fillStacks);
+                    LogWiring("Color Toggle", colorToggle);
+                    LogWiring("Sort Inv", sortInv);
+                    LogWiring("Trash Player", trashPlayer);
+                    LogWiring("Close X", closeX);
+                    LogWiring("Chest R0 rightmost", chestRow0Right);
+                    LogWiring("Chest R1 rightmost", chestRow1Right);
+                    LogWiring("Chest R2 rightmost", chestRow2Right);
+                    LogWiring("Player R0 rightmost", playerRow0Right);
+                    LogWiring("Player R1 rightmost", playerRow1Right);
+                    LogWiring("Player R2 rightmost", playerRow2Right);
                 }
 
-                // --- Section 3: ALL clickable components (the full dump) ---
-                Monitor.Log("[ChestNav] --- ALL CLICKABLE COMPONENTS ---", LogLevel.Debug);
-                var gridIds = new HashSet<int>();
-                if (menu.inventory?.inventory != null)
-                    foreach (var s in menu.inventory.inventory)
-                        gridIds.Add(s.myID);
-                if (menu.ItemsToGrabMenu?.inventory != null)
-                    foreach (var s in menu.ItemsToGrabMenu.inventory)
-                        gridIds.Add(s.myID);
-
-                if (menu.allClickableComponents != null)
-                {
-                    Monitor.Log($"[ChestNav] Total allClickableComponents: {menu.allClickableComponents.Count}", LogLevel.Debug);
-                    int idx = 0;
-                    foreach (var comp in menu.allClickableComponents)
-                    {
-                        string source = gridIds.Contains(comp.myID) ? "GRID" : "NON-GRID";
-                        string name = comp.name ?? "(null)";
-                        string label = (comp is ClickableTextureComponent ctc && ctc.hoverText != null) ? ctc.hoverText : "";
-                        Monitor.Log($"[ChestNav]   [{idx}] {source} myID={comp.myID}, name=\"{name}\", bounds={comp.bounds}, right={comp.rightNeighborID}, left={comp.leftNeighborID}, up={comp.upNeighborID}, down={comp.downNeighborID}{(label != "" ? $", hover=\"{label}\"" : "")}", LogLevel.Debug);
-                        idx++;
-                    }
-                }
-                else
-                {
-                    Monitor.Log("[ChestNav] allClickableComponents is NULL", LogLevel.Warn);
-                }
-
-                // --- Section 4: DiscreteColorPicker check ---
-                Monitor.Log("[ChestNav] --- COLOR PICKER ---", LogLevel.Debug);
-                if (menu.chestColorPicker != null)
-                {
-                    Monitor.Log($"[ChestNav] chestColorPicker exists, type={menu.chestColorPicker.GetType().Name}, visible={menu.chestColorPicker.visible}", LogLevel.Debug);
-                    // Check if it's a DiscreteColorPicker and dump its components
-                    if (menu.chestColorPicker is DiscreteColorPicker dcp)
-                    {
-                        Monitor.Log($"[ChestNav] DiscreteColorPicker: visible={dcp.visible}, bounds=({dcp.xPositionOnScreen},{dcp.yPositionOnScreen},{dcp.width},{dcp.height})", LogLevel.Debug);
-                    }
-                }
-                else
-                {
-                    Monitor.Log("[ChestNav] chestColorPicker is NULL", LogLevel.Debug);
-                }
-
-                Monitor.Log("[ChestNav] === v2.9.6 DIAGNOSTIC DUMP END ===", LogLevel.Debug);
-
-                // NO WIRING CHANGES — leave everything as the game set it
-                // This lets us see the raw default navigation behavior
-                _sideButtonIds.Clear();
-
-                Monitor.Log("[ChestNav] v2.9.6 diagnostic only — no navigation changes applied", LogLevel.Info);
+                Monitor.Log($"[ChestNav] v2.9.7 navigation wired — {_sideButtonObjects.Count} sidebar buttons registered", LogLevel.Info);
             }
             catch (Exception ex)
             {
-                Monitor.Log($"[ChestNav] Error in diagnostic dump: {ex.Message}", LogLevel.Error);
+                Monitor.Log($"[ChestNav] Error in FixSnapNavigation: {ex.Message}", LogLevel.Error);
                 Monitor.Log(ex.StackTrace, LogLevel.Debug);
             }
         }
@@ -282,7 +331,7 @@ namespace AndroidConsolizer.Patches
                 if (remapped == Buttons.A && ModEntry.Config.EnableChestNavFix)
                 {
                     var snapped = __instance.currentlySnappedComponent;
-                    if (snapped != null && _sideButtonIds.Contains(snapped.myID))
+                    if (snapped != null && _sideButtonObjects.Contains(snapped))
                     {
                         int cx = snapped.bounds.Center.X;
                         int cy = snapped.bounds.Center.Y;
