@@ -63,12 +63,35 @@ namespace AndroidConsolizer.Patches
                     prefix: new HarmonyMethod(typeof(ItemGrabMenuPatches), nameof(ReceiveGamePadButton_Prefix))
                 );
 
+                // Diagnostic: log touch coordinates when tapping on color picker swatches
+                harmony.Patch(
+                    original: AccessTools.Method(typeof(ItemGrabMenu), nameof(ItemGrabMenu.receiveLeftClick)),
+                    prefix: new HarmonyMethod(typeof(ItemGrabMenuPatches), nameof(ReceiveLeftClick_Diagnostic))
+                );
+
                 Monitor.Log("ItemGrabMenu patches applied successfully.", LogLevel.Trace);
             }
             catch (Exception ex)
             {
                 Monitor.Log($"Failed to apply ItemGrabMenu patches: {ex.Message}", LogLevel.Error);
             }
+        }
+
+        /// <summary>Diagnostic: log touch coordinates when color picker is visible.
+        /// Tap each swatch in order (top-left to bottom-right) to map visual positions.</summary>
+        private static int _diagnosticTapCount = 0;
+        private static void ReceiveLeftClick_Diagnostic(ItemGrabMenu __instance, int x, int y)
+        {
+            try
+            {
+                if (__instance.chestColorPicker != null && __instance.chestColorPicker.visible)
+                {
+                    _diagnosticTapCount++;
+                    var picker = __instance.chestColorPicker;
+                    Monitor.Log($"[DIAG] Tap #{_diagnosticTapCount} at ({x},{y}) — picker pos=({picker.xPositionOnScreen},{picker.yPositionOnScreen}) size=({picker.width},{picker.height})", LogLevel.Alert);
+                }
+            }
+            catch { }
         }
 
         /// <summary>
@@ -448,6 +471,15 @@ namespace AndroidConsolizer.Patches
                 int swatchH = strideY;  // bounds height = stride
 
                 _savedSwatchBounds.Clear();
+
+                // Diagnostic: log original swatch bounds before relocation and reset tap counter
+                _diagnosticTapCount = 0;
+                Monitor.Log($"[DIAG] Picker: pos=({gridX},{gridY}) size=({picker.width},{picker.height}) => stride=({strideX},{strideY})", LogLevel.Alert);
+                for (int i = 0; i < swatches.Count; i++)
+                {
+                    var s = swatches[i];
+                    Monitor.Log($"[DIAG] ORIGINAL swatch[{i}] ID={s.myID} bounds=({s.bounds.X},{s.bounds.Y},{s.bounds.Width},{s.bounds.Height})", LogLevel.Alert);
+                }
 
                 for (int i = 0; i < swatches.Count; i++)
                 {
