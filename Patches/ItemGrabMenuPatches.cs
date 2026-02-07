@@ -364,7 +364,25 @@ namespace AndroidConsolizer.Patches
                         int cy = snapped.bounds.Center.Y;
                         if (ModEntry.Config.VerboseLogging)
                             Monitor.Log($"[ChestNav] A on side button {snapped.myID} — click at ({cx},{cy})", LogLevel.Debug);
+
+                        // Diagnostic for color toggle (TODO #13b)
+                        bool isColorToggle = (snapped == __instance.colorPickerToggleButton);
+                        if (isColorToggle && ModEntry.Config.VerboseLogging)
+                        {
+                            var picker = __instance.chestColorPicker;
+                            bool pickerVisibleBefore = picker?.visible ?? false;
+                            bool containsPoint = __instance.colorPickerToggleButton?.containsPoint(cx, cy) ?? false;
+                            Monitor.Log($"[ChestNav] COLOR TOGGLE DIAG: containsPoint({cx},{cy})={containsPoint}, picker={picker?.GetType().Name ?? "null"}, visibleBefore={pickerVisibleBefore}", LogLevel.Debug);
+                        }
+
                         __instance.receiveLeftClick(cx, cy);
+
+                        if (isColorToggle && ModEntry.Config.VerboseLogging)
+                        {
+                            bool pickerVisibleAfter = __instance.chestColorPicker?.visible ?? false;
+                            Monitor.Log($"[ChestNav] COLOR TOGGLE DIAG: visibleAfter={pickerVisibleAfter}", LogLevel.Debug);
+                        }
+
                         return false;
                     }
                 }
