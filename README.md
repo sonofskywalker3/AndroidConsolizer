@@ -117,12 +117,12 @@ When "Use Bumpers Instead of Triggers" is enabled:
 | Controller | Device | Status | Notes |
 |------------|--------|--------|-------|
 | **Built-in (Odin)** | AYN Odin Pro | ✅ Fully Working | All buttons and triggers work |
-| **Xbox One Wireless (Bluetooth)** | AYN Odin Pro | ✅ Fully Working | Triggers cannot be detected in game, enable "Use Bumpers Instead of Triggers" |
-| **Xbox Series X|S Wireless (Bluetooth)** | AYN Odin Pro | ✅ Fully Working | Triggers cannot be detected in game, enable "Use Bumpers Instead of Triggers" |
+| **Xbox One Wireless (Bluetooth)** | AYN Odin Pro | ⚠️ Partial | Triggers (LT/RT) not detected — enable "Use Bumpers Instead of Triggers". All other buttons work. |
+| **Xbox Series X\|S Wireless (Bluetooth)** | AYN Odin Pro | ⚠️ Partial | Triggers (LT/RT) not detected — enable "Use Bumpers Instead of Triggers". All other buttons work. |
 
 ### Known Issues: Xbox Controller on Android
 
-Xbox Wireless Controllers connected via Bluetooth have a known issue on Android where the analog triggers (LT/RT) are not detected by Stardew Valley. This is due to Xbox controllers reporting triggers on different axes (`AXIS_GAS`/`AXIS_BRAKE`) than what the game's framework expects (`AXIS_LTRIGGER`/`AXIS_RTRIGGER`).
+Xbox Wireless Controllers (both Xbox One and Xbox Series X|S) connected via Bluetooth have a known issue on Android where the analog triggers (LT/RT) are not detected by Stardew Valley. Both controller models behave identically — this is due to Xbox controllers reporting triggers on different axes (`AXIS_GAS`/`AXIS_BRAKE`) than what the game's framework expects (`AXIS_LTRIGGER`/`AXIS_RTRIGGER`).
 
 **Workaround:** Enable "Use Bumpers Instead of Triggers" in the mod settings. This remaps:
 - Toolbar: D-Pad Up/Down for rows, LB/RB for moving within row
