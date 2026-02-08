@@ -499,47 +499,6 @@ namespace AndroidConsolizer
             }
         }
 
-        /// <summary>Get the maximum quantity that can be purchased for the currently selected shop item.</summary>
-        private int GetShopMaxQuantity(ShopMenu shopMenu)
-        {
-            try
-            {
-                // Find the currently selected item
-                ISalable selectedItem = null;
-                var snapped = shopMenu.currentlySnappedComponent;
-
-                if (snapped != null && shopMenu.forSaleButtons != null)
-                {
-                    int btnIndex = shopMenu.forSaleButtons.FindIndex(btn => btn.myID == snapped.myID);
-                    if (btnIndex >= 0)
-                    {
-                        int itemIndex = shopMenu.currentItemIndex + btnIndex;
-                        if (itemIndex >= 0 && itemIndex < shopMenu.forSale.Count)
-                        {
-                            selectedItem = shopMenu.forSale[itemIndex];
-                        }
-                    }
-                }
-
-                if (selectedItem == null || !shopMenu.itemPriceAndStock.TryGetValue(selectedItem, out var priceAndStock))
-                    return 999; // Default max if we can't determine
-
-                int unitPrice = priceAndStock.Price;
-                int stock = priceAndStock.Stock;
-                int playerMoney = ShopMenu.getPlayerCurrencyAmount(Game1.player, shopMenu.currency);
-
-                // Max is limited by stock and what player can afford
-                int maxByMoney = unitPrice > 0 ? playerMoney / unitPrice : 999;
-                int maxByStock = stock == int.MaxValue ? 999 : stock;
-
-                return Math.Max(1, Math.Min(maxByMoney, maxByStock));
-            }
-            catch
-            {
-                return 999; // Default max on error
-            }
-        }
-
         /// <summary>Handle toolbar navigation with LB/RB for row switching and LT/RT for slot movement.</summary>
         private void HandleToolbarNavigation(ButtonsChangedEventArgs e)
         {
