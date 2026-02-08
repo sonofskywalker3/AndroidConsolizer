@@ -57,7 +57,7 @@ namespace AndroidConsolizer.Patches
                     return true;
                 if (__instance != Game1.player)
                     return true;
-                if (!(ModEntry.Config?.EnableToolbarNavFix ?? false))
+                if (!(ModEntry.Config?.EnableConsoleToolbar ?? false))
                     return true;
 
                 int oldValue = __instance.CurrentToolIndex;

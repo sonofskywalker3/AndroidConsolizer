@@ -54,7 +54,7 @@ namespace AndroidConsolizer.Patches
                 if (!__instance.shippingBin)
                     return true;
 
-                if (!ModEntry.Config.EnableShippingBinFix)
+                if (!ModEntry.Config.EnableConsoleShipping)
                     return true;
 
                 // Remap button based on configured button style

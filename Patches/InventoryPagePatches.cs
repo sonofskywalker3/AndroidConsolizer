@@ -83,7 +83,7 @@ namespace AndroidConsolizer.Patches
                     Monitor.Log($"GameMenu (inventory) button: {b} (remapped={remapped})", LogLevel.Debug);
 
                 // Block A button when console inventory is enabled - we handle it ourselves
-                if (ModEntry.Config.EnableConsoleInventoryFix)
+                if (ModEntry.Config.EnableConsoleInventory)
                 {
                     if (b == Buttons.A || remapped == Buttons.A)
                     {
@@ -95,7 +95,7 @@ namespace AndroidConsolizer.Patches
 
                 // CRITICAL: Always block raw X button in inventory to prevent Android deletion bug
                 // The game's Android code uses raw X for deletion, regardless of our remapping
-                if (b == Buttons.X && ModEntry.Config.EnableSortFix)
+                if (b == Buttons.X && ModEntry.Config.EnableConsoleChests)
                 {
                     if (ModEntry.Config.VerboseLogging)
                         Monitor.Log($"Blocking raw X button in GameMenu inventory to prevent deletion", LogLevel.Debug);
@@ -103,7 +103,7 @@ namespace AndroidConsolizer.Patches
                 }
 
                 // X button (after remapping) = Sort inventory (and block the original)
-                if (remapped == Buttons.X && ModEntry.Config.EnableSortFix)
+                if (remapped == Buttons.X && ModEntry.Config.EnableConsoleChests)
                 {
                     if (ModEntry.Config.VerboseLogging)
                         Monitor.Log($"{b} remapped to X in GameMenu inventory - sorting (blocking original)", LogLevel.Debug);
@@ -135,7 +135,7 @@ namespace AndroidConsolizer.Patches
 
                 // Block A button when console inventory is enabled - we handle it ourselves
                 // This prevents the default selection box and tooltip behavior
-                if (ModEntry.Config.EnableConsoleInventoryFix)
+                if (ModEntry.Config.EnableConsoleInventory)
                 {
                     if (b == Buttons.A || remapped == Buttons.A)
                     {
@@ -180,7 +180,7 @@ namespace AndroidConsolizer.Patches
                 Buttons remapped = ButtonRemapper.Remap(b);
 
                 // Block A button when console inventory is enabled
-                if (ModEntry.Config.EnableConsoleInventoryFix)
+                if (ModEntry.Config.EnableConsoleInventory)
                 {
                     if (b == Buttons.A || remapped == Buttons.A)
                     {
@@ -206,7 +206,7 @@ namespace AndroidConsolizer.Patches
         {
             // Block leftClickHeld when console inventory is enabled and A button is held
             // This prevents the Android tooltip-on-hold behavior
-            if (ModEntry.Config.EnableConsoleInventoryFix)
+            if (ModEntry.Config.EnableConsoleInventory)
             {
                 GamePadState gpState = GamePad.GetState(Microsoft.Xna.Framework.PlayerIndex.One);
                 if (gpState.Buttons.A == ButtonState.Pressed)
@@ -226,7 +226,7 @@ namespace AndroidConsolizer.Patches
         /// </summary>
         private static bool InventoryPage_ReceiveLeftClick_Prefix(InventoryPage __instance, int x, int y, bool playSound)
         {
-            if (ModEntry.Config.EnableConsoleInventoryFix)
+            if (ModEntry.Config.EnableConsoleInventory)
             {
                 GamePadState gpState = GamePad.GetState(Microsoft.Xna.Framework.PlayerIndex.One);
                 if (gpState.Buttons.A == ButtonState.Pressed)
@@ -245,7 +245,7 @@ namespace AndroidConsolizer.Patches
         private static bool InventoryMenu_ReceiveLeftClick_Prefix(InventoryMenu __instance, int x, int y, bool playSound)
         {
             // Only block in inventory page context, check if we're in GameMenu inventory tab
-            if (ModEntry.Config.EnableConsoleInventoryFix && Game1.activeClickableMenu is GameMenu gameMenu && gameMenu.currentTab == GameMenu.inventoryTab)
+            if (ModEntry.Config.EnableConsoleInventory && Game1.activeClickableMenu is GameMenu gameMenu && gameMenu.currentTab == GameMenu.inventoryTab)
             {
                 GamePadState gpState = GamePad.GetState(Microsoft.Xna.Framework.PlayerIndex.One);
                 if (gpState.Buttons.A == ButtonState.Pressed)
