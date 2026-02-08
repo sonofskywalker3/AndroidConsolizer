@@ -50,6 +50,9 @@ namespace AndroidConsolizer.Patches
         // Track previous A button state for blocking hold behavior
         private static bool WasAButtonDown = false;
 
+        // Cached A-button state from OnUpdateTicked — avoids redundant GamePad.GetState() in draw postfix
+        private static bool CachedAButtonDown = false;
+
         // Cached reflection fields for hover/tooltip (avoids per-tick AccessTools.Field lookups)
         private static FieldInfo InvPage_HoverTextField;
         private static FieldInfo InvPage_HoverTitleField;
@@ -133,10 +136,7 @@ namespace AndroidConsolizer.Patches
             // - Holding bait/tackle and hovering over a fishing rod (to see rod info)
             try
             {
-                GamePadState gpState = GamePad.GetState(PlayerIndex.One);
-                bool isAButtonDown = gpState.Buttons.A == ButtonState.Pressed;
-
-                if (!isAButtonDown)
+                if (!CachedAButtonDown)
                 {
                     var snapped = __instance.currentlySnappedComponent;
                     if (snapped != null && snapped.myID >= 0 && snapped.myID < Game1.player.Items.Count)
@@ -278,6 +278,7 @@ namespace AndroidConsolizer.Patches
 
             // Block A button hold tooltip behavior (Android-specific)
             bool isAButtonDown = gpState.Buttons.A == ButtonState.Pressed;
+            CachedAButtonDown = isAButtonDown;
             if (ModEntry.Config.EnableConsoleInventory && isAButtonDown)
             {
                 // Clear any tooltip/hover state when A is held to prevent Android tooltip popup
