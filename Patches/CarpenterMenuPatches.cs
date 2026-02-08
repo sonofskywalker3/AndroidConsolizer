@@ -80,28 +80,22 @@ namespace AndroidConsolizer.Patches
             }
 
             // Furniture debounce — separate try/catch so carpenter patches still work if this fails
-            // Diagnostic: probing multiple methods to find which path ControllerX uses
+            // The rapid-toggle cycle on Android is: canBeRemoved → performRemoveAction → placementAction
+            // repeating every ~3 ticks while the tool button is held. We debounce canBeRemoved (blocks
+            // pickup) and placementAction (resets cooldown after placement so re-pickup is also blocked).
             if (ModEntry.Config.EnableFurnitureDebounce)
             {
                 try
                 {
                     harmony.Patch(
-                        original: AccessTools.Method(typeof(Furniture), nameof(Furniture.checkForAction)),
-                        prefix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(FurnitureCheckForAction_Prefix))
-                    );
-                    harmony.Patch(
                         original: AccessTools.Method(typeof(Furniture), "canBeRemoved"),
                         prefix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(FurnitureCanBeRemoved_Prefix))
-                    );
-                    harmony.Patch(
-                        original: AccessTools.Method(typeof(Furniture), "performRemoveAction"),
-                        prefix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(FurniturePerformRemoveAction_Prefix))
                     );
                     harmony.Patch(
                         original: AccessTools.Method(typeof(Furniture), "placementAction"),
                         prefix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(FurniturePlacementAction_Prefix))
                     );
-                    Monitor.Log("Furniture debounce + diagnostic patches applied successfully.", LogLevel.Trace);
+                    Monitor.Log("Furniture debounce patches applied successfully.", LogLevel.Trace);
                 }
                 catch (Exception ex)
                 {
@@ -196,44 +190,34 @@ namespace AndroidConsolizer.Patches
         }
 
         /// <summary>
-        /// Prefix for Furniture.checkForAction — debounces Y button rapid-toggle.
-        /// On Android, furniture pickup goes through checkForAction (not performToolAction).
-        /// Blocks calls within 30 ticks (~500ms) of the last successful call.
+        /// Prefix for Furniture.canBeRemoved — debounces the rapid-toggle cycle.
+        /// Returns false (not removable) during cooldown to block pickup.
+        /// The rapid-toggle on Android cycles canBeRemoved → performRemoveAction →
+        /// placementAction every ~3 ticks while the tool button is held.
         /// </summary>
-        private static bool FurnitureCheckForAction_Prefix(Furniture __instance, bool justCheckingForActivity)
+        private static bool FurnitureCanBeRemoved_Prefix(Furniture __instance, ref bool __result)
         {
-            // justCheckingForActivity=true is a probe (e.g. cursor icon check), don't debounce those
-            if (justCheckingForActivity)
-                return true;
-
             int elapsed = Game1.ticks - LastFurnitureActionTick;
             if (elapsed < FurnitureCooldownTicks)
             {
-                Monitor.Log($"[Furniture] BLOCKED checkForAction on '{__instance.Name}' — cooldown ({elapsed}/{FurnitureCooldownTicks} ticks)", LogLevel.Info);
-                return false;
+                if (ModEntry.Config.VerboseLogging)
+                    Monitor.Log($"[Furniture] BLOCKED canBeRemoved on '{__instance.Name}' — cooldown ({elapsed}/{FurnitureCooldownTicks} ticks)", LogLevel.Debug);
+                __result = false;
+                return false; // Skip original — furniture cannot be removed during cooldown
             }
 
-            Monitor.Log($"[Furniture] ALLOWED checkForAction on '{__instance.Name}' at tick {Game1.ticks} (elapsed={elapsed})", LogLevel.Info);
+            // Allow removal and start cooldown
             LastFurnitureActionTick = Game1.ticks;
-            return true;
+            return true; // Run original canBeRemoved
         }
 
-        /// <summary>Diagnostic: log when Furniture.canBeRemoved is called.</summary>
-        private static void FurnitureCanBeRemoved_Prefix(Furniture __instance)
-        {
-            Monitor.Log($"[Furniture] canBeRemoved HIT on '{__instance.Name}' at tick {Game1.ticks}", LogLevel.Info);
-        }
-
-        /// <summary>Diagnostic: log when Furniture.performRemoveAction is called.</summary>
-        private static void FurniturePerformRemoveAction_Prefix(Furniture __instance)
-        {
-            Monitor.Log($"[Furniture] performRemoveAction HIT on '{__instance.Name}' at tick {Game1.ticks}", LogLevel.Info);
-        }
-
-        /// <summary>Diagnostic: log when Furniture.placementAction is called.</summary>
+        /// <summary>
+        /// Prefix for Furniture.placementAction — resets the cooldown after placement
+        /// so the immediate re-pickup that follows is blocked by canBeRemoved.
+        /// </summary>
         private static void FurniturePlacementAction_Prefix(Furniture __instance)
         {
-            Monitor.Log($"[Furniture] placementAction HIT on '{__instance.Name}' at tick {Game1.ticks}", LogLevel.Info);
+            LastFurnitureActionTick = Game1.ticks;
         }
     }
 }
