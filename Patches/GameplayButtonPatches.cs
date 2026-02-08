@@ -31,10 +31,6 @@ namespace AndroidConsolizer.Patches
         /// Set by ItemGrabMenuPatches when A on Close X closes a chest.</summary>
         internal static bool SuppressAUntilRelease;
 
-        /// <summary>Suppress logical B in GetState output until the physical button is released.
-        /// Set by ItemGrabMenuPatches when B closes the color picker.</summary>
-        internal static bool SuppressBUntilRelease;
-
         /// <summary>Invalidate the cached GetState so the next call recomputes.
         /// Must be called after setting Suppress*UntilRelease flags mid-tick,
         /// since the cache may already have the unsuppressed state.</summary>
@@ -109,30 +105,17 @@ namespace AndroidConsolizer.Patches
         /// state so it suppresses the LOGICAL button the game sees.</summary>
         private static GamePadState ApplyButtonSuppression(GamePadState state)
         {
-            bool suppressA = false, suppressB = false;
-
-            if (SuppressAUntilRelease)
-            {
-                if (state.Buttons.A == ButtonState.Pressed)
-                    suppressA = true;
-                else
-                    SuppressAUntilRelease = false;
-            }
-
-            if (SuppressBUntilRelease)
-            {
-                if (state.Buttons.B == ButtonState.Pressed)
-                    suppressB = true;
-                else
-                    SuppressBUntilRelease = false;
-            }
-
-            if (!suppressA && !suppressB)
+            if (!SuppressAUntilRelease)
                 return state;
 
+            if (state.Buttons.A != ButtonState.Pressed)
+            {
+                SuppressAUntilRelease = false;
+                return state;
+            }
+
             var newButtons = new GamePadButtons(
-                ((state.Buttons.A == ButtonState.Pressed && !suppressA) ? Buttons.A : 0) |
-                ((state.Buttons.B == ButtonState.Pressed && !suppressB) ? Buttons.B : 0) |
+                ((state.Buttons.B == ButtonState.Pressed) ? Buttons.B : 0) |
                 ((state.Buttons.X == ButtonState.Pressed) ? Buttons.X : 0) |
                 ((state.Buttons.Y == ButtonState.Pressed) ? Buttons.Y : 0) |
                 ((state.Buttons.Start == ButtonState.Pressed) ? Buttons.Start : 0) |
