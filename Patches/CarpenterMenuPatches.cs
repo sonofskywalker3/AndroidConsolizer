@@ -91,7 +91,13 @@ namespace AndroidConsolizer.Patches
                         original: AccessTools.Method(typeof(StardewValley.Object), nameof(StardewValley.Object.performToolAction)),
                         prefix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(FurniturePerformToolAction_Prefix))
                     );
-                    Monitor.Log("Furniture debounce patch applied successfully.", LogLevel.Trace);
+                    // Diagnostic: also patch Furniture.checkForAction to see if pickup goes through there
+                    harmony.Patch(
+                        original: AccessTools.Method(typeof(Furniture), nameof(Furniture.checkForAction)),
+                        prefix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(FurnitureCheckForAction_Prefix))
+                    );
+
+                    Monitor.Log("Furniture debounce + diagnostic patches applied successfully.", LogLevel.Trace);
                 }
                 catch (Exception ex)
                 {
@@ -192,19 +198,29 @@ namespace AndroidConsolizer.Patches
         /// </summary>
         private static bool FurniturePerformToolAction_Prefix(StardewValley.Object __instance)
         {
-            if (__instance is not Furniture)
+            if (__instance is not Furniture furn)
                 return true;
+
+            Monitor.Log($"[Furniture] performToolAction HIT on '{furn.Name}' at tick {Game1.ticks}", LogLevel.Info);
 
             int elapsed = Game1.ticks - LastFurnitureActionTick;
             if (elapsed < FurnitureCooldownTicks)
             {
-                if (ModEntry.Config.VerboseLogging)
-                    Monitor.Log($"[Furniture] BLOCKED performToolAction — cooldown ({elapsed}/{FurnitureCooldownTicks} ticks)", LogLevel.Debug);
+                Monitor.Log($"[Furniture] BLOCKED — cooldown ({elapsed}/{FurnitureCooldownTicks} ticks)", LogLevel.Info);
                 return false;
             }
 
             LastFurnitureActionTick = Game1.ticks;
             return true;
+        }
+
+        /// <summary>
+        /// Diagnostic prefix for Furniture.checkForAction — logs to determine if furniture
+        /// pickup goes through this path instead of performToolAction on Android.
+        /// </summary>
+        private static void FurnitureCheckForAction_Prefix(Furniture __instance)
+        {
+            Monitor.Log($"[Furniture] checkForAction HIT on '{__instance.Name}' at tick {Game1.ticks}", LogLevel.Info);
         }
     }
 }
