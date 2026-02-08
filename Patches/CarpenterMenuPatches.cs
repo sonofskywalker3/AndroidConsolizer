@@ -188,16 +188,20 @@ namespace AndroidConsolizer.Patches
         /// On Android, furniture pickup goes through checkForAction (not performToolAction).
         /// Blocks calls within 30 ticks (~500ms) of the last successful call.
         /// </summary>
-        private static bool FurnitureCheckForAction_Prefix(Furniture __instance)
+        private static bool FurnitureCheckForAction_Prefix(Furniture __instance, bool justCheckingForActivity)
         {
+            // justCheckingForActivity=true is a probe (e.g. cursor icon check), don't debounce those
+            if (justCheckingForActivity)
+                return true;
+
             int elapsed = Game1.ticks - LastFurnitureActionTick;
             if (elapsed < FurnitureCooldownTicks)
             {
-                if (ModEntry.Config.VerboseLogging)
-                    Monitor.Log($"[Furniture] BLOCKED checkForAction on '{__instance.Name}' — cooldown ({elapsed}/{FurnitureCooldownTicks} ticks)", LogLevel.Debug);
+                Monitor.Log($"[Furniture] BLOCKED checkForAction on '{__instance.Name}' — cooldown ({elapsed}/{FurnitureCooldownTicks} ticks)", LogLevel.Info);
                 return false;
             }
 
+            Monitor.Log($"[Furniture] ALLOWED checkForAction on '{__instance.Name}' at tick {Game1.ticks} (elapsed={elapsed})", LogLevel.Info);
             LastFurnitureActionTick = Game1.ticks;
             return true;
         }
