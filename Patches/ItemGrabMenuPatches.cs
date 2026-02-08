@@ -155,7 +155,7 @@ namespace AndroidConsolizer.Patches
 
                 if (verbose)
                 {
-                    Monitor.Log("[ChestNav] === v2.9.7 SIDEBAR BUTTONS ===", LogLevel.Debug);
+                    Monitor.Log("[ChestNav] === SIDEBAR BUTTONS ===", LogLevel.Debug);
                     LogComponent("sortChest", sortChest);
                     LogComponent("fillStacks", fillStacks);
                     LogComponent("colorToggle", colorToggle);
@@ -329,7 +329,7 @@ namespace AndroidConsolizer.Patches
                     LogWiring("Player R2 rightmost", playerRow2Right);
                 }
 
-                Monitor.Log($"[ChestNav] v2.9.7 navigation wired — {_sideButtonObjects.Count} sidebar buttons registered", LogLevel.Info);
+                Monitor.Log($"[ChestNav] Navigation wired — {_sideButtonObjects.Count} sidebar buttons registered", LogLevel.Info);
             }
             catch (Exception ex)
             {
