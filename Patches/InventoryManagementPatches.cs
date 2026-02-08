@@ -705,19 +705,9 @@ namespace AndroidConsolizer.Patches
         {
             try
             {
-                // The inventory menu uses hoverText and related fields for selection
-                // Try to clear various selection indicators
                 if (inventoryPage.inventory != null)
                 {
-                    // Clear the inventory menu's hover state
-                    var invMenu = inventoryPage.inventory;
-
-                    // Use reflection to clear internal selection state if needed
-                    var hoverItemField = AccessTools.Field(typeof(InventoryMenu), "hoverItem");
-                    if (hoverItemField != null)
-                    {
-                        hoverItemField.SetValue(invMenu, null);
-                    }
+                    InvMenu_HoveredItemField?.SetValue(inventoryPage.inventory, null);
                 }
 
                 if (ModEntry.Config.VerboseLogging)
