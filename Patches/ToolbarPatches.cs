@@ -48,7 +48,7 @@ namespace AndroidConsolizer.Patches
             try
             {
                 // If feature is disabled, let original run
-                if (!(ModEntry.Config?.EnableToolbarNavFix ?? false))
+                if (!(ModEntry.Config?.EnableConsoleToolbar ?? false))
                     return true;
 
                 var player = Game1.player;

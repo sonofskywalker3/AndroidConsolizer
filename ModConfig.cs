@@ -23,25 +23,34 @@ namespace AndroidConsolizer
         public ControlStyle ControlStyle { get; set; } = ControlStyle.Switch;
 
         /*********
-        ** Shop Settings
+        ** Feature Toggles
         *********/
-        /// <summary>Whether to enable the shop purchase fix (A button buys items).</summary>
-        public bool EnableShopPurchaseFix { get; set; } = true;
+        /// <summary>Console-style chest controls: sort (X), fill stacks (Y), sidebar navigation, color picker, A/Y item transfer.</summary>
+        public bool EnableConsoleChests { get; set; } = true;
+
+        /// <summary>Console-style shop controls: A button purchases, quantity selector, sell tab, right stick scroll.</summary>
+        public bool EnableConsoleShops { get; set; } = true;
+
+        /// <summary>Console-style toolbar: 12-slot fixed toolbar with LB/RB row switching and LT/RT slot movement.</summary>
+        public bool EnableConsoleToolbar { get; set; } = true;
+
+        /// <summary>Console-style inventory: A picks up/places items, Y picks up one, fishing rod bait/tackle via Y.</summary>
+        public bool EnableConsoleInventory { get; set; } = true;
+
+        /// <summary>Console-style shipping bin: A ships full stack, Y ships one item.</summary>
+        public bool EnableConsoleShipping { get; set; } = true;
 
         /*********
-        ** Toolbar Settings
-        *********/
-        /// <summary>Whether to enable toolbar navigation fix (LB/RB switch rows, LT/RT move within row).</summary>
-        public bool EnableToolbarNavFix { get; set; } = true;
-
-        /*********
-        ** Gameplay Shortcuts
+        ** Standalone Features
         *********/
         /// <summary>Whether Start button opens the Quest Log/Journal instead of inventory.</summary>
         public bool EnableJournalButton { get; set; } = true;
 
         /// <summary>Whether Start button can skip cutscenes (press twice to skip).</summary>
         public bool EnableCutsceneSkip { get; set; } = true;
+
+        /// <summary>Whether to enable the carpenter menu fix (prevents Robin's building menu from instantly closing).</summary>
+        public bool EnableCarpenterMenuFix { get; set; } = true;
 
         /// <summary>
         /// Use bumpers (LB/RB) instead of triggers (LT/RT) for controls.
@@ -50,33 +59,6 @@ namespace AndroidConsolizer
         /// For controllers where Stardew Valley can't read the triggers (e.g., Xbox via Bluetooth on Android).
         /// </summary>
         public bool UseBumpersInsteadOfTriggers { get; set; } = false;
-
-        /*********
-        ** Inventory & Chest Settings
-        *********/
-        /// <summary>Whether to enable X button sorting (inventory and chest).</summary>
-        public bool EnableSortFix { get; set; } = true;
-
-        /// <summary>Whether to enable Y button add-to-stacks (in chest).</summary>
-        public bool EnableAddToStacksFix { get; set; } = true;
-
-        /// <summary>Whether to enable chest navigation fix (trash can, sort button, color picker reachable via controller).</summary>
-        public bool EnableChestNavFix { get; set; } = true;
-
-        /// <summary>Whether to enable console-style chest item transfer (A=transfer full stack, Y=transfer one).</summary>
-        public bool EnableChestTransferFix { get; set; } = true;
-
-        /// <summary>Whether to enable shipping bin stacking fix (A button adds to existing stacks).</summary>
-        public bool EnableShippingBinFix { get; set; } = true;
-
-        /// <summary>Whether to enable fishing rod bait/tackle fix (Y button attaches/detaches bait and tackle).</summary>
-        public bool EnableFishingRodBaitFix { get; set; } = true;
-
-        /// <summary>Whether to enable console-style inventory management (A picks up items, A again places/swaps).</summary>
-        public bool EnableConsoleInventoryFix { get; set; } = true;
-
-        /// <summary>Whether to enable the carpenter menu fix (prevents Robin's building menu from instantly closing).</summary>
-        public bool EnableCarpenterMenuFix { get; set; } = true;
 
         /*********
         ** Debug Settings

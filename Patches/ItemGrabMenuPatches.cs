@@ -657,7 +657,7 @@ namespace AndroidConsolizer.Patches
                 // =====================================================
                 // Color picker open: intercept ALL navigation + B
                 // =====================================================
-                if (_colorPickerOpen && ModEntry.Config.EnableChestNavFix)
+                if (_colorPickerOpen && ModEntry.Config.EnableConsoleChests)
                 {
                     // B closes the picker (intercept BEFORE original method which would close the chest)
                     if (remapped == Buttons.B)
@@ -742,7 +742,7 @@ namespace AndroidConsolizer.Patches
                 // A button on side buttons — simulate click at button position.
                 // On Android, A fires receiveLeftClick at the mouse position which doesn't
                 // track snap navigation. We intercept and click at the correct coordinates.
-                if (remapped == Buttons.A && ModEntry.Config.EnableChestNavFix)
+                if (remapped == Buttons.A && ModEntry.Config.EnableConsoleChests)
                 {
                     var snapped = __instance.currentlySnappedComponent;
                     if (snapped != null && _sideButtonObjects.Contains(snapped))
@@ -806,7 +806,7 @@ namespace AndroidConsolizer.Patches
 
                 // A/Y on grid slots — console-style chest item transfer
                 // A = transfer full stack, Y = transfer one item
-                if ((remapped == Buttons.A || remapped == Buttons.Y) && ModEntry.Config.EnableChestTransferFix)
+                if ((remapped == Buttons.A || remapped == Buttons.Y) && ModEntry.Config.EnableConsoleChests)
                 {
                     // Don't interfere if player has item on cursor
                     if (Game1.player.CursorSlotItem == null)
@@ -852,7 +852,7 @@ namespace AndroidConsolizer.Patches
                 }
 
                 // RB snaps cursor to Fill Stacks button (console-style shortcut)
-                if (remapped == Buttons.RightShoulder && ModEntry.Config.EnableChestTransferFix && !_colorPickerOpen)
+                if (remapped == Buttons.RightShoulder && ModEntry.Config.EnableConsoleChests && !_colorPickerOpen)
                 {
                     if (__instance.fillStacksButton != null)
                     {
@@ -865,7 +865,7 @@ namespace AndroidConsolizer.Patches
                 }
 
                 // X button (after remapping) = Sort chest (and block the original to prevent deletion)
-                if (remapped == Buttons.X && ModEntry.Config.EnableSortFix)
+                if (remapped == Buttons.X && ModEntry.Config.EnableConsoleChests)
                 {
                     if (ModEntry.Config.VerboseLogging)
                         Monitor.Log($"{b} remapped to X - sorting chest (blocking original)", LogLevel.Debug);
@@ -874,7 +874,7 @@ namespace AndroidConsolizer.Patches
                 }
 
                 // Y button (after remapping) = Add to existing stacks
-                if (remapped == Buttons.Y && ModEntry.Config.EnableAddToStacksFix)
+                if (remapped == Buttons.Y && ModEntry.Config.EnableConsoleChests)
                 {
                     if (ModEntry.Config.VerboseLogging)
                         Monitor.Log($"{b} remapped to Y - adding to stacks (blocking original)", LogLevel.Debug);
@@ -895,7 +895,7 @@ namespace AndroidConsolizer.Patches
         /// <summary>Postfix for update — Y-button hold-to-repeat for single-item transfer.</summary>
         private static void Update_Postfix(ItemGrabMenu __instance, GameTime time)
         {
-            if (!_yTransferHeld || !ModEntry.Config.EnableChestTransferFix)
+            if (!_yTransferHeld || !ModEntry.Config.EnableConsoleChests)
                 return;
 
             if (__instance.shippingBin)

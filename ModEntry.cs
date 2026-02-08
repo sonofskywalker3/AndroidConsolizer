@@ -121,7 +121,7 @@ namespace AndroidConsolizer
             }
 
             // Fix snap navigation in ItemGrabMenu (chests, fishing treasure, etc.)
-            if (Config.EnableChestNavFix && e.NewMenu is ItemGrabMenu itemGrabMenu)
+            if (Config.EnableConsoleChests && e.NewMenu is ItemGrabMenu itemGrabMenu)
             {
                 Patches.ItemGrabMenuPatches.FixSnapNavigation(itemGrabMenu);
             }
@@ -143,13 +143,13 @@ namespace AndroidConsolizer
             // X/Y swap is now handled by GameplayButtonPatches at the GamePad.GetState level
 
             // Update inventory management (maintain held item visual) when in inventory menu
-            if (Config.EnableConsoleInventoryFix && Game1.activeClickableMenu is GameMenu gameMenu && gameMenu.currentTab == GameMenu.inventoryTab)
+            if (Config.EnableConsoleInventory && Game1.activeClickableMenu is GameMenu gameMenu && gameMenu.currentTab == GameMenu.inventoryTab)
             {
                 Patches.InventoryManagementPatches.OnUpdateTicked();
             }
 
             // Only enforce toolbar fix during gameplay
-            if (!Config.EnableToolbarNavFix || Game1.activeClickableMenu != null || !Context.IsPlayerFree)
+            if (!Config.EnableConsoleToolbar || Game1.activeClickableMenu != null || !Context.IsPlayerFree)
             {
                 // Reset trigger states when not in gameplay
                 wasLeftTriggerDown = false;
@@ -267,7 +267,7 @@ namespace AndroidConsolizer
                 foreach (var button in e.Pressed)
                 {
                     // CRITICAL: Always suppress raw ControllerX in inventory to prevent Android deletion bug
-                    if (button == SButton.ControllerX && Config.EnableSortFix)
+                    if (button == SButton.ControllerX && Config.EnableConsoleChests)
                     {
                         this.Monitor.Log($"Suppressing raw X button in inventory to prevent deletion", LogLevel.Debug);
                         this.Helper.Input.Suppress(button);
@@ -279,7 +279,7 @@ namespace AndroidConsolizer
                     if (remapped == SButton.ControllerA)
                     {
                         // Try console-style inventory management first
-                        if (Config.EnableConsoleInventoryFix)
+                        if (Config.EnableConsoleInventory)
                         {
                             if (Patches.InventoryManagementPatches.HandleAButton(gameMenu, this.Monitor))
                             {
@@ -289,7 +289,7 @@ namespace AndroidConsolizer
                         }
 
                         // Fall back to fishing rod bait tracking
-                        if (Config.EnableFishingRodBaitFix)
+                        if (Config.EnableConsoleInventory)
                         {
                             Patches.FishingRodPatches.OnAButtonPressed(gameMenu, this.Monitor);
                             // Don't suppress - let normal A behavior continue
@@ -301,7 +301,7 @@ namespace AndroidConsolizer
                     if (remapped == SButton.ControllerY)
                     {
                         // Try fishing rod bait/tackle management first
-                        if (Config.EnableFishingRodBaitFix)
+                        if (Config.EnableConsoleInventory)
                         {
                             if (Patches.FishingRodPatches.TryHandleBaitTackle(gameMenu, this.Helper, this.Monitor))
                             {
@@ -313,7 +313,7 @@ namespace AndroidConsolizer
                     }
 
                     // X button (after remapping) = Sort inventory
-                    if (remapped == SButton.ControllerX && Config.EnableSortFix)
+                    if (remapped == SButton.ControllerX && Config.EnableConsoleChests)
                     {
                         this.Monitor.Log($"Intercepting {button} (remapped to X) in inventory - sorting", LogLevel.Debug);
                         this.Helper.Input.Suppress(button);
@@ -357,7 +357,7 @@ namespace AndroidConsolizer
             }
 
             // Toolbar navigation fix - only when NOT in a menu (during gameplay)
-            if (Config.EnableToolbarNavFix && Game1.activeClickableMenu == null && Context.IsPlayerFree)
+            if (Config.EnableConsoleToolbar && Game1.activeClickableMenu == null && Context.IsPlayerFree)
             {
                 HandleToolbarNavigation(e);
             }
@@ -859,55 +859,62 @@ namespace AndroidConsolizer
                 text: () => GetControlsDisplay()
             );
 
-            // Shop Settings
+            // Feature Toggles
             configMenu.AddSectionTitle(
                 mod: this.ModManifest,
-                text: () => "Shop Fixes"
+                text: () => "Feature Toggles"
             );
 
             configMenu.AddBoolOption(
                 mod: this.ModManifest,
-                name: () => "Enable Shop Purchase Fix",
-                tooltip: () => "A button purchases items in shops (with quantity from LT/RT)",
-                getValue: () => Config.EnableShopPurchaseFix,
-                setValue: value => Config.EnableShopPurchaseFix = value
-            );
-
-            // Toolbar Settings
-            configMenu.AddSectionTitle(
-                mod: this.ModManifest,
-                text: () => "Toolbar Fixes"
+                name: () => "Console Chests",
+                tooltip: () => "Sort (X), fill stacks (Y), sidebar navigation, color picker, and A/Y item transfer in chests.",
+                getValue: () => Config.EnableConsoleChests,
+                setValue: value => Config.EnableConsoleChests = value
             );
 
             configMenu.AddBoolOption(
                 mod: this.ModManifest,
-                name: () => "Enable Console Toolbar",
-                tooltip: () => "LB/RB switches toolbar rows, LT/RT moves left/right within row (console-style)",
-                getValue: () => Config.EnableToolbarNavFix,
-                setValue: value => Config.EnableToolbarNavFix = value
+                name: () => "Console Shops",
+                tooltip: () => "A button purchases items, LT/RT quantity selector, sell tab with A/Y, right stick scroll.",
+                getValue: () => Config.EnableConsoleShops,
+                setValue: value => Config.EnableConsoleShops = value
             );
 
             configMenu.AddBoolOption(
                 mod: this.ModManifest,
-                name: () => "Use Bumpers Instead of Triggers",
-                tooltip: () => "For controllers where triggers aren't detected (e.g., Xbox via Bluetooth).\n" +
-                              "Xbox triggers aren't detected.\n" +
-                              "Toolbar: D-Pad Up/Down switches rows, LB/RB moves within row.\n" +
-                              "Shops: LB/RB adjusts purchase quantity.",
-                getValue: () => Config.UseBumpersInsteadOfTriggers,
-                setValue: value => Config.UseBumpersInsteadOfTriggers = value
+                name: () => "Console Toolbar",
+                tooltip: () => "12-slot fixed toolbar. LB/RB switches rows, LT/RT moves left/right within row.",
+                getValue: () => Config.EnableConsoleToolbar,
+                setValue: value => Config.EnableConsoleToolbar = value
             );
 
-            // Gameplay Shortcuts
+            configMenu.AddBoolOption(
+                mod: this.ModManifest,
+                name: () => "Console Inventory",
+                tooltip: () => "A picks up/places items, Y picks up one from stack, Y on fishing rod attaches/detaches bait and tackle.",
+                getValue: () => Config.EnableConsoleInventory,
+                setValue: value => Config.EnableConsoleInventory = value
+            );
+
+            configMenu.AddBoolOption(
+                mod: this.ModManifest,
+                name: () => "Console Shipping",
+                tooltip: () => "A ships full stack, Y ships one item from the shipping bin.",
+                getValue: () => Config.EnableConsoleShipping,
+                setValue: value => Config.EnableConsoleShipping = value
+            );
+
+            // Standalone Features
             configMenu.AddSectionTitle(
                 mod: this.ModManifest,
-                text: () => "Gameplay Shortcuts"
+                text: () => "Standalone Features"
             );
 
             configMenu.AddBoolOption(
                 mod: this.ModManifest,
                 name: () => "Start Opens Journal",
-                tooltip: () => "Start button opens the Quest Log/Journal instead of inventory",
+                tooltip: () => "Start button opens the Quest Log/Journal instead of inventory.",
                 getValue: () => Config.EnableJournalButton,
                 setValue: value => Config.EnableJournalButton = value
             );
@@ -915,84 +922,27 @@ namespace AndroidConsolizer
             configMenu.AddBoolOption(
                 mod: this.ModManifest,
                 name: () => "Start Skips Cutscenes",
-                tooltip: () => "Press Start twice during a skippable cutscene to skip it.\n" +
-                              "First press shows confirmation, second press within 3 seconds skips.",
+                tooltip: () => "Press Start twice during a skippable cutscene to skip it.",
                 getValue: () => Config.EnableCutsceneSkip,
                 setValue: value => Config.EnableCutsceneSkip = value
             );
 
-            // Inventory/Chest Settings
-            configMenu.AddSectionTitle(
-                mod: this.ModManifest,
-                text: () => "Inventory & Chest Fixes"
-            );
-
             configMenu.AddBoolOption(
                 mod: this.ModManifest,
-                name: () => "Enable Sort (X Button)",
-                tooltip: () => "X button sorts inventory when in inventory menu, sorts chest when in chest menu",
-                getValue: () => Config.EnableSortFix,
-                setValue: value => Config.EnableSortFix = value
-            );
-
-            configMenu.AddBoolOption(
-                mod: this.ModManifest,
-                name: () => "Enable Add to Stacks (Y Button)",
-                tooltip: () => "Y button adds matching items to existing stacks in chest",
-                getValue: () => Config.EnableAddToStacksFix,
-                setValue: value => Config.EnableAddToStacksFix = value
-            );
-
-            configMenu.AddBoolOption(
-                mod: this.ModManifest,
-                name: () => "Enable Chest Navigation Fix",
-                tooltip: () => "Makes trash can, sort button, color picker, and fill stacks reachable via controller in chests",
-                getValue: () => Config.EnableChestNavFix,
-                setValue: value => Config.EnableChestNavFix = value
-            );
-
-            configMenu.AddBoolOption(
-                mod: this.ModManifest,
-                name: () => "Enable Chest Transfer (A/Y)",
-                tooltip: () => "A button instantly transfers full stack between chest and inventory. Y button transfers one item. (Console-style behavior)",
-                getValue: () => Config.EnableChestTransferFix,
-                setValue: value => Config.EnableChestTransferFix = value
-            );
-
-            configMenu.AddBoolOption(
-                mod: this.ModManifest,
-                name: () => "Enable Shipping Bin Fix",
-                tooltip: () => "A button ships items, Y button ships one item (console-style controls)",
-                getValue: () => Config.EnableShippingBinFix,
-                setValue: value => Config.EnableShippingBinFix = value
-            );
-
-            configMenu.AddBoolOption(
-                mod: this.ModManifest,
-                name: () => "Enable Fishing Rod Bait Fix",
-                tooltip: () => "Y button attaches/detaches bait and tackle from fishing rods (console-style).\n" +
-                              "Hold bait/tackle + press Y on rod = attach.\n" +
-                              "Press Y on rod with nothing held = detach (bait first, then tackle).",
-                getValue: () => Config.EnableFishingRodBaitFix,
-                setValue: value => Config.EnableFishingRodBaitFix = value
-            );
-
-            configMenu.AddBoolOption(
-                mod: this.ModManifest,
-                name: () => "Enable Carpenter Menu Fix",
-                tooltip: () => "Prevents Robin's building menu from instantly closing when opened with A button",
+                name: () => "Carpenter Menu Fix",
+                tooltip: () => "Prevents Robin's building menu from instantly closing when opened with A button.",
                 getValue: () => Config.EnableCarpenterMenuFix,
                 setValue: value => Config.EnableCarpenterMenuFix = value
             );
 
             configMenu.AddBoolOption(
                 mod: this.ModManifest,
-                name: () => "Enable Console Inventory (A Button)",
-                tooltip: () => "A button picks up and places items like on Nintendo Switch.\n" +
-                              "A on item = pick up to cursor.\n" +
-                              "A on another slot = place/swap item.",
-                getValue: () => Config.EnableConsoleInventoryFix,
-                setValue: value => Config.EnableConsoleInventoryFix = value
+                name: () => "Use Bumpers Instead of Triggers",
+                tooltip: () => "For controllers where triggers aren't detected (e.g., Xbox via Bluetooth).\n" +
+                              "Toolbar: D-Pad Up/Down switches rows, LB/RB moves within row.\n" +
+                              "Shops: LB/RB adjusts purchase quantity.",
+                getValue: () => Config.UseBumpersInsteadOfTriggers,
+                setValue: value => Config.UseBumpersInsteadOfTriggers = value
             );
 
             // Debug
@@ -1004,7 +954,7 @@ namespace AndroidConsolizer
             configMenu.AddBoolOption(
                 mod: this.ModManifest,
                 name: () => "Verbose Logging",
-                tooltip: () => "Log detailed information for debugging",
+                tooltip: () => "Log detailed information for debugging.",
                 getValue: () => Config.VerboseLogging,
                 setValue: value => Config.VerboseLogging = value
             );

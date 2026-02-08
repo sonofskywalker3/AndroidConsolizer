@@ -124,7 +124,7 @@ namespace AndroidConsolizer.Patches
                 if (remapped != Buttons.A && remapped != Buttons.Y)
                     return true;
 
-                if (!ModEntry.Config?.EnableShopPurchaseFix ?? true)
+                if (!ModEntry.Config?.EnableConsoleShops ?? true)
                     return true; // Disabled — let vanilla handle it
 
                 // Y button — sell one item on sell tab (hold Y to sell repeatedly)
@@ -805,7 +805,7 @@ namespace AndroidConsolizer.Patches
         {
             try
             {
-                if (!ModEntry.Config?.EnableShopPurchaseFix ?? true)
+                if (!ModEntry.Config?.EnableConsoleShops ?? true)
                     return;
 
                 // Draw controller button icon on the inventoryButton (tab-switch hint)
@@ -956,7 +956,7 @@ namespace AndroidConsolizer.Patches
         {
             try
             {
-                if (!ModEntry.Config?.EnableShopPurchaseFix ?? true)
+                if (!ModEntry.Config?.EnableConsoleShops ?? true)
                     return true;
 
                 if (!GamePad.GetState(PlayerIndex.One).IsConnected)

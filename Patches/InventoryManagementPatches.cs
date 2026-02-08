@@ -90,7 +90,7 @@ namespace AndroidConsolizer.Patches
         /// </summary>
         private static void InventoryPage_Draw_Postfix(InventoryPage __instance, SpriteBatch b)
         {
-            if (!ModEntry.Config.EnableConsoleInventoryFix)
+            if (!ModEntry.Config.EnableConsoleInventory)
                 return;
 
             // Draw held item at cursor position (bottom-right of the slot, like console)
@@ -278,7 +278,7 @@ namespace AndroidConsolizer.Patches
 
             // Block A button hold tooltip behavior (Android-specific)
             bool isAButtonDown = gpState.Buttons.A == ButtonState.Pressed;
-            if (ModEntry.Config.EnableConsoleInventoryFix && isAButtonDown)
+            if (ModEntry.Config.EnableConsoleInventory && isAButtonDown)
             {
                 // Clear any tooltip/hover state when A is held to prevent Android tooltip popup
                 if (Game1.activeClickableMenu is GameMenu gm && gm.currentTab == GameMenu.inventoryTab)
@@ -294,7 +294,7 @@ namespace AndroidConsolizer.Patches
 
             // Handle controller hover tooltips - trigger when snapped component changes
             // But only when A button is NOT held
-            if (ModEntry.Config.EnableConsoleInventoryFix && !isAButtonDown)
+            if (ModEntry.Config.EnableConsoleInventory && !isAButtonDown)
             {
                 TriggerHoverTooltip();
             }
@@ -416,7 +416,7 @@ namespace AndroidConsolizer.Patches
         {
             Monitor = monitor;
 
-            if (!ModEntry.Config.EnableConsoleInventoryFix)
+            if (!ModEntry.Config.EnableConsoleInventory)
                 return false;
 
             try
@@ -484,7 +484,7 @@ namespace AndroidConsolizer.Patches
         {
             Monitor = monitor;
 
-            if (!ModEntry.Config.EnableConsoleInventoryFix)
+            if (!ModEntry.Config.EnableConsoleInventory)
                 return false;
 
             try
