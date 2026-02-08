@@ -81,8 +81,9 @@ namespace AndroidConsolizer.Patches
 
             // Furniture debounce — separate try/catch so carpenter patches still work if this fails
             // The rapid-toggle cycle on Android is: canBeRemoved → performRemoveAction → placementAction
-            // repeating every ~3 ticks while the tool button is held. We debounce canBeRemoved (blocks
-            // pickup) and placementAction (resets cooldown after placement so re-pickup is also blocked).
+            // repeating every ~3 ticks while the tool button is held. We debounce BOTH directions:
+            // - After pickup (performRemoveAction): block auto-placement so furniture stays in inventory
+            // - After placement (placementAction): block auto-pickup so furniture stays placed
             if (ModEntry.Config.EnableFurnitureDebounce)
             {
                 try
@@ -90,6 +91,10 @@ namespace AndroidConsolizer.Patches
                     harmony.Patch(
                         original: AccessTools.Method(typeof(Furniture), "canBeRemoved"),
                         prefix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(FurnitureCanBeRemoved_Prefix))
+                    );
+                    harmony.Patch(
+                        original: AccessTools.Method(typeof(Furniture), "performRemoveAction"),
+                        postfix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(FurniturePerformRemoveAction_Postfix))
                     );
                     harmony.Patch(
                         original: AccessTools.Method(typeof(Furniture), "placementAction"),
@@ -190,10 +195,9 @@ namespace AndroidConsolizer.Patches
         }
 
         /// <summary>
-        /// Prefix for Furniture.canBeRemoved — debounces the rapid-toggle cycle.
-        /// Returns false (not removable) during cooldown to block pickup.
-        /// The rapid-toggle on Android cycles canBeRemoved → performRemoveAction →
-        /// placementAction every ~3 ticks while the tool button is held.
+        /// Prefix for Furniture.canBeRemoved — blocks re-pickup during cooldown.
+        /// After placementAction sets the cooldown, this prevents the immediate
+        /// auto-pickup that would start the rapid-toggle cycle again.
         /// </summary>
         private static bool FurnitureCanBeRemoved_Prefix(Furniture __instance, ref bool __result)
         {
@@ -203,22 +207,38 @@ namespace AndroidConsolizer.Patches
                 if (ModEntry.Config.VerboseLogging)
                     Monitor.Log($"[Furniture] BLOCKED canBeRemoved on '{__instance.Name}' — cooldown ({elapsed}/{FurnitureCooldownTicks} ticks)", LogLevel.Debug);
                 __result = false;
-                return false; // Skip original — furniture cannot be removed during cooldown
+                return false;
             }
 
-            // Allow removal — cooldown is set by placementAction after the full cycle completes.
-            // canBeRemoved is called multiple times per interaction; setting cooldown here would
-            // block the second call and prevent the pickup from ever happening.
-            return true; // Run original canBeRemoved
+            return true;
         }
 
         /// <summary>
-        /// Prefix for Furniture.placementAction — resets the cooldown after placement
-        /// so the immediate re-pickup that follows is blocked by canBeRemoved.
+        /// Postfix for Furniture.performRemoveAction — sets cooldown after pickup
+        /// so the immediate auto-placement that follows is blocked by placementAction.
         /// </summary>
-        private static void FurniturePlacementAction_Prefix(Furniture __instance)
+        private static void FurniturePerformRemoveAction_Postfix()
         {
             LastFurnitureActionTick = Game1.ticks;
+        }
+
+        /// <summary>
+        /// Prefix for Furniture.placementAction — blocks auto-placement during cooldown
+        /// (after pickup), and sets cooldown when placement goes through (to block re-pickup).
+        /// </summary>
+        private static bool FurniturePlacementAction_Prefix(Furniture __instance, ref bool __result)
+        {
+            int elapsed = Game1.ticks - LastFurnitureActionTick;
+            if (elapsed < FurnitureCooldownTicks)
+            {
+                if (ModEntry.Config.VerboseLogging)
+                    Monitor.Log($"[Furniture] BLOCKED placementAction on '{__instance.Name}' — cooldown ({elapsed}/{FurnitureCooldownTicks} ticks)", LogLevel.Debug);
+                __result = false;
+                return false;
+            }
+
+            LastFurnitureActionTick = Game1.ticks;
+            return true;
         }
     }
 }
