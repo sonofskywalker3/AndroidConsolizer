@@ -70,6 +70,17 @@ namespace AndroidConsolizer.Patches
         /// <summary>Current building's tile height, cached from Update_Postfix for use in GetMouseState_Postfix.</summary>
         private static int _buildingTileHeight = 0;
 
+        /// <summary>Current building's tile width, cached from Update_Postfix for use in GetMouseState_Postfix.</summary>
+        private static int _buildingTileWidth = 0;
+
+        /// <summary>True after the first A press has positioned the ghost at the cursor.
+        /// The next A press (without cursor movement) will let receiveGamePadButton(A) through to build.</summary>
+        private static bool _ghostPlaced = false;
+
+        /// <summary>Set by ReceiveGamePadButton_Prefix when it lets A through for building.
+        /// Tells Update_Postfix to skip the receiveLeftClick call on this frame.</summary>
+        private static bool _buildPressHandled = false;
+
         /// <summary>Apply Harmony patches.</summary>
         public static void Apply(Harmony harmony, IMonitor monitor)
         {
@@ -103,11 +114,10 @@ namespace AndroidConsolizer.Patches
                     prefix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(ExitThisMenu_Prefix))
                 );
 
-                // Block receiveGamePadButton(A) during farm view — the game's handler
-                // fires during update() BEFORE our postfix, placing the building at the
-                // ghost's old position (top-left corner) before we can move the ghost.
-                // We let receiveLeftClick through — it fires AFTER our postfix and reads
-                // our GetMouseState override for correct ghost positioning.
+                // Two-press A button: first press blocks receiveGamePadButton(A) so our
+                // postfix can position the ghost via receiveLeftClick. Second press lets
+                // receiveGamePadButton(A) through to trigger the actual build at the
+                // ghost's stored position.
                 harmony.Patch(
                     original: AccessTools.Method(typeof(CarpenterMenu), nameof(CarpenterMenu.receiveGamePadButton)),
                     prefix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(ReceiveGamePadButton_Prefix))
@@ -210,6 +220,8 @@ namespace AndroidConsolizer.Patches
             MenuOpenTick = Game1.ticks;
             _cursorCentered = false;
             _prevAPressed = true;
+            _ghostPlaced = false;
+            _buildPressHandled = false;
             if (ModEntry.Config.VerboseLogging)
                 Monitor.Log($"CarpenterMenu opened at tick {MenuOpenTick}. Grace period: {GracePeriodTicks} ticks.", LogLevel.Debug);
         }
@@ -227,6 +239,8 @@ namespace AndroidConsolizer.Patches
             _cursorCentered = false;
             _cursorActive = false;
             _prevAPressed = true;
+            _ghostPlaced = false;
+            _buildPressHandled = false;
         }
 
         /// <summary>Check if we're within the grace period after menu open.</summary>
@@ -236,11 +250,10 @@ namespace AndroidConsolizer.Patches
         }
 
         /// <summary>
-        /// Prefix for CarpenterMenu.receiveGamePadButton — blocks A button during farm view.
-        /// The game's handler fires during update() BEFORE our postfix, and would place the
-        /// building at the ghost's old position. We block it so only receiveLeftClick (which
-        /// fires AFTER our postfix and reads our GetMouseState override) handles placement.
-        /// Other buttons (B for cancel) pass through.
+        /// Prefix for CarpenterMenu.receiveGamePadButton — two-press A button system.
+        /// First A press: block here so Update_Postfix can position the ghost via receiveLeftClick.
+        /// Second A press (ghost already placed): let through so the game builds at the ghost position.
+        /// Other buttons (B for cancel) always pass through.
         /// </summary>
         private static bool ReceiveGamePadButton_Prefix(CarpenterMenu __instance, Buttons b)
         {
@@ -252,9 +265,22 @@ namespace AndroidConsolizer.Patches
 
             if (b == Buttons.A)
             {
-                if (ModEntry.Config.VerboseLogging)
-                    Monitor.Log("[CarpenterMenu] BLOCKED receiveGamePadButton(A) — cursor active", LogLevel.Trace);
-                return false;
+                if (_ghostPlaced)
+                {
+                    // Ghost is at cursor position from previous A press — let game build
+                    _ghostPlaced = false;
+                    _buildPressHandled = true;
+                    if (ModEntry.Config.VerboseLogging)
+                        Monitor.Log("[CarpenterMenu] Ghost placed → letting receiveGamePadButton(A) through to BUILD", LogLevel.Debug);
+                    return true;
+                }
+                else
+                {
+                    // Ghost needs positioning — block A so our postfix can call receiveLeftClick
+                    if (ModEntry.Config.VerboseLogging)
+                        Monitor.Log("[CarpenterMenu] BLOCKED receiveGamePadButton(A) — positioning ghost first", LogLevel.Trace);
+                    return false;
+                }
             }
 
             return true;
@@ -362,6 +388,7 @@ namespace AndroidConsolizer.Patches
             // Read current building dimensions for ghost centering in GetMouseState_Postfix
             var building = CurrentBuildingField?.GetValue(__instance) as Building;
             _buildingTileHeight = building?.tilesHigh.Value ?? 0;
+            _buildingTileWidth = building?.tilesWide.Value ?? 0;
 
             // Center cursor on first farm-view frame so building ghost starts mid-screen
             if (!_cursorCentered)
@@ -379,9 +406,11 @@ namespace AndroidConsolizer.Patches
             float absX = Math.Abs(thumbStick.X);
             float absY = Math.Abs(thumbStick.Y);
 
-            // Move cursor if stick is above deadzone
+            // Move cursor if stick is above deadzone — also resets ghost placement
             if (absX > StickDeadzone || absY > StickDeadzone)
             {
+                // Cursor is moving — ghost needs to be repositioned before building
+                _ghostPlaced = false;
                 float deltaX = 0f, deltaY = 0f;
 
                 if (absX > StickDeadzone)
@@ -434,23 +463,35 @@ namespace AndroidConsolizer.Patches
                     Monitor.Log($"[CarpenterMenu] Cursor: ({(int)_cursorX},{(int)_cursorY}) pan=({panX},{panY})", LogLevel.Trace);
             }
 
-            // A button → snap ghost to cursor position via receiveLeftClick.
-            // We set _overridingMousePosition and leave it active for the rest of the
-            // frame. Our receiveLeftClick moves the ghost, then the game's own
-            // receiveLeftClick (which fires AFTER this postfix, from the A-as-touch
-            // simulation) also reads our overridden coords. receiveGamePadButton(A) is
-            // blocked by our prefix so it can't place at the ghost's old position.
+            // Two-press A button system:
+            // Press 1: block receiveGamePadButton(A), call receiveLeftClick → ghost moves to cursor
+            // Press 2: let receiveGamePadButton(A) through → game builds at ghost position
             // Override gets cleared at the START of the next frame's Update_Postfix.
             var gps = Game1.input.GetGamePadState();
             bool aPressed = gps.Buttons.A == ButtonState.Pressed;
             if (aPressed && !_prevAPressed)
             {
-                _overridingMousePosition = true;
-                __instance.receiveLeftClick((int)_cursorX, (int)_cursorY);
-                // Don't clear _overridingMousePosition — game's receiveLeftClick fires
-                // after this postfix and needs to read our coords too
-                if (ModEntry.Config.VerboseLogging)
-                    Monitor.Log($"[CarpenterMenu] A pressed → receiveLeftClick({(int)_cursorX},{(int)_cursorY}) zoom={Game1.options.zoomLevel} buildH={_buildingTileHeight} yOffset={_buildingTileHeight * 32}", LogLevel.Debug);
+                if (_buildPressHandled)
+                {
+                    // The prefix let receiveGamePadButton(A) through for building.
+                    // Don't call receiveLeftClick — the game already handled the build.
+                    _buildPressHandled = false;
+                    if (ModEntry.Config.VerboseLogging)
+                        Monitor.Log("[CarpenterMenu] Build press handled by receiveGamePadButton — skipping receiveLeftClick", LogLevel.Debug);
+                }
+                else
+                {
+                    // First press: position ghost at cursor via receiveLeftClick
+                    _overridingMousePosition = true;
+                    __instance.receiveLeftClick((int)_cursorX, (int)_cursorY);
+                    _ghostPlaced = true;
+                    // Don't clear _overridingMousePosition — game's receiveLeftClick fires
+                    // after this postfix and needs to read our coords too.
+                    // Override persists into next frame so receiveGamePadButton(A) also
+                    // reads our coords if it internally checks GetMouseState.
+                    if (ModEntry.Config.VerboseLogging)
+                        Monitor.Log($"[CarpenterMenu] Ghost positioned at ({(int)_cursorX},{(int)_cursorY}) — press A again to build. zoom={Game1.options.zoomLevel} buildW={_buildingTileWidth} buildH={_buildingTileHeight}", LogLevel.Debug);
+                }
             }
             _prevAPressed = aPressed;
         }
@@ -469,13 +510,14 @@ namespace AndroidConsolizer.Patches
             // screen pixels, and the game divides by zoomLevel to get game units. Multiply
             // by zoom so the division yields the correct game-unit position.
             //
-            // Y offset: The ghost anchor is at the building's top-left corner, so it extends
-            // downward. Subtract half the building height (in game pixels) to center the
-            // ghost vertically on the cursor. 1 tile = 64 game pixels, half = 32.
+            // The ghost anchor is at the building's top-left corner. Offset by half the
+            // building dimensions to center the ghost on the cursor.
+            // 1 tile = 64 game pixels, half = 32.
             float zoom = Game1.options.zoomLevel;
+            float adjustedX = _cursorX - _buildingTileWidth * 32;
             float adjustedY = _cursorY - _buildingTileHeight * 32;
             __result = new MouseState(
-                (int)(_cursorX * zoom), (int)(adjustedY * zoom),
+                (int)(adjustedX * zoom), (int)(adjustedY * zoom),
                 __result.ScrollWheelValue,
                 __result.LeftButton,
                 __result.MiddleButton,
