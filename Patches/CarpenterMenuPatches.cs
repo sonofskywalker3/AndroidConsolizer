@@ -43,6 +43,7 @@ namespace AndroidConsolizer.Patches
         // --- Joystick cursor/panning fields ---
         private static FieldInfo OnFarmField;      // bool — true when showing farm view
         private static FieldInfo FreezeField;      // bool — true during animations/transitions
+        private static FieldInfo OldMouseStateField; // Game1.oldMouseState — ghost reads this for position
 
         private const float StickDeadzone = 0.2f;
         private const float CursorSpeedMax = 16f;  // px/tick at full tilt
@@ -102,16 +103,26 @@ namespace AndroidConsolizer.Patches
                 );
 
                 // Block receiveLeftClick during farm view unless our code is calling.
-                // The game's own A-button handler fires receiveLeftClick at the old mouse
-                // position (ghost's current location), building there instead of moving the ghost.
                 harmony.Patch(
                     original: AccessTools.Method(typeof(CarpenterMenu), nameof(CarpenterMenu.receiveLeftClick)),
                     prefix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(ReceiveLeftClick_FarmBlock_Prefix))
                 );
 
+                // Block receiveGamePadButton(A) during farm view — the game's controller
+                // handler builds at the ghost's stored position, not our cursor.
+                harmony.Patch(
+                    original: AccessTools.Method(typeof(CarpenterMenu), nameof(CarpenterMenu.receiveGamePadButton)),
+                    prefix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(ReceiveGamePadButton_Prefix))
+                );
+
                 // Cache reflection fields for farm-view cursor movement
                 OnFarmField = AccessTools.Field(typeof(CarpenterMenu), "onFarm");
                 FreezeField = AccessTools.Field(typeof(CarpenterMenu), "freeze");
+                OldMouseStateField = AccessTools.Field(typeof(Game1), "oldMouseState");
+                if (OldMouseStateField != null)
+                    Monitor.Log("Cached Game1.oldMouseState field.", LogLevel.Trace);
+                else
+                    Monitor.Log("WARNING: Game1.oldMouseState field not found!", LogLevel.Warn);
 
                 // Postfix on update — reads left stick and moves cursor when on farm
                 harmony.Patch(
@@ -253,6 +264,29 @@ namespace AndroidConsolizer.Patches
             if (ModEntry.Config.VerboseLogging)
                 Monitor.Log($"[CarpenterMenu] BLOCKED game receiveLeftClick({x},{y}) — cursor active", LogLevel.Trace);
             return false;
+        }
+
+        /// <summary>
+        /// Prefix for CarpenterMenu.receiveGamePadButton — blocks A button during farm view.
+        /// The game's controller handler builds at the ghost's stored position (not our cursor).
+        /// We handle A exclusively in Update_Postfix. Other buttons (B for cancel) pass through.
+        /// </summary>
+        private static bool ReceiveGamePadButton_Prefix(CarpenterMenu __instance, Buttons b)
+        {
+            if (!ModEntry.Config.EnableCarpenterMenuFix)
+                return true;
+
+            if (!_cursorActive)
+                return true;
+
+            if (b == Buttons.A)
+            {
+                if (ModEntry.Config.VerboseLogging)
+                    Monitor.Log("[CarpenterMenu] BLOCKED game receiveGamePadButton(A) — cursor active", LogLevel.Trace);
+                return false;
+            }
+
+            return true;
         }
 
         /// <summary>Prefix for CarpenterMenu.releaseLeftClick — blocks the A-button release from closing the menu.</summary>
@@ -420,9 +454,21 @@ namespace AndroidConsolizer.Patches
                     Monitor.Log($"[CarpenterMenu] Cursor: ({(int)_cursorX},{(int)_cursorY}) pan=({panX},{panY})", LogLevel.Trace);
             }
 
-            // A button → simulate touch at cursor position to snap building ghost.
-            // receiveLeftClick reads mouse position internally (not its x,y params) for
-            // building placement, so we temporarily override GetMouseState during the call.
+            // Set Game1.oldMouseState to our cursor position every tick.
+            // The ghost draws at the position from oldMouseState. This runs between
+            // update() and draw(), so the ghost should see our cursor coords.
+            float zoom = Game1.options.zoomLevel;
+            if (OldMouseStateField != null)
+            {
+                OldMouseStateField.SetValue(null, new MouseState(
+                    (int)(_cursorX * zoom), (int)(_cursorY * zoom),
+                    0, ButtonState.Released, ButtonState.Released,
+                    ButtonState.Released, ButtonState.Released, ButtonState.Released
+                ));
+            }
+
+            // A button → build at cursor position. All game A-handlers are blocked
+            // (receiveLeftClick + receiveGamePadButton), so our call is the only one.
             // _weAreClicking lets our call through the ReceiveLeftClick_FarmBlock_Prefix.
             var gps = Game1.input.GetGamePadState();
             bool aPressed = gps.Buttons.A == ButtonState.Pressed;
@@ -434,7 +480,7 @@ namespace AndroidConsolizer.Patches
                 _overridingMousePosition = false;
                 _weAreClicking = false;
                 if (ModEntry.Config.VerboseLogging)
-                    Monitor.Log($"[CarpenterMenu] A pressed → receiveLeftClick({(int)_cursorX},{(int)_cursorY}) zoom={Game1.options.zoomLevel} uiScale={Game1.options.uiScale}", LogLevel.Debug);
+                    Monitor.Log($"[CarpenterMenu] A pressed → receiveLeftClick({(int)_cursorX},{(int)_cursorY}) zoom={zoom} uiScale={Game1.options.uiScale}", LogLevel.Debug);
             }
             _prevAPressed = aPressed;
         }
