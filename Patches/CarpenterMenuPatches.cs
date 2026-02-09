@@ -294,13 +294,14 @@ namespace AndroidConsolizer.Patches
 
             if (b == Buttons.A)
             {
-                // In move/demolish mode, receiveLeftClick handles everything — always block
-                // receiveGamePadButton(A) and let our postfix fire receiveLeftClick instead.
+                // In move/demolish mode, let A through — the game's receiveGamePadButton
+                // handles building selection/placement/demolition. Our GetMouseState override
+                // is active continuously so it reads our cursor position.
                 if (IsClickThroughMode(__instance))
                 {
                     if (ModEntry.Config.VerboseLogging)
-                        Monitor.Log("[CarpenterMenu] BLOCKED receiveGamePadButton(A) — move/demolish mode, using receiveLeftClick", LogLevel.Trace);
-                    return false;
+                        Monitor.Log("[CarpenterMenu] Letting receiveGamePadButton(A) through — move/demolish, override active", LogLevel.Trace);
+                    return true;
                 }
 
                 // Build mode: two-press system
@@ -388,38 +389,53 @@ namespace AndroidConsolizer.Patches
         /// </summary>
         private static void Update_Postfix(CarpenterMenu __instance)
         {
-            // Clear GetMouseState override from the previous frame. It was kept active so
-            // the game's own receiveLeftClick (which fires AFTER our postfix) would read
-            // our cursor coords. Now that the next frame has started, clear it.
-            _overridingMousePosition = false;
+            // Don't clear _overridingMousePosition here — in move/demolish mode it stays
+            // active across frames so the game always reads our cursor position. It's
+            // cleared in each early return and managed per-mode below.
 
             // Clear cursor by default — only set when all conditions are met
             _cursorActive = false;
 
             if (!ModEntry.Config.EnableCarpenterMenuFix)
+            {
+                _overridingMousePosition = false;
                 return;
+            }
 
             if (OnFarmField == null || FreezeField == null)
+            {
+                _overridingMousePosition = false;
                 return;
+            }
 
             // Only active when on the farm view
             if (!(bool)OnFarmField.GetValue(__instance))
             {
                 _cursorCentered = false;
+                _overridingMousePosition = false;
                 return;
             }
 
             // Don't move during animations/transitions
             if ((bool)FreezeField.GetValue(__instance))
+            {
+                _overridingMousePosition = false;
                 return;
+            }
 
             // Don't move during grace period
             if (IsInGracePeriod())
+            {
+                _overridingMousePosition = false;
                 return;
+            }
 
             // Don't move during screen fades
             if (Game1.IsFading())
+            {
+                _overridingMousePosition = false;
                 return;
+            }
 
             // Enable cursor — draw postfix will render it, A button will click at its position
             _cursorActive = true;
@@ -458,6 +474,15 @@ namespace AndroidConsolizer.Patches
                 _buildingTileWidth = building?.tilesWide.Value ?? 0;
                 _buildingTileHeight = building?.tilesHigh.Value ?? 0;
             }
+
+            // Mode-dependent GetMouseState override:
+            // Move/demolish: keep active continuously so the game always reads our cursor
+            // position (receiveGamePadButton fires before this postfix and needs the override).
+            // Build: clear here, only activate momentarily during our receiveLeftClick call.
+            if (isMoving || isDemolishing)
+                _overridingMousePosition = true;
+            else
+                _overridingMousePosition = false;
 
             // Center cursor on first farm-view frame so building ghost starts mid-screen
             if (!_cursorCentered)
@@ -533,7 +558,8 @@ namespace AndroidConsolizer.Patches
             }
 
             // A button handling — mode-dependent:
-            // Move/demolish: every A press fires receiveLeftClick directly (select/place/demolish)
+            // Move/demolish: game's receiveGamePadButton handled the A (prefix let it through).
+            //   Override is active continuously so the game reads our cursor position.
             // Build: two-press system (first A positions ghost, second A builds via receiveGamePadButton)
             var gps = Game1.input.GetGamePadState();
             bool aPressed = gps.Buttons.A == ButtonState.Pressed;
@@ -541,14 +567,14 @@ namespace AndroidConsolizer.Patches
             {
                 if (IsClickThroughMode(__instance))
                 {
-                    // Move/demolish mode: every A press → receiveLeftClick at cursor
-                    _overridingMousePosition = true;
-                    __instance.receiveLeftClick((int)_cursorX, (int)_cursorY);
+                    // Move/demolish: game's receiveGamePadButton already handled this A press
+                    // (prefix let it through). Override is active continuously so both
+                    // receiveGamePadButton and touch-sim receiveLeftClick see our cursor position.
                     if (ModEntry.Config.VerboseLogging)
                     {
                         var btm = BuildingToMoveField?.GetValue(__instance) as Building;
                         string mode = isMoving ? "MOVE" : "DEMOLISH";
-                        Monitor.Log($"[CarpenterMenu] {mode} → receiveLeftClick({(int)_cursorX},{(int)_cursorY}) buildingToMove={btm?.buildingType.Value ?? "none"}", LogLevel.Debug);
+                        Monitor.Log($"[CarpenterMenu] {mode} A at ({(int)_cursorX},{(int)_cursorY}) buildingToMove={btm?.buildingType.Value ?? "none"}", LogLevel.Debug);
                     }
                 }
                 else if (_buildPressHandled)
