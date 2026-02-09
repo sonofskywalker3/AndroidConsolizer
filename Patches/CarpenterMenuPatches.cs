@@ -62,6 +62,9 @@ namespace AndroidConsolizer.Patches
         /// <summary>Previous frame's A button state for edge detection.</summary>
         private static bool _prevAPressed = true;
 
+        /// <summary>When true, GetMouseState postfix returns cursor position. Only active during receiveLeftClick.</summary>
+        private static bool _overridingMousePosition = false;
+
         /// <summary>Apply Harmony patches.</summary>
         public static void Apply(Harmony harmony, IMonitor monitor)
         {
@@ -118,6 +121,37 @@ namespace AndroidConsolizer.Patches
             catch (Exception ex)
             {
                 Monitor.Log($"Failed to apply CarpenterMenu patches: {ex.Message}", LogLevel.Error);
+            }
+
+            // GetMouseState patches — receiveLeftClick reads mouse position internally instead of
+            // using its x,y parameters. We override GetMouseState momentarily during the call so
+            // the game reads our cursor position for building placement.
+            try
+            {
+                var inputType = Game1.input.GetType();
+                var getMouseStateMethod = AccessTools.Method(inputType, "GetMouseState");
+                if (getMouseStateMethod != null)
+                {
+                    harmony.Patch(
+                        original: getMouseStateMethod,
+                        postfix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(GetMouseState_Postfix))
+                    );
+                    Monitor.Log($"Patched {inputType.Name}.GetMouseState postfix.", LogLevel.Trace);
+                }
+
+                var xnaMouseGetState = AccessTools.Method(typeof(Mouse), nameof(Mouse.GetState));
+                if (xnaMouseGetState != null)
+                {
+                    harmony.Patch(
+                        original: xnaMouseGetState,
+                        postfix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(GetMouseState_Postfix))
+                    );
+                    Monitor.Log("Patched Mouse.GetState postfix.", LogLevel.Trace);
+                }
+            }
+            catch (Exception ex)
+            {
+                Monitor.Log($"Failed to apply mouse state patches: {ex.Message}", LogLevel.Error);
             }
 
             // Furniture debounce — separate try/catch so carpenter patches still work if this fails
@@ -350,16 +384,41 @@ namespace AndroidConsolizer.Patches
                     Monitor.Log($"[CarpenterMenu] Cursor: ({(int)_cursorX},{(int)_cursorY}) pan=({panX},{panY})", LogLevel.Trace);
             }
 
-            // A button → simulate touch at cursor position to snap building ghost
+            // A button → simulate touch at cursor position to snap building ghost.
+            // receiveLeftClick reads mouse position internally (not its x,y params) for
+            // building placement, so we temporarily override GetMouseState during the call.
             var gps = Game1.input.GetGamePadState();
             bool aPressed = gps.Buttons.A == ButtonState.Pressed;
             if (aPressed && !_prevAPressed)
             {
+                _overridingMousePosition = true;
                 __instance.receiveLeftClick((int)_cursorX, (int)_cursorY);
+                _overridingMousePosition = false;
                 if (ModEntry.Config.VerboseLogging)
                     Monitor.Log($"[CarpenterMenu] A pressed → receiveLeftClick({(int)_cursorX},{(int)_cursorY})", LogLevel.Debug);
             }
             _prevAPressed = aPressed;
+        }
+
+        /// <summary>
+        /// Harmony postfix for GetMouseState. Only active during receiveLeftClick calls
+        /// (when _overridingMousePosition is true). Replaces X/Y with cursor position
+        /// so the game reads our coordinates for building placement.
+        /// </summary>
+        private static void GetMouseState_Postfix(ref MouseState __result)
+        {
+            if (!_overridingMousePosition)
+                return;
+
+            __result = new MouseState(
+                (int)_cursorX, (int)_cursorY,
+                __result.ScrollWheelValue,
+                __result.LeftButton,
+                __result.MiddleButton,
+                __result.RightButton,
+                __result.XButton1,
+                __result.XButton2
+            );
         }
 
         /// <summary>
