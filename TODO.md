@@ -45,23 +45,13 @@ These need to be re-implemented **one at a time, one per 0.0.1 patch, each commi
 - **File:** `Patches/CarpenterMenuPatches.cs`
 - **Config:** `EnableCarpenterMenuFix` in ModConfig.cs
 
-### 1b. CarpenterMenu Move Buildings — Joystick Doesn't Pan Map
-- **Symptom:** After opening Robin's building menu and selecting "Move Buildings," the joysticks do not move/pan the farm map view. Neither left nor right stick has any effect.
-- **Confirmed on:** Same test session as #1 fix (v2.7.3). User tried LeftThumbstick in all directions, then RightThumbstick in all directions. No map movement. Had to use touch (MouseLeft) to interact.
-- **Log evidence (v2.7.3):**
-  ```
-  21:41:19-21:41:31 — LeftThumbstickLeft/Right/Down repeatedly, no game response
-  21:41:27 — ControllerA pressed (likely selected "Move Buildings")
-  21:41:28-21:41:39 — Both LeftThumbstick and RightThumbstick in all directions, no game response
-  21:41:40 — User gave up, used MouseLeft (touch) to interact
-  ```
-- **Root cause hypothesis:** CarpenterMenu's move-buildings mode expects mouse/touch drag to pan the farm view. On console (Switch), the left stick or d-pad scrolls the map viewport. On Android, the game likely only checks touch/mouse position for viewport movement in this mode, not gamepad stick input.
-- **Investigation needed:**
-  - Decompile `CarpenterMenu` and look at the move-buildings update loop — how does it handle viewport scrolling? Look for `Game1.viewport`, `Game1.panScreen`, or similar calls.
-  - On Switch, CarpenterMenu probably calls `Game1.panScreen()` based on gamepad stick direction. The Android port may have stripped this or it may require a specific input path.
-  - Check if `Game1.panScreen()` is called anywhere in the CarpenterMenu update when in move mode. If not, we need to add it.
-- **Implementation approach:** Likely need a postfix on `CarpenterMenu.update(GameTime)` that reads left stick direction and calls `Game1.panScreen(direction, speed)` when in move-buildings mode. Need to detect the move-buildings state (probably a field like `moving` or `demolishing` on CarpenterMenu).
+### 1b. CarpenterMenu Joystick Panning + Cursor — DONE (v3.1.14-v3.1.21)
+- **Panning:** Harmony postfix on `CarpenterMenu.update(GameTime)` reads left stick, calls `Game1.panScreen()` when cursor reaches viewport edge. Pan compensation (`_cursorX -= panX`) keeps cursor at same world position.
+- **Visible cursor:** Harmony postfix on `CarpenterMenu.draw(SpriteBatch)` renders the standard game cursor at the tracked joystick position.
+- **A button:** Edge-detected A press in `Update_Postfix` calls `receiveLeftClick(cursorX, cursorY)` to snap building ghost to cursor (same as a touch tap). Press A again to confirm placement.
+- **Why not direct ghost control:** Seven versions of attempts (v3.1.14-v3.1.20) proved the building ghost on Android does NOT follow any mouse API — not `getMouseX/Y`, `getOldMouseX/Y`, `GetMouseState()`, or `Mouse.GetState()`. Ghost only moves via touch/click events. See #16d for future investigation notes.
 - **File:** `Patches/CarpenterMenuPatches.cs`
+- **Config:** Reuses `EnableCarpenterMenuFix`
 
 ### 2. Shop Purchase Flow Bug (CRITICAL) — FIXED in v2.7.5-v2.7.14
 - Purchase logic calls `actionWhenPurchased(shopId)`, checks/consumes trade items, handles inventory-full refunds.
@@ -265,6 +255,20 @@ These need to be re-implemented **one at a time, one per 0.0.1 patch, each commi
   - **Key diagnostic finding:** Approach #4 confirmed via logging that `AccessTools.Field(typeof(InventoryPage), "trashCanLidRotation")` finds the field, reads/writes it successfully, value persists between frames at PI/2. But the rendered trash can lid doesn't rotate.
   - **Hypothesis:** The Android port may render InventoryPage through a different code path that either (a) re-draws the trash can area after our postfix at a higher layer, (b) uses a completely different draw method for the trash can on mobile, or (c) has a mobile-specific overlay that covers the lid area. The fact that touch-drag works but controller-snap doesn't suggests the animation path is tied to the touch/mouse input system at a rendering level, not just the field value.
   - **Next steps to try:** (a) Dump all draw calls in the frame to see if something draws over our lid. (b) Try drawing at layer depth 1.0f (maximum) to see if visibility is the issue. (c) Check if `GameMenu.draw()` on Android has a mobile-specific override that redraws inventory components. (d) Check if `trashCan.draw(b)` on Android draws both the base AND the lid (unlike desktop where they're separate). (e) Compare the actual `InventoryPage.draw()` IL on Android vs desktop decompilation.
+
+### 16d. CarpenterMenu Direct Ghost Control (Lowest Priority)
+- **Current state:** Joystick panning and visible cursor work. A button fires `receiveLeftClick` at cursor position to snap the building ghost (same as touch tap). This is functional but not identical to console, where the ghost follows the stick directly.
+- **Why it doesn't work directly:** Seven versions of attempts (v3.1.14-v3.1.20) proved the building ghost on Android does NOT read from `getMouseX/Y`, `getOldMouseX/Y`, `GetMouseState()`, or `Mouse.GetState()`. Overriding all of these at every level — including hardware-level `GetMouseState` postfix — had no effect on the ghost position. The ghost only moves via touch/click events (`receiveLeftClick`).
+- **What was tried:**
+  1. `Game1.panScreen()` only (v3.1.14) — pans map but ghost stays in corner
+  2. `Game1.setMousePosition()` (v3.1.15) — Android touch layer overwrites
+  3. `Game1.oldMouseState` reflection (v3.1.16) — no effect
+  4. Harmony prefixes on `getMouseX/Y`, `getOldMouseX/Y` (v3.1.17-v3.1.18) — methods called but ghost ignores them
+  5. Hardware-level `GetMouseState()` postfix on both `SInputState` and `Mouse.GetState` (v3.1.20) — ghost still didn't move, AND broke touchscreen
+- **Hypothesis:** Android stores the ghost position from the last touch event in an internal field, not from live mouse position reads. The ghost rendering draws at the stored touch position, bypassing all mouse APIs.
+- **To investigate someday:** Decompile `CarpenterMenu.draw()` on Android to find where the ghost position actually comes from. Look for fields like `currentBuildingLocation`, `buildingPlacementPosition`, or similar that store touch coordinates. If found, we could set that field directly instead of going through `receiveLeftClick`.
+- **Known issue:** Diagonal cursor movement is jittery. Likely due to integer rounding of sub-pixel cursor positions. Not blocking — cosmetic only.
+- **Priority:** Lowest — the A-button-tap approach is fully functional. Same tier as trash can lid animation (#16c).
 
 ### 17. Title/Main Menu Cursor Fix
 - Cursor (hand icon) reportedly invisible on main menu with controller
