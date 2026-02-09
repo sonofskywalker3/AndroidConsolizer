@@ -39,9 +39,10 @@ namespace AndroidConsolizer.Patches
         /// <summary>When true, all furniture interactions are blocked until the tool button is released.</summary>
         private static bool _suppressFurnitureUntilRelease = false;
 
-        // --- Joystick panning fields ---
-        private static FieldInfo OnFarmField;   // bool — true when showing farm view
-        private static FieldInfo FreezeField;   // bool — true during animations/transitions
+        // --- Joystick cursor/panning fields ---
+        private static FieldInfo OnFarmField;      // bool — true when showing farm view
+        private static FieldInfo FreezeField;      // bool — true during animations/transitions
+        private static FieldInfo OldMouseStateField; // MouseState — what getOldMouseX/Y reads from
 
         private const float StickDeadzone = 0.2f;
         private const float CursorSpeedMax = 16f;  // px/tick at full tilt
@@ -51,6 +52,9 @@ namespace AndroidConsolizer.Patches
 
         /// <summary>Whether the cursor has been centered for the current farm view session.</summary>
         private static bool _cursorCentered = false;
+
+        /// <summary>Tracked cursor position (sub-pixel precision, UI coordinates).</summary>
+        private static float _cursorX, _cursorY;
 
         /// <summary>Apply Harmony patches.</summary>
         public static void Apply(Harmony harmony, IMonitor monitor)
@@ -85,9 +89,11 @@ namespace AndroidConsolizer.Patches
                     prefix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(ExitThisMenu_Prefix))
                 );
 
-                // Cache reflection fields for farm-view panning
+                // Cache reflection fields for farm-view cursor movement
                 OnFarmField = AccessTools.Field(typeof(CarpenterMenu), "onFarm");
                 FreezeField = AccessTools.Field(typeof(CarpenterMenu), "freeze");
+                OldMouseStateField = typeof(Game1).GetField("oldMouseState",
+                    System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
 
                 // Postfix on update — reads left stick and pans viewport when on farm
                 harmony.Patch(
@@ -221,9 +227,11 @@ namespace AndroidConsolizer.Patches
         }
 
         /// <summary>
-        /// Postfix for CarpenterMenu.update — moves cursor with left stick, pans viewport at edges.
-        /// Console-style: stick moves the building ghost cursor around the screen. When the cursor
+        /// Postfix for CarpenterMenu.update — moves building ghost cursor with left stick.
+        /// Console-style: stick moves the building ghost around the screen. When the cursor
         /// reaches the viewport edge, the viewport scrolls in that direction.
+        /// On Android, Game1.setMousePosition() doesn't update oldMouseState (the hardware
+        /// touch layer overrides it), so we set oldMouseState directly via reflection.
         /// </summary>
         private static void Update_Postfix(CarpenterMenu __instance)
         {
@@ -255,12 +263,12 @@ namespace AndroidConsolizer.Patches
             // Center cursor on first farm-view frame so building ghost starts mid-screen
             if (!_cursorCentered)
             {
-                int centerX = Game1.viewport.Width / 2;
-                int centerY = Game1.viewport.Height / 2;
-                Game1.setMousePosition(centerX, centerY);
+                _cursorX = Game1.viewport.Width / 2f;
+                _cursorY = Game1.viewport.Height / 2f;
                 _cursorCentered = true;
+                SetOldMouseState((int)_cursorX, (int)_cursorY);
                 if (ModEntry.Config.VerboseLogging)
-                    Monitor.Log($"[CarpenterMenu] Centered cursor to ({centerX},{centerY})", LogLevel.Debug);
+                    Monitor.Log($"[CarpenterMenu] Centered cursor to ({(int)_cursorX},{(int)_cursorY})", LogLevel.Debug);
                 return;
             }
 
@@ -269,18 +277,21 @@ namespace AndroidConsolizer.Patches
             float absX = Math.Abs(thumbStick.X);
             float absY = Math.Abs(thumbStick.Y);
 
-            // Both axes below deadzone — nothing to do
+            // Both axes below deadzone — still set mouse state (keeps ghost at current pos)
             if (absX <= StickDeadzone && absY <= StickDeadzone)
+            {
+                SetOldMouseState((int)_cursorX, (int)_cursorY);
                 return;
+            }
 
-            // Calculate cursor movement speed per axis
-            int deltaX = 0, deltaY = 0;
+            // Calculate cursor movement per axis
+            float deltaX = 0f, deltaY = 0f;
 
             if (absX > StickDeadzone)
             {
                 float t = (absX - StickDeadzone) / (1f - StickDeadzone);
                 float speed = CursorSpeedMin + t * (CursorSpeedMax - CursorSpeedMin);
-                deltaX = (int)(Math.Sign(thumbStick.X) * speed);
+                deltaX = Math.Sign(thumbStick.X) * speed;
             }
 
             if (absY > StickDeadzone)
@@ -288,33 +299,58 @@ namespace AndroidConsolizer.Patches
                 // Invert Y: stick up (positive) = screen up (negative Y)
                 float t = (absY - StickDeadzone) / (1f - StickDeadzone);
                 float speed = CursorSpeedMin + t * (CursorSpeedMax - CursorSpeedMin);
-                deltaY = (int)(-Math.Sign(thumbStick.Y) * speed);
+                deltaY = -Math.Sign(thumbStick.Y) * speed;
             }
 
             // Move cursor, clamped to viewport bounds
-            var mousePos = Game1.getMousePosition();
-            int newX = Math.Max(0, Math.Min(mousePos.X + deltaX, Game1.viewport.Width - 1));
-            int newY = Math.Max(0, Math.Min(mousePos.Y + deltaY, Game1.viewport.Height - 1));
-            Game1.setMousePosition(newX, newY);
+            _cursorX = Math.Max(0, Math.Min(_cursorX + deltaX, Game1.viewport.Width - 1));
+            _cursorY = Math.Max(0, Math.Min(_cursorY + deltaY, Game1.viewport.Height - 1));
+
+            int ix = (int)_cursorX;
+            int iy = (int)_cursorY;
+
+            // Set oldMouseState directly — CarpenterMenu.draw() reads getOldMouseX/Y which
+            // comes from this field. Game1.setMousePosition() doesn't work on Android because
+            // the touch input layer overwrites Mouse.GetState() every frame.
+            SetOldMouseState(ix, iy);
 
             // Pan viewport when cursor reaches the edge
             int panX = 0, panY = 0;
 
-            if (newX < PanEdgeMargin)
+            if (ix < PanEdgeMargin)
                 panX = -PanSpeed;
-            else if (newX > Game1.viewport.Width - PanEdgeMargin)
+            else if (ix > Game1.viewport.Width - PanEdgeMargin)
                 panX = PanSpeed;
 
-            if (newY < PanEdgeMargin)
+            if (iy < PanEdgeMargin)
                 panY = -PanSpeed;
-            else if (newY > Game1.viewport.Height - PanEdgeMargin)
+            else if (iy > Game1.viewport.Height - PanEdgeMargin)
                 panY = PanSpeed;
 
             if (panX != 0 || panY != 0)
                 Game1.panScreen(panX, panY);
 
             if (ModEntry.Config.VerboseLogging)
-                Monitor.Log($"[CarpenterMenu] Cursor: ({newX},{newY}) pan=({panX},{panY})", LogLevel.Trace);
+                Monitor.Log($"[CarpenterMenu] Cursor: ({ix},{iy}) pan=({panX},{panY})", LogLevel.Trace);
+        }
+
+        /// <summary>
+        /// Directly sets Game1.oldMouseState so that getOldMouseX/Y return our cursor position.
+        /// Coordinates are in UI space — converted to raw screen space via uiScale.
+        /// </summary>
+        private static void SetOldMouseState(int uiX, int uiY)
+        {
+            if (OldMouseStateField == null)
+                return;
+
+            int rawX = (int)(uiX * Game1.options.uiScale);
+            int rawY = (int)(uiY * Game1.options.uiScale);
+
+            OldMouseStateField.SetValue(null, new MouseState(
+                rawX, rawY, 0,
+                ButtonState.Released, ButtonState.Released,
+                ButtonState.Released, ButtonState.Released, ButtonState.Released
+            ));
         }
 
         /// <summary>

@@ -247,6 +247,7 @@ These need to be re-implemented **one at a time, one per 0.0.1 patch, each commi
 ### 16. ~~Trash Can + Sort Button Fix~~ — IMPLEMENTED in v2.7.2+
 - (a) A on trash can (slot 105) now trashes held item via `Utility.trashItem()` (handles refund + sound)
 - (b) A on sort button (slot 106) now sorts inventory (cancels hold first if needed)
+  - **BUG (v3.1.15): Sort button broken.** Can navigate to it, but A press does nothing. Logs show slot 106 hits "not inventory slot, ignoring" in InventoryManagement, then A is blocked by "Blocking A button in GameMenu inventory (console inventory mode)". The console inventory A-blocking is eating the click before the sort handler can process it.
 - (c) B while holding snaps to trash can; B again cancels hold and closes menu
 - **REMAINING: Trash can lid animation does NOT work on Android.** See bug report below.
 - Also found: **slot 12341** is reachable by navigating far left/up from inventory grid - likely a tab icon. A press on it is also blocked. May want a general "pass through to game for non-inventory slots" fallback instead of blocking.
