@@ -154,6 +154,7 @@ These need to be re-implemented **one at a time, one per 0.0.1 patch, each commi
 - **CRITICAL SIDE EFFECT:** When the menu was closed with an item "held" (selected but not in a slot), the item dropped on the ground and was lost (ring fell in river). See #11 for safety net.
 - **Investigation:** Check if `InventoryManagementPatches` handles equipment slot IDs. Equipment slots have different component IDs than the 36-slot inventory grid. The A-button handler may only be coded for inventory grid slots, not equipment slots (hat, shirt, pants, boots, ring1, ring2).
 - Fix: Extend A-button handling to recognize equipment slot component IDs and call the appropriate equip method.
+- **Same root cause as sort button bug (#16b).** Both are non-inventory slots where InventoryManagement says "not inventory slot, ignoring" and then the console inventory mode A-blocking eats the click before the game's own handler can process it. Fix for both: when InventoryManagement sees a non-inventory slot, pass through to the game instead of blocking.
 - **Read `ANDROID_INVENTORY_NOTES.md` before working on this.**
 
 ### 9. Community Center Bundle Navigation + Cursor Bug
@@ -247,7 +248,7 @@ These need to be re-implemented **one at a time, one per 0.0.1 patch, each commi
 ### 16. ~~Trash Can + Sort Button Fix~~ — IMPLEMENTED in v2.7.2+
 - (a) A on trash can (slot 105) now trashes held item via `Utility.trashItem()` (handles refund + sound)
 - (b) A on sort button (slot 106) now sorts inventory (cancels hold first if needed)
-  - **BUG (v3.1.15): Sort button broken.** Can navigate to it, but A press does nothing. Logs show slot 106 hits "not inventory slot, ignoring" in InventoryManagement, then A is blocked by "Blocking A button in GameMenu inventory (console inventory mode)". The console inventory A-blocking is eating the click before the sort handler can process it.
+  - **BUG (v3.1.15): Sort button broken.** Can navigate to it, but A press does nothing. Logs show slot 106 hits "not inventory slot, ignoring" in InventoryManagement, then A is blocked by "Blocking A button in GameMenu inventory (console inventory mode)". The console inventory A-blocking is eating the click before the sort handler can process it. **Same root cause as equipment slot bug (#8)** — both are non-inventory slots where InventoryManagement ignores the slot and the A-block eats the click. Fix both together.
 - (c) B while holding snaps to trash can; B again cancels hold and closes menu
 - **REMAINING: Trash can lid animation does NOT work on Android.** See bug report below.
 - Also found: **slot 12341** is reachable by navigating far left/up from inventory grid - likely a tab icon. A press on it is also blocked. May want a general "pass through to game for non-inventory slots" fallback instead of blocking.
