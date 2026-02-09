@@ -152,6 +152,10 @@ namespace AndroidConsolizer
         {
             // X/Y swap is now handled by GameplayButtonPatches at the GamePad.GetState level
 
+            // Clear furniture debounce suppress flag when tool button is released
+            if (Config.EnableFurnitureDebounce)
+                Patches.CarpenterMenuPatches.OnFurnitureUpdateTicked();
+
             // Update inventory management (maintain held item visual) when in inventory menu
             if (Config.EnableConsoleInventory && Game1.activeClickableMenu is GameMenu gameMenu && gameMenu.currentTab == GameMenu.inventoryTab)
             {
