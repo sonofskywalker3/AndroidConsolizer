@@ -217,7 +217,7 @@ Output: `bin/Release/net6.0/AndroidConsolizer X.X.X.zip`
 
 - Move Buildings mode in Robin's menu doesn't respond to joystick panning
 - Shop sell tab not navigable when switched via touchscreen tap (Y button works)
-- Furniture pickup/placement rapid-toggles with Y button (missing debounce)
+- ~~Furniture pickup/placement rapid-toggles with Y button~~ Fixed in v3.1.13
 - Equipment slots not accessible via A button in inventory
 - Community Center bundle navigation and cursor issues
 - Social tab cursor doesn't visually follow when switching tabs with LB/RB

@@ -118,18 +118,17 @@ These need to be re-implemented **one at a time, one per 0.0.1 patch, each commi
 
 ## Medium Priority (Menu/UI Parity)
 
-### 6. Furniture Placement Fix
-- Y button rapid-toggles between placed and picked up
-- Confirmed on Odin Pro and Logitech G Cloud. A does NOT pick up furniture, only Y does (same as Switch)
-- Switch has same Y-toggle behavior but with ~500ms delay between each cycle. Android has no delay.
-- Logs show `ControllerX` (Switch layout remap) firing 6 times in 3 seconds during testing
-- G Cloud testing: Confirmed holding button flashes furniture in and out rapidly
-- NOT a different mechanic from console - just a missing debounce
-- Fix approach: Prefix patch on `Furniture.performToolAction()` with cooldown timer
-  - Track last furniture interaction tick (`Game1.ticks`)
-  - Block subsequent calls within ~30 ticks (500ms at 60fps)
-  - Only affects furniture interactions - tools (axe, pickaxe, hoe, etc.) use completely different code paths and are unaffected
-- May also need to patch/debounce the furniture placement path (when placing from inventory) if that also rapid-fires
+### 6. Furniture Placement Fix — FIXED in v3.1.13
+- Y button rapid-toggled between placed and picked up on Android (no debounce).
+- **Root cause:** On Android, holding the tool button triggers a rapid cycle: `canBeRemoved` → `performRemoveAction` (pickup) → `placementAction` (place back) every ~3 ticks. Beds bypass `canBeRemoved` entirely (BedFurniture subclass).
+- **Fix:** Suppress-until-release pattern. After any furniture interaction (pickup via `performRemoveAction` or placement via `placementAction`), block ALL further interactions until the X/Y face buttons are physically released. `OnFurnitureUpdateTicked()` checks `Game1.input.GetGamePadState()` each tick and clears the flag on release. One press = one interaction.
+- **Key discoveries during implementation (v3.1.1-v3.1.13):**
+  - `Furniture.performToolAction` is NOT called — the code path goes through `canBeRemoved`/`performRemoveAction`/`placementAction`
+  - `checkForAction` is only triggered by ControllerA (interact), not ControllerX (tool use)
+  - `performRemoveAction` postfix doesn't reliably fire for virtual methods inherited from Object — use prefix instead
+  - `canBeRemoved` is called multiple times per interaction — can't set cooldown there without blocking the second call
+- **Files:** `Patches/CarpenterMenuPatches.cs` (patches), `ModEntry.cs` (OnUpdateTicked call)
+- **Config:** `EnableFurnitureDebounce` in ModConfig.cs
 
 ### 7. Console-Style Chest Item Transfer
 - A/Y should directly transfer items between chest and inventory
