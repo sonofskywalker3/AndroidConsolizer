@@ -294,14 +294,38 @@ namespace AndroidConsolizer.Patches
 
             if (b == Buttons.A)
             {
-                // In move/demolish mode, let A through — the game's receiveGamePadButton
-                // handles building selection/placement/demolition. Our GetMouseState override
-                // is active continuously so it reads our cursor position.
                 if (IsClickThroughMode(__instance))
                 {
-                    if (ModEntry.Config.VerboseLogging)
-                        Monitor.Log("[CarpenterMenu] Letting receiveGamePadButton(A) through — move/demolish, override active", LogLevel.Trace);
-                    return true;
+                    // Move mode: if no building is selected yet, let A through for
+                    // initial selection. receiveLeftClick can't select buildings.
+                    bool isMovingVal = MovingField != null && (bool)MovingField.GetValue(__instance);
+                    if (isMovingVal)
+                    {
+                        var btm = BuildingToMoveField?.GetValue(__instance) as Building;
+                        if (btm == null)
+                        {
+                            if (ModEntry.Config.VerboseLogging)
+                                Monitor.Log("[CarpenterMenu] Move: no building selected → let A through for selection", LogLevel.Debug);
+                            _buildPressHandled = true;
+                            return true;
+                        }
+                    }
+
+                    // Move (building selected) / Demolish: two-press guard
+                    if (_ghostPlaced)
+                    {
+                        _ghostPlaced = false;
+                        _buildPressHandled = true;
+                        if (ModEntry.Config.VerboseLogging)
+                            Monitor.Log("[CarpenterMenu] Move/demolish: cursor unchanged → letting A through to CONFIRM", LogLevel.Debug);
+                        return true;
+                    }
+                    else
+                    {
+                        if (ModEntry.Config.VerboseLogging)
+                            Monitor.Log("[CarpenterMenu] Move/demolish: BLOCKED A → positioning first", LogLevel.Trace);
+                        return false;
+                    }
                 }
 
                 // Build mode: two-press system
@@ -557,44 +581,41 @@ namespace AndroidConsolizer.Patches
                     Monitor.Log($"[CarpenterMenu] Cursor: ({(int)_cursorX},{(int)_cursorY}) pan=({panX},{panY})", LogLevel.Trace);
             }
 
-            // A button handling — mode-dependent:
-            // Move/demolish: game's receiveGamePadButton handled the A (prefix let it through).
-            //   Override is active continuously so the game reads our cursor position.
-            // Build: two-press system (first A positions ghost, second A builds via receiveGamePadButton)
+            // A button handling — all modes use two-press system:
+            // First A (cursor moved): position ghost via receiveLeftClick (or select building
+            //   in move mode if none selected — prefix let receiveGamePadButton through).
+            // Second A (cursor unchanged): confirm via receiveGamePadButton (prefix let it through).
             var gps = Game1.input.GetGamePadState();
             bool aPressed = gps.Buttons.A == ButtonState.Pressed;
             if (aPressed && !_prevAPressed)
             {
-                if (IsClickThroughMode(__instance))
+                if (_buildPressHandled)
                 {
-                    // Move/demolish: game's receiveGamePadButton already handled this A press
-                    // (prefix let it through). Override is active continuously so both
-                    // receiveGamePadButton and touch-sim receiveLeftClick see our cursor position.
+                    // Prefix let receiveGamePadButton(A) through — action was handled by game.
+                    // For move initial selection or confirmation: set _ghostPlaced so next A
+                    // can confirm (if cursor doesn't move). For completed actions (move placement,
+                    // demolish confirm): the game state changes and next cycle starts fresh.
+                    _buildPressHandled = false;
+                    _ghostPlaced = true;
                     if (ModEntry.Config.VerboseLogging)
                     {
                         var btm = BuildingToMoveField?.GetValue(__instance) as Building;
-                        string mode = isMoving ? "MOVE" : "DEMOLISH";
-                        Monitor.Log($"[CarpenterMenu] {mode} A at ({(int)_cursorX},{(int)_cursorY}) buildingToMove={btm?.buildingType.Value ?? "none"}", LogLevel.Debug);
+                        string mode = isMoving ? "MOVE" : isDemolishing ? "DEMOLISH" : "BUILD";
+                        Monitor.Log($"[CarpenterMenu] {mode} action handled by receiveGamePadButton at ({(int)_cursorX},{(int)_cursorY}) buildingToMove={btm?.buildingType.Value ?? "none"}", LogLevel.Debug);
                     }
-                }
-                else if (_buildPressHandled)
-                {
-                    // Build mode: the prefix let receiveGamePadButton(A) through for building.
-                    // Don't call receiveLeftClick — the game already handled the build.
-                    _buildPressHandled = false;
-                    if (ModEntry.Config.VerboseLogging)
-                        Monitor.Log("[CarpenterMenu] Build press handled by receiveGamePadButton — skipping receiveLeftClick", LogLevel.Debug);
                 }
                 else
                 {
-                    // Build mode, first press: position ghost at cursor via receiveLeftClick
+                    // Prefix blocked receiveGamePadButton(A) — position ghost at cursor.
+                    // Override is already active for move/demolish; set it for build mode.
                     _overridingMousePosition = true;
                     __instance.receiveLeftClick((int)_cursorX, (int)_cursorY);
                     _ghostPlaced = true;
-                    // Don't clear _overridingMousePosition — game's receiveLeftClick fires
-                    // after this postfix and needs to read our coords too.
                     if (ModEntry.Config.VerboseLogging)
-                        Monitor.Log($"[CarpenterMenu] Ghost positioned at ({(int)_cursorX},{(int)_cursorY}) — press A again to build. zoom={Game1.options.zoomLevel} buildW={_buildingTileWidth} buildH={_buildingTileHeight}", LogLevel.Debug);
+                    {
+                        string mode = isMoving ? "MOVE" : isDemolishing ? "DEMOLISH" : "BUILD";
+                        Monitor.Log($"[CarpenterMenu] {mode} ghost positioned at ({(int)_cursorX},{(int)_cursorY}) — press A again to confirm. zoom={Game1.options.zoomLevel} buildW={_buildingTileWidth} buildH={_buildingTileHeight}", LogLevel.Debug);
+                    }
                 }
             }
             _prevAPressed = aPressed;
