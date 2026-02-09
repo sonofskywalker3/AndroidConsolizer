@@ -58,6 +58,9 @@ namespace AndroidConsolizer.Patches
         /// <summary>When true, Game1.getMouseX/Y and getOldMouseX/Y return our cursor position.</summary>
         private static bool _overridingMousePosition = false;
 
+        // Diagnostic counters — how many times each override fires per tick
+        private static int _getMouseXCalls, _getMouseYCalls, _getOldMouseXCalls, _getOldMouseYCalls, _getMousePositionCalls;
+
         /// <summary>Apply Harmony patches.</summary>
         public static void Apply(Harmony harmony, IMonitor monitor)
         {
@@ -116,11 +119,11 @@ namespace AndroidConsolizer.Patches
             {
                 harmony.Patch(
                     original: AccessTools.Method(typeof(Game1), nameof(Game1.getOldMouseX)),
-                    prefix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(GetMouseX_Prefix))
+                    prefix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(GetOldMouseX_Prefix))
                 );
                 harmony.Patch(
                     original: AccessTools.Method(typeof(Game1), nameof(Game1.getOldMouseY)),
-                    prefix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(GetMouseY_Prefix))
+                    prefix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(GetOldMouseY_Prefix))
                 );
                 harmony.Patch(
                     original: AccessTools.Method(typeof(Game1), nameof(Game1.getMouseX)),
@@ -131,6 +134,13 @@ namespace AndroidConsolizer.Patches
                     prefix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(GetMouseY_Prefix))
                 );
                 Monitor.Log("Mouse getter patches applied successfully.", LogLevel.Trace);
+
+                // Also try getMousePosition — may be a separate code path on Android
+                harmony.Patch(
+                    original: AccessTools.Method(typeof(Game1), nameof(Game1.getMousePosition)),
+                    prefix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(GetMousePosition_Prefix))
+                );
+                Monitor.Log("getMousePosition patch applied successfully.", LogLevel.Trace);
             }
             catch (Exception ex)
             {
@@ -367,34 +377,63 @@ namespace AndroidConsolizer.Patches
             }
 
             if (ModEntry.Config.VerboseLogging)
-                Monitor.Log($"[CarpenterMenu] Cursor: ({(int)_cursorX},{(int)_cursorY}) pan=({panX},{panY})", LogLevel.Trace);
+            {
+                Monitor.Log($"[CarpenterMenu] Cursor: ({(int)_cursorX},{(int)_cursorY}) pan=({panX},{panY})" +
+                    $" overrides: getMouseX={_getMouseXCalls} getMouseY={_getMouseYCalls}" +
+                    $" getOldMouseX={_getOldMouseXCalls} getOldMouseY={_getOldMouseYCalls}" +
+                    $" getMousePosition={_getMousePositionCalls}", LogLevel.Trace);
+            }
+            _getMouseXCalls = 0;
+            _getMouseYCalls = 0;
+            _getOldMouseXCalls = 0;
+            _getOldMouseYCalls = 0;
+            _getMousePositionCalls = 0;
         }
 
-        /// <summary>
-        /// Harmony prefix for Game1.getOldMouseX and Game1.getMouseX.
-        /// On Android these are parameterless (no ui_scale param).
-        /// Returns our tracked cursor X when CarpenterMenu farm view override is active.
-        /// </summary>
+        // --- Mouse getter prefixes (each with diagnostic counter) ---
+
         private static bool GetMouseX_Prefix(ref int __result)
         {
             if (!_overridingMousePosition)
                 return true;
-
+            _getMouseXCalls++;
             __result = (int)_cursorX;
             return false;
         }
 
-        /// <summary>
-        /// Harmony prefix for Game1.getOldMouseY and Game1.getMouseY.
-        /// On Android these are parameterless (no ui_scale param).
-        /// Returns our tracked cursor Y when CarpenterMenu farm view override is active.
-        /// </summary>
         private static bool GetMouseY_Prefix(ref int __result)
         {
             if (!_overridingMousePosition)
                 return true;
-
+            _getMouseYCalls++;
             __result = (int)_cursorY;
+            return false;
+        }
+
+        private static bool GetOldMouseX_Prefix(ref int __result)
+        {
+            if (!_overridingMousePosition)
+                return true;
+            _getOldMouseXCalls++;
+            __result = (int)_cursorX;
+            return false;
+        }
+
+        private static bool GetOldMouseY_Prefix(ref int __result)
+        {
+            if (!_overridingMousePosition)
+                return true;
+            _getOldMouseYCalls++;
+            __result = (int)_cursorY;
+            return false;
+        }
+
+        private static bool GetMousePosition_Prefix(ref Point __result)
+        {
+            if (!_overridingMousePosition)
+                return true;
+            _getMousePositionCalls++;
+            __result = new Point((int)_cursorX, (int)_cursorY);
             return false;
         }
 
