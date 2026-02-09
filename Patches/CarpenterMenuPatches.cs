@@ -1,5 +1,6 @@
 using System;
 using HarmonyLib;
+using Microsoft.Xna.Framework.Input;
 using StardewModdingAPI;
 using StardewValley;
 using StardewValley.Menus;
@@ -33,11 +34,8 @@ namespace AndroidConsolizer.Patches
         /// <summary>Number of ticks to block input after menu opens.</summary>
         private const int GracePeriodTicks = 20;
 
-        /// <summary>Tick when Furniture.performToolAction last ran. Used for debounce.</summary>
-        private static int LastFurnitureActionTick = -100;
-
-        /// <summary>Cooldown ticks between furniture interactions (~500ms at 60fps).</summary>
-        private const int FurnitureCooldownTicks = 30;
+        /// <summary>When true, all furniture interactions are blocked until the tool button is released.</summary>
+        private static bool _suppressFurnitureUntilRelease = false;
 
         /// <summary>Apply Harmony patches.</summary>
         public static void Apply(Harmony harmony, IMonitor monitor)
@@ -195,17 +193,37 @@ namespace AndroidConsolizer.Patches
         }
 
         /// <summary>
-        /// Prefix for Furniture.canBeRemoved — blocks re-pickup during cooldown.
-        /// After placementAction sets the cooldown, this prevents the immediate
-        /// auto-pickup that would start the rapid-toggle cycle again.
+        /// Called from ModEntry.OnUpdateTicked every tick during gameplay.
+        /// Clears the suppress flag once the tool button is released, allowing
+        /// the next distinct button press to interact with furniture.
+        /// </summary>
+        public static void OnFurnitureUpdateTicked()
+        {
+            if (!_suppressFurnitureUntilRelease)
+                return;
+
+            var gps = Game1.input.GetGamePadState();
+            bool toolButtonHeld = gps.Buttons.X == ButtonState.Pressed
+                || gps.Buttons.Y == ButtonState.Pressed;
+
+            if (!toolButtonHeld)
+            {
+                _suppressFurnitureUntilRelease = false;
+                if (ModEntry.Config.VerboseLogging)
+                    Monitor.Log("[Furniture] Tool button released — suppress cleared.", LogLevel.Debug);
+            }
+        }
+
+        /// <summary>
+        /// Prefix for Furniture.canBeRemoved — blocks re-pickup while tool button is held
+        /// after a previous furniture interaction (placement or pickup).
         /// </summary>
         private static bool FurnitureCanBeRemoved_Prefix(Furniture __instance, ref bool __result)
         {
-            int elapsed = Game1.ticks - LastFurnitureActionTick;
-            if (elapsed < FurnitureCooldownTicks)
+            if (_suppressFurnitureUntilRelease)
             {
                 if (ModEntry.Config.VerboseLogging)
-                    Monitor.Log($"[Furniture] BLOCKED canBeRemoved on '{__instance.Name}' — cooldown ({elapsed}/{FurnitureCooldownTicks} ticks)", LogLevel.Debug);
+                    Monitor.Log($"[Furniture] BLOCKED canBeRemoved on '{__instance.Name}' — suppress until release", LogLevel.Debug);
                 __result = false;
                 return false;
             }
@@ -214,32 +232,29 @@ namespace AndroidConsolizer.Patches
         }
 
         /// <summary>
-        /// Prefix for Furniture.performRemoveAction — sets cooldown before pickup
-        /// so the immediate auto-placement that follows is blocked by placementAction.
-        /// Using prefix instead of postfix because postfix doesn't reliably fire
-        /// for virtual methods inherited from Object.
+        /// Prefix for Furniture.performRemoveAction — sets suppress flag after pickup
+        /// so the immediate auto-placement is blocked until the button is released.
         /// </summary>
         private static void FurniturePerformRemoveAction_Prefix()
         {
-            LastFurnitureActionTick = Game1.ticks;
+            _suppressFurnitureUntilRelease = true;
         }
 
         /// <summary>
-        /// Prefix for Furniture.placementAction — blocks auto-placement during cooldown
-        /// (after pickup), and sets cooldown when placement goes through (to block re-pickup).
+        /// Prefix for Furniture.placementAction — blocks auto-placement while suppressed,
+        /// and sets suppress flag when placement goes through (to block re-pickup).
         /// </summary>
         private static bool FurniturePlacementAction_Prefix(Furniture __instance, ref bool __result)
         {
-            int elapsed = Game1.ticks - LastFurnitureActionTick;
-            if (elapsed < FurnitureCooldownTicks)
+            if (_suppressFurnitureUntilRelease)
             {
                 if (ModEntry.Config.VerboseLogging)
-                    Monitor.Log($"[Furniture] BLOCKED placementAction on '{__instance.Name}' — cooldown ({elapsed}/{FurnitureCooldownTicks} ticks)", LogLevel.Debug);
+                    Monitor.Log($"[Furniture] BLOCKED placementAction on '{__instance.Name}' — suppress until release", LogLevel.Debug);
                 __result = false;
                 return false;
             }
 
-            LastFurnitureActionTick = Game1.ticks;
+            _suppressFurnitureUntilRelease = true;
             return true;
         }
     }
