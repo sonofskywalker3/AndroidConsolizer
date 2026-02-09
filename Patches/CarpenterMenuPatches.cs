@@ -94,7 +94,7 @@ namespace AndroidConsolizer.Patches
                     );
                     harmony.Patch(
                         original: AccessTools.Method(typeof(Furniture), "performRemoveAction"),
-                        postfix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(FurniturePerformRemoveAction_Postfix))
+                        prefix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(FurniturePerformRemoveAction_Prefix))
                     );
                     harmony.Patch(
                         original: AccessTools.Method(typeof(Furniture), "placementAction"),
@@ -214,10 +214,12 @@ namespace AndroidConsolizer.Patches
         }
 
         /// <summary>
-        /// Postfix for Furniture.performRemoveAction — sets cooldown after pickup
+        /// Prefix for Furniture.performRemoveAction — sets cooldown before pickup
         /// so the immediate auto-placement that follows is blocked by placementAction.
+        /// Using prefix instead of postfix because postfix doesn't reliably fire
+        /// for virtual methods inherited from Object.
         /// </summary>
-        private static void FurniturePerformRemoveAction_Postfix()
+        private static void FurniturePerformRemoveAction_Prefix()
         {
             LastFurnitureActionTick = Game1.ticks;
         }
