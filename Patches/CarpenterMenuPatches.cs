@@ -45,8 +45,6 @@ namespace AndroidConsolizer.Patches
         private static FieldInfo OnFarmField;      // bool — true when showing farm view
         private static FieldInfo FreezeField;      // bool — true during animations/transitions
         private static FieldInfo CurrentBuildingField; // Building — the building being placed
-        private static FieldInfo ActionField;      // CarpentryAction enum — None/Demolish/Move/Paint/Upgrade
-        private static FieldInfo BuildingToMoveField; // Building — the building being moved (null until selected)
 
         private const float StickDeadzone = 0.2f;
         private const float CursorSpeedMax = 16f;  // px/tick at full tilt
@@ -129,8 +127,6 @@ namespace AndroidConsolizer.Patches
                 OnFarmField = AccessTools.Field(typeof(CarpenterMenu), "onFarm");
                 FreezeField = AccessTools.Field(typeof(CarpenterMenu), "freeze");
                 CurrentBuildingField = AccessTools.Field(typeof(CarpenterMenu), "currentBuilding");
-                ActionField = AccessTools.Field(typeof(CarpenterMenu), "Action");
-                BuildingToMoveField = AccessTools.Field(typeof(CarpenterMenu), "buildingToMove");
 
                 // Postfix on update — reads left stick and moves cursor when on farm
                 harmony.Patch(
@@ -257,10 +253,11 @@ namespace AndroidConsolizer.Patches
         /// (move, demolish) rather than using the two-press build system.</summary>
         private static bool IsClickThroughMode(CarpenterMenu instance)
         {
-            if (ActionField == null) return false;
+            // Direct access to public field — no reflection needed.
             // CarpentryAction enum: None=0 (build), Demolish=1, Move=2, Paint=3, Upgrade=4
-            int action = (int)ActionField.GetValue(instance);
-            return action == 1 || action == 2; // Demolish or Move
+            var action = instance.Action;
+            return action == CarpenterMenu.CarpentryAction.Demolish
+                || action == CarpenterMenu.CarpentryAction.Move;
         }
 
         /// <summary>
@@ -413,14 +410,14 @@ namespace AndroidConsolizer.Patches
             // In build mode: offset by currentBuilding dimensions (ghost anchor is top-left).
             // In move mode: offset by buildingToMove dimensions (only after selecting a building).
             // In demolish mode: no offset (just clicking on buildings).
-            int action = ActionField != null ? (int)ActionField.GetValue(__instance) : 0;
-            if (action == 2) // Move
+            var currentAction = __instance.Action;
+            if (currentAction == CarpenterMenu.CarpentryAction.Move)
             {
-                var btm = BuildingToMoveField?.GetValue(__instance) as Building;
+                var btm = __instance.buildingToMove;
                 _buildingTileWidth = btm?.tilesWide.Value ?? 0;
                 _buildingTileHeight = btm?.tilesHigh.Value ?? 0;
             }
-            else if (action == 1) // Demolish
+            else if (currentAction == CarpenterMenu.CarpentryAction.Demolish)
             {
                 _buildingTileWidth = 0;
                 _buildingTileHeight = 0;
@@ -519,8 +516,8 @@ namespace AndroidConsolizer.Patches
                     __instance.receiveLeftClick((int)_cursorX, (int)_cursorY);
                     if (ModEntry.Config.VerboseLogging)
                     {
-                        var btm = BuildingToMoveField?.GetValue(__instance) as Building;
-                        string mode = ((int)ActionField.GetValue(__instance)) == 2 ? "MOVE" : "DEMOLISH";
+                        var btm = __instance.buildingToMove;
+                        string mode = __instance.Action == CarpenterMenu.CarpentryAction.Move ? "MOVE" : "DEMOLISH";
                         Monitor.Log($"[CarpenterMenu] {mode} → receiveLeftClick({(int)_cursorX},{(int)_cursorY}) buildingToMove={btm?.buildingType.Value ?? "none"}", LogLevel.Debug);
                     }
                 }

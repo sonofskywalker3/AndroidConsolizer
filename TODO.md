@@ -268,6 +268,7 @@ These need to be re-implemented **one at a time, one per 0.0.1 patch, each commi
 - **Hypothesis:** Android stores the ghost position from the last touch event in an internal field, not from live mouse position reads. The ghost rendering draws at the stored touch position, bypassing all mouse APIs.
 - **To investigate someday:** Decompile `CarpenterMenu.draw()` on Android to find where the ghost position actually comes from. Look for fields like `currentBuildingLocation`, `buildingPlacementPosition`, or similar that store touch coordinates. If found, we could set that field directly instead of going through `receiveLeftClick`.
 - **Known issue:** Diagonal cursor movement is jittery. Likely due to integer rounding of sub-pixel cursor positions. Not blocking — cosmetic only.
+- **Known annoyance:** "Choose cabin style" dialog can be accidentally triggered and cannot be interacted with via controller (B closes it). The appearance button in CarpenterMenu fires this dialog. Currently no controller support for navigating the style picker. Low priority — workaround is B to dismiss.
 - **Priority:** Lowest — the A-button-tap approach is fully functional. Same tier as trash can lid animation (#16c).
 
 ### 17. Title/Main Menu Cursor Fix
