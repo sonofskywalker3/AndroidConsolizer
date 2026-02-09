@@ -42,7 +42,6 @@ namespace AndroidConsolizer.Patches
         // --- Joystick cursor/panning fields ---
         private static FieldInfo OnFarmField;      // bool — true when showing farm view
         private static FieldInfo FreezeField;      // bool — true during animations/transitions
-        private static FieldInfo OldMouseStateField; // MouseState — what getOldMouseX/Y reads from
 
         private const float StickDeadzone = 0.2f;
         private const float CursorSpeedMax = 16f;  // px/tick at full tilt
@@ -55,6 +54,9 @@ namespace AndroidConsolizer.Patches
 
         /// <summary>Tracked cursor position (sub-pixel precision, UI coordinates).</summary>
         private static float _cursorX, _cursorY;
+
+        /// <summary>When true, Game1.getMouseX/Y and getOldMouseX/Y return our cursor position.</summary>
+        private static bool _overridingMousePosition = false;
 
         /// <summary>Apply Harmony patches.</summary>
         public static void Apply(Harmony harmony, IMonitor monitor)
@@ -92,14 +94,32 @@ namespace AndroidConsolizer.Patches
                 // Cache reflection fields for farm-view cursor movement
                 OnFarmField = AccessTools.Field(typeof(CarpenterMenu), "onFarm");
                 FreezeField = AccessTools.Field(typeof(CarpenterMenu), "freeze");
-                OldMouseStateField = typeof(Game1).GetField("oldMouseState",
-                    System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
 
-                // Postfix on update — reads left stick and pans viewport when on farm
+                // Postfix on update — reads left stick and moves cursor when on farm
                 harmony.Patch(
                     original: AccessTools.Method(typeof(CarpenterMenu), nameof(CarpenterMenu.update),
                                                  new[] { typeof(GameTime) }),
                     postfix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(Update_Postfix))
+                );
+
+                // Intercept ALL mouse position getters so CarpenterMenu.draw() sees our cursor.
+                // On Android, setMousePosition/oldMouseState don't work because the touch layer
+                // overwrites them. Patching the getters is the only reliable approach.
+                harmony.Patch(
+                    original: AccessTools.Method(typeof(Game1), nameof(Game1.getOldMouseX)),
+                    prefix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(GetMouseX_Prefix))
+                );
+                harmony.Patch(
+                    original: AccessTools.Method(typeof(Game1), nameof(Game1.getOldMouseY)),
+                    prefix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(GetMouseY_Prefix))
+                );
+                harmony.Patch(
+                    original: AccessTools.Method(typeof(Game1), nameof(Game1.getMouseX)),
+                    prefix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(GetMouseX_Prefix))
+                );
+                harmony.Patch(
+                    original: AccessTools.Method(typeof(Game1), nameof(Game1.getMouseY)),
+                    prefix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(GetMouseY_Prefix))
                 );
 
                 Monitor.Log("CarpenterMenu patches applied successfully.", LogLevel.Trace);
@@ -163,6 +183,7 @@ namespace AndroidConsolizer.Patches
             }
             MenuOpenTick = -1;
             _cursorCentered = false;
+            _overridingMousePosition = false;
         }
 
         /// <summary>Check if we're within the grace period after menu open.</summary>
@@ -230,11 +251,13 @@ namespace AndroidConsolizer.Patches
         /// Postfix for CarpenterMenu.update — moves building ghost cursor with left stick.
         /// Console-style: stick moves the building ghost around the screen. When the cursor
         /// reaches the viewport edge, the viewport scrolls in that direction.
-        /// On Android, Game1.setMousePosition() doesn't update oldMouseState (the hardware
-        /// touch layer overrides it), so we set oldMouseState directly via reflection.
+        /// Sets _overridingMousePosition so our getMouseX/Y prefixes return cursor position.
         /// </summary>
         private static void Update_Postfix(CarpenterMenu __instance)
         {
+            // Clear override by default — only set when all conditions are met
+            _overridingMousePosition = false;
+
             if (!ModEntry.Config.EnableCarpenterMenuFix)
                 return;
 
@@ -260,13 +283,16 @@ namespace AndroidConsolizer.Patches
             if (Game1.IsFading())
                 return;
 
+            // Enable mouse position override — stays true until next update postfix clears it.
+            // This means draw() calls to getMouseX/Y will return our cursor position.
+            _overridingMousePosition = true;
+
             // Center cursor on first farm-view frame so building ghost starts mid-screen
             if (!_cursorCentered)
             {
                 _cursorX = Game1.viewport.Width / 2f;
                 _cursorY = Game1.viewport.Height / 2f;
                 _cursorCentered = true;
-                SetOldMouseState((int)_cursorX, (int)_cursorY);
                 if (ModEntry.Config.VerboseLogging)
                     Monitor.Log($"[CarpenterMenu] Centered cursor to ({(int)_cursorX},{(int)_cursorY})", LogLevel.Debug);
                 return;
@@ -277,12 +303,9 @@ namespace AndroidConsolizer.Patches
             float absX = Math.Abs(thumbStick.X);
             float absY = Math.Abs(thumbStick.Y);
 
-            // Both axes below deadzone — still set mouse state (keeps ghost at current pos)
+            // Both axes below deadzone — keep cursor at current position (override still active)
             if (absX <= StickDeadzone && absY <= StickDeadzone)
-            {
-                SetOldMouseState((int)_cursorX, (int)_cursorY);
                 return;
-            }
 
             // Calculate cursor movement per axis
             float deltaX = 0f, deltaY = 0f;
@@ -309,11 +332,6 @@ namespace AndroidConsolizer.Patches
             int ix = (int)_cursorX;
             int iy = (int)_cursorY;
 
-            // Set oldMouseState directly — CarpenterMenu.draw() reads getOldMouseX/Y which
-            // comes from this field. Game1.setMousePosition() doesn't work on Android because
-            // the touch input layer overwrites Mouse.GetState() every frame.
-            SetOldMouseState(ix, iy);
-
             // Pan viewport when cursor reaches the edge
             int panX = 0, panY = 0;
 
@@ -335,22 +353,37 @@ namespace AndroidConsolizer.Patches
         }
 
         /// <summary>
-        /// Directly sets Game1.oldMouseState so that getOldMouseX/Y return our cursor position.
-        /// Coordinates are in UI space — converted to raw screen space via uiScale.
+        /// Harmony prefix for Game1.getOldMouseX and Game1.getMouseX.
+        /// Returns our tracked cursor X when CarpenterMenu farm view override is active.
         /// </summary>
-        private static void SetOldMouseState(int uiX, int uiY)
+        private static bool GetMouseX_Prefix(ref int __result, bool ui_scale)
         {
-            if (OldMouseStateField == null)
-                return;
+            if (!_overridingMousePosition)
+                return true;
 
-            int rawX = (int)(uiX * Game1.options.uiScale);
-            int rawY = (int)(uiY * Game1.options.uiScale);
+            if (ui_scale)
+                __result = (int)_cursorX;
+            else
+                __result = (int)(_cursorX * Game1.options.uiScale);
 
-            OldMouseStateField.SetValue(null, new MouseState(
-                rawX, rawY, 0,
-                ButtonState.Released, ButtonState.Released,
-                ButtonState.Released, ButtonState.Released, ButtonState.Released
-            ));
+            return false;
+        }
+
+        /// <summary>
+        /// Harmony prefix for Game1.getOldMouseY and Game1.getMouseY.
+        /// Returns our tracked cursor Y when CarpenterMenu farm view override is active.
+        /// </summary>
+        private static bool GetMouseY_Prefix(ref int __result, bool ui_scale)
+        {
+            if (!_overridingMousePosition)
+                return true;
+
+            if (ui_scale)
+                __result = (int)_cursorY;
+            else
+                __result = (int)(_cursorY * Game1.options.uiScale);
+
+            return false;
         }
 
         /// <summary>
