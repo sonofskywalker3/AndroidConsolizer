@@ -102,9 +102,18 @@ namespace AndroidConsolizer.Patches
                     postfix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(Update_Postfix))
                 );
 
-                // Intercept ALL mouse position getters so CarpenterMenu.draw() sees our cursor.
-                // On Android, setMousePosition/oldMouseState don't work because the touch layer
-                // overwrites them. Patching the getters is the only reliable approach.
+                Monitor.Log("CarpenterMenu patches applied successfully.", LogLevel.Trace);
+            }
+            catch (Exception ex)
+            {
+                Monitor.Log($"Failed to apply CarpenterMenu patches: {ex.Message}", LogLevel.Error);
+            }
+
+            // Mouse getter patches — separate try/catch so core patches survive if these fail.
+            // On Android, getOldMouseX/Y and getMouseX/Y are PARAMETERLESS (no ui_scale param).
+            // SMAPI rewrites calls to add missing optional params, but the actual methods have none.
+            try
+            {
                 harmony.Patch(
                     original: AccessTools.Method(typeof(Game1), nameof(Game1.getOldMouseX)),
                     prefix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(GetMouseX_Prefix))
@@ -121,12 +130,11 @@ namespace AndroidConsolizer.Patches
                     original: AccessTools.Method(typeof(Game1), nameof(Game1.getMouseY)),
                     prefix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(GetMouseY_Prefix))
                 );
-
-                Monitor.Log("CarpenterMenu patches applied successfully.", LogLevel.Trace);
+                Monitor.Log("Mouse getter patches applied successfully.", LogLevel.Trace);
             }
             catch (Exception ex)
             {
-                Monitor.Log($"Failed to apply CarpenterMenu patches: {ex.Message}", LogLevel.Error);
+                Monitor.Log($"Failed to apply mouse getter patches: {ex.Message}", LogLevel.Error);
             }
 
             // Furniture debounce — separate try/catch so carpenter patches still work if this fails
@@ -346,43 +354,47 @@ namespace AndroidConsolizer.Patches
                 panY = PanSpeed;
 
             if (panX != 0 || panY != 0)
+            {
                 Game1.panScreen(panX, panY);
 
+                // Compensate cursor for viewport movement — keeps cursor at the same
+                // world position. Without this, the cursor sticks to the screen edge
+                // and panning continues even after the stick changes direction.
+                _cursorX -= panX;
+                _cursorY -= panY;
+                _cursorX = Math.Max(0, Math.Min(_cursorX, Game1.viewport.Width - 1));
+                _cursorY = Math.Max(0, Math.Min(_cursorY, Game1.viewport.Height - 1));
+            }
+
             if (ModEntry.Config.VerboseLogging)
-                Monitor.Log($"[CarpenterMenu] Cursor: ({ix},{iy}) pan=({panX},{panY})", LogLevel.Trace);
+                Monitor.Log($"[CarpenterMenu] Cursor: ({(int)_cursorX},{(int)_cursorY}) pan=({panX},{panY})", LogLevel.Trace);
         }
 
         /// <summary>
         /// Harmony prefix for Game1.getOldMouseX and Game1.getMouseX.
+        /// On Android these are parameterless (no ui_scale param).
         /// Returns our tracked cursor X when CarpenterMenu farm view override is active.
         /// </summary>
-        private static bool GetMouseX_Prefix(ref int __result, bool ui_scale)
+        private static bool GetMouseX_Prefix(ref int __result)
         {
             if (!_overridingMousePosition)
                 return true;
 
-            if (ui_scale)
-                __result = (int)_cursorX;
-            else
-                __result = (int)(_cursorX * Game1.options.uiScale);
-
+            __result = (int)_cursorX;
             return false;
         }
 
         /// <summary>
         /// Harmony prefix for Game1.getOldMouseY and Game1.getMouseY.
+        /// On Android these are parameterless (no ui_scale param).
         /// Returns our tracked cursor Y when CarpenterMenu farm view override is active.
         /// </summary>
-        private static bool GetMouseY_Prefix(ref int __result, bool ui_scale)
+        private static bool GetMouseY_Prefix(ref int __result)
         {
             if (!_overridingMousePosition)
                 return true;
 
-            if (ui_scale)
-                __result = (int)_cursorY;
-            else
-                __result = (int)(_cursorY * Game1.options.uiScale);
-
+            __result = (int)_cursorY;
             return false;
         }
 
