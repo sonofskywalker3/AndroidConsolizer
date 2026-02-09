@@ -55,11 +55,8 @@ namespace AndroidConsolizer.Patches
         /// <summary>Tracked cursor position (sub-pixel precision, UI coordinates).</summary>
         private static float _cursorX, _cursorY;
 
-        /// <summary>When true, Game1.getMouseX/Y and getOldMouseX/Y return our cursor position.</summary>
+        /// <summary>When true, all mouse position reads return our cursor position.</summary>
         private static bool _overridingMousePosition = false;
-
-        // Diagnostic counters — how many times each override fires per tick
-        private static int _getMouseXCalls, _getMouseYCalls, _getOldMouseXCalls, _getOldMouseYCalls, _getMousePositionCalls;
 
         /// <summary>Apply Harmony patches.</summary>
         public static void Apply(Harmony harmony, IMonitor monitor)
@@ -112,39 +109,38 @@ namespace AndroidConsolizer.Patches
                 Monitor.Log($"Failed to apply CarpenterMenu patches: {ex.Message}", LogLevel.Error);
             }
 
-            // Mouse getter patches — separate try/catch so core patches survive if these fail.
-            // On Android, getOldMouseX/Y and getMouseX/Y are PARAMETERLESS (no ui_scale param).
-            // SMAPI rewrites calls to add missing optional params, but the actual methods have none.
+            // Low-level mouse state patches — CarpenterMenu reads mouse position directly
+            // from GetMouseState() (hardware layer), bypassing Game1.getMouseX/Y wrappers.
+            // Patch both Game1.input's GetMouseState and the static Mouse.GetState to cover
+            // all code paths. Postfix replaces X/Y while preserving button states.
             try
             {
-                harmony.Patch(
-                    original: AccessTools.Method(typeof(Game1), nameof(Game1.getOldMouseX)),
-                    prefix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(GetOldMouseX_Prefix))
-                );
-                harmony.Patch(
-                    original: AccessTools.Method(typeof(Game1), nameof(Game1.getOldMouseY)),
-                    prefix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(GetOldMouseY_Prefix))
-                );
-                harmony.Patch(
-                    original: AccessTools.Method(typeof(Game1), nameof(Game1.getMouseX)),
-                    prefix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(GetMouseX_Prefix))
-                );
-                harmony.Patch(
-                    original: AccessTools.Method(typeof(Game1), nameof(Game1.getMouseY)),
-                    prefix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(GetMouseY_Prefix))
-                );
-                Monitor.Log("Mouse getter patches applied successfully.", LogLevel.Trace);
+                // Patch the InputState.GetMouseState() on Game1.input's actual runtime type
+                var inputType = Game1.input.GetType();
+                var getMouseStateMethod = AccessTools.Method(inputType, "GetMouseState");
+                if (getMouseStateMethod != null)
+                {
+                    harmony.Patch(
+                        original: getMouseStateMethod,
+                        postfix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(GetMouseState_Postfix))
+                    );
+                    Monitor.Log($"Patched {inputType.Name}.GetMouseState postfix.", LogLevel.Trace);
+                }
 
-                // Also try getMousePosition — may be a separate code path on Android
-                harmony.Patch(
-                    original: AccessTools.Method(typeof(Game1), nameof(Game1.getMousePosition)),
-                    prefix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(GetMousePosition_Prefix))
-                );
-                Monitor.Log("getMousePosition patch applied successfully.", LogLevel.Trace);
+                // Also patch the static Mouse.GetState() — game may call XNA directly
+                var xnaMouseGetState = AccessTools.Method(typeof(Mouse), nameof(Mouse.GetState));
+                if (xnaMouseGetState != null)
+                {
+                    harmony.Patch(
+                        original: xnaMouseGetState,
+                        postfix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(GetMouseState_Postfix))
+                    );
+                    Monitor.Log("Patched Mouse.GetState postfix.", LogLevel.Trace);
+                }
             }
             catch (Exception ex)
             {
-                Monitor.Log($"Failed to apply mouse getter patches: {ex.Message}", LogLevel.Error);
+                Monitor.Log($"Failed to apply mouse state patches: {ex.Message}", LogLevel.Error);
             }
 
             // Furniture debounce — separate try/catch so carpenter patches still work if this fails
@@ -377,64 +373,28 @@ namespace AndroidConsolizer.Patches
             }
 
             if (ModEntry.Config.VerboseLogging)
-            {
-                Monitor.Log($"[CarpenterMenu] Cursor: ({(int)_cursorX},{(int)_cursorY}) pan=({panX},{panY})" +
-                    $" overrides: getMouseX={_getMouseXCalls} getMouseY={_getMouseYCalls}" +
-                    $" getOldMouseX={_getOldMouseXCalls} getOldMouseY={_getOldMouseYCalls}" +
-                    $" getMousePosition={_getMousePositionCalls}", LogLevel.Trace);
-            }
-            _getMouseXCalls = 0;
-            _getMouseYCalls = 0;
-            _getOldMouseXCalls = 0;
-            _getOldMouseYCalls = 0;
-            _getMousePositionCalls = 0;
+                Monitor.Log($"[CarpenterMenu] Cursor: ({(int)_cursorX},{(int)_cursorY}) pan=({panX},{panY})", LogLevel.Trace);
         }
 
-        // --- Mouse getter prefixes (each with diagnostic counter) ---
-
-        private static bool GetMouseX_Prefix(ref int __result)
+        /// <summary>
+        /// Harmony postfix for GetMouseState (both InputState and Mouse.GetState).
+        /// Replaces X/Y in the returned MouseState with our cursor position while
+        /// preserving all button states. Only active during CarpenterMenu farm view.
+        /// </summary>
+        private static void GetMouseState_Postfix(ref MouseState __result)
         {
             if (!_overridingMousePosition)
-                return true;
-            _getMouseXCalls++;
-            __result = (int)_cursorX;
-            return false;
-        }
+                return;
 
-        private static bool GetMouseY_Prefix(ref int __result)
-        {
-            if (!_overridingMousePosition)
-                return true;
-            _getMouseYCalls++;
-            __result = (int)_cursorY;
-            return false;
-        }
-
-        private static bool GetOldMouseX_Prefix(ref int __result)
-        {
-            if (!_overridingMousePosition)
-                return true;
-            _getOldMouseXCalls++;
-            __result = (int)_cursorX;
-            return false;
-        }
-
-        private static bool GetOldMouseY_Prefix(ref int __result)
-        {
-            if (!_overridingMousePosition)
-                return true;
-            _getOldMouseYCalls++;
-            __result = (int)_cursorY;
-            return false;
-        }
-
-        private static bool GetMousePosition_Prefix(ref Point __result)
-        {
-            if (!_overridingMousePosition)
-                return true;
-            _getMousePositionCalls++;
-            __result = new Point((int)_cursorX, (int)_cursorY);
-            return false;
+            __result = new MouseState(
+                (int)_cursorX, (int)_cursorY,
+                __result.ScrollWheelValue,
+                __result.LeftButton,
+                __result.MiddleButton,
+                __result.RightButton,
+                __result.XButton1,
+                __result.XButton2
+            );
         }
 
         /// <summary>
