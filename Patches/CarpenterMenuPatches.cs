@@ -45,6 +45,8 @@ namespace AndroidConsolizer.Patches
         private static FieldInfo OnFarmField;      // bool — true when showing farm view
         private static FieldInfo FreezeField;      // bool — true during animations/transitions
         private static FieldInfo CurrentBuildingField; // Building — the building being placed
+        private static FieldInfo ActionField;      // CarpentryAction enum — None/Demolish/Move/Paint/Upgrade
+        private static FieldInfo BuildingToMoveField; // Building — the building being moved (null until selected)
 
         private const float StickDeadzone = 0.2f;
         private const float CursorSpeedMax = 16f;  // px/tick at full tilt
@@ -127,6 +129,8 @@ namespace AndroidConsolizer.Patches
                 OnFarmField = AccessTools.Field(typeof(CarpenterMenu), "onFarm");
                 FreezeField = AccessTools.Field(typeof(CarpenterMenu), "freeze");
                 CurrentBuildingField = AccessTools.Field(typeof(CarpenterMenu), "currentBuilding");
+                ActionField = AccessTools.Field(typeof(CarpenterMenu), "Action");
+                BuildingToMoveField = AccessTools.Field(typeof(CarpenterMenu), "buildingToMove");
 
                 // Postfix on update — reads left stick and moves cursor when on farm
                 harmony.Patch(
@@ -249,6 +253,16 @@ namespace AndroidConsolizer.Patches
             return MenuOpenTick >= 0 && (Game1.ticks - MenuOpenTick) < GracePeriodTicks;
         }
 
+        /// <summary>Check if the menu is in a mode where A should always fire receiveLeftClick
+        /// (move, demolish) rather than using the two-press build system.</summary>
+        private static bool IsClickThroughMode(CarpenterMenu instance)
+        {
+            if (ActionField == null) return false;
+            // CarpentryAction enum: None=0 (build), Demolish=1, Move=2, Paint=3, Upgrade=4
+            int action = (int)ActionField.GetValue(instance);
+            return action == 1 || action == 2; // Demolish or Move
+        }
+
         /// <summary>
         /// Prefix for CarpenterMenu.receiveGamePadButton — two-press A button system.
         /// First A press: block here so Update_Postfix can position the ghost via receiveLeftClick.
@@ -265,6 +279,16 @@ namespace AndroidConsolizer.Patches
 
             if (b == Buttons.A)
             {
+                // In move/demolish mode, receiveLeftClick handles everything — always block
+                // receiveGamePadButton(A) and let our postfix fire receiveLeftClick instead.
+                if (IsClickThroughMode(__instance))
+                {
+                    if (ModEntry.Config.VerboseLogging)
+                        Monitor.Log("[CarpenterMenu] BLOCKED receiveGamePadButton(A) — move/demolish mode, using receiveLeftClick", LogLevel.Trace);
+                    return false;
+                }
+
+                // Build mode: two-press system
                 if (_ghostPlaced)
                 {
                     // Ghost is at cursor position from previous A press — let game build
@@ -385,10 +409,28 @@ namespace AndroidConsolizer.Patches
             // Enable cursor — draw postfix will render it, A button will click at its position
             _cursorActive = true;
 
-            // Read current building dimensions for ghost centering in GetMouseState_Postfix
-            var building = CurrentBuildingField?.GetValue(__instance) as Building;
-            _buildingTileHeight = building?.tilesHigh.Value ?? 0;
-            _buildingTileWidth = building?.tilesWide.Value ?? 0;
+            // Read building dimensions for ghost centering in GetMouseState_Postfix.
+            // In build mode: offset by currentBuilding dimensions (ghost anchor is top-left).
+            // In move mode: offset by buildingToMove dimensions (only after selecting a building).
+            // In demolish mode: no offset (just clicking on buildings).
+            int action = ActionField != null ? (int)ActionField.GetValue(__instance) : 0;
+            if (action == 2) // Move
+            {
+                var btm = BuildingToMoveField?.GetValue(__instance) as Building;
+                _buildingTileWidth = btm?.tilesWide.Value ?? 0;
+                _buildingTileHeight = btm?.tilesHigh.Value ?? 0;
+            }
+            else if (action == 1) // Demolish
+            {
+                _buildingTileWidth = 0;
+                _buildingTileHeight = 0;
+            }
+            else // Build (None/Upgrade)
+            {
+                var building = CurrentBuildingField?.GetValue(__instance) as Building;
+                _buildingTileWidth = building?.tilesWide.Value ?? 0;
+                _buildingTileHeight = building?.tilesHigh.Value ?? 0;
+            }
 
             // Center cursor on first farm-view frame so building ghost starts mid-screen
             if (!_cursorCentered)
@@ -463,17 +505,28 @@ namespace AndroidConsolizer.Patches
                     Monitor.Log($"[CarpenterMenu] Cursor: ({(int)_cursorX},{(int)_cursorY}) pan=({panX},{panY})", LogLevel.Trace);
             }
 
-            // Two-press A button system:
-            // Press 1: block receiveGamePadButton(A), call receiveLeftClick → ghost moves to cursor
-            // Press 2: let receiveGamePadButton(A) through → game builds at ghost position
-            // Override gets cleared at the START of the next frame's Update_Postfix.
+            // A button handling — mode-dependent:
+            // Move/demolish: every A press fires receiveLeftClick directly (select/place/demolish)
+            // Build: two-press system (first A positions ghost, second A builds via receiveGamePadButton)
             var gps = Game1.input.GetGamePadState();
             bool aPressed = gps.Buttons.A == ButtonState.Pressed;
             if (aPressed && !_prevAPressed)
             {
-                if (_buildPressHandled)
+                if (IsClickThroughMode(__instance))
                 {
-                    // The prefix let receiveGamePadButton(A) through for building.
+                    // Move/demolish mode: every A press → receiveLeftClick at cursor
+                    _overridingMousePosition = true;
+                    __instance.receiveLeftClick((int)_cursorX, (int)_cursorY);
+                    if (ModEntry.Config.VerboseLogging)
+                    {
+                        var btm = BuildingToMoveField?.GetValue(__instance) as Building;
+                        string mode = ((int)ActionField.GetValue(__instance)) == 2 ? "MOVE" : "DEMOLISH";
+                        Monitor.Log($"[CarpenterMenu] {mode} → receiveLeftClick({(int)_cursorX},{(int)_cursorY}) buildingToMove={btm?.buildingType.Value ?? "none"}", LogLevel.Debug);
+                    }
+                }
+                else if (_buildPressHandled)
+                {
+                    // Build mode: the prefix let receiveGamePadButton(A) through for building.
                     // Don't call receiveLeftClick — the game already handled the build.
                     _buildPressHandled = false;
                     if (ModEntry.Config.VerboseLogging)
@@ -481,14 +534,12 @@ namespace AndroidConsolizer.Patches
                 }
                 else
                 {
-                    // First press: position ghost at cursor via receiveLeftClick
+                    // Build mode, first press: position ghost at cursor via receiveLeftClick
                     _overridingMousePosition = true;
                     __instance.receiveLeftClick((int)_cursorX, (int)_cursorY);
                     _ghostPlaced = true;
                     // Don't clear _overridingMousePosition — game's receiveLeftClick fires
                     // after this postfix and needs to read our coords too.
-                    // Override persists into next frame so receiveGamePadButton(A) also
-                    // reads our coords if it internally checks GetMouseState.
                     if (ModEntry.Config.VerboseLogging)
                         Monitor.Log($"[CarpenterMenu] Ghost positioned at ({(int)_cursorX},{(int)_cursorY}) — press A again to build. zoom={Game1.options.zoomLevel} buildW={_buildingTileWidth} buildH={_buildingTileHeight}", LogLevel.Debug);
                 }
