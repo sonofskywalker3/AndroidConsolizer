@@ -70,8 +70,8 @@ When "Use Bumpers Instead of Triggers" is enabled:
 - Prevents Robin's building menu from instantly closing when opened with controller
 - **Full joystick control in farm view** — Build, Move, and Demolish all work with the controller
   - Left stick moves a visible cursor across the farm, panning the viewport at screen edges
-  - **Build mode**: Building ghost follows your cursor in real time. Press A to confirm placement.
-  - **Move mode**: Press A to select a building, move cursor to new location, press A to confirm.
+  - **Build mode**: Press A to set the building position at your cursor, press A again to confirm placement.
+  - **Move mode**: Press A to select a building, move cursor to new location, press A to set the position, press A again to confirm.
   - **Demolish mode**: Press A on a building to highlight it (green), press A again to confirm demolition. Move cursor off the building to deselect without demolishing.
   - Touch still works normally alongside the joystick cursor
 
@@ -87,7 +87,7 @@ When "Use Bumpers Instead of Triggers" is enabled:
 - Works with Fiberglass Rod (bait only) and Iridium Rod (bait + tackle)
 - Swapping supported: attaching different bait/tackle swaps with existing
 
-## Button Mappings
+## Button Mappings (Default Layout + Style)
 
 | Context | Button | Action |
 |---------|--------|--------|
@@ -271,7 +271,7 @@ MIT License - Feel free to modify and redistribute.
 ### 3.2.0 — The Robin Release
 - **Robin's Build Menu — Full Controller Support** - Build, Move, and Demolish all work with the joystick
   - Building ghost follows your cursor in real time across the farm
-  - **Build mode**: Move cursor to desired location, press A to place the building
+  - **Build mode**: Move cursor to desired location, press A to set the building position, press A again to place
   - **Move mode**: Press A to select a building, move cursor to new location, press A to confirm
   - **Demolish mode**: Press A on a building to highlight it green, press A again to demolish. Move cursor away to safely deselect without demolishing
   - Left stick pans the viewport when cursor reaches screen edges
