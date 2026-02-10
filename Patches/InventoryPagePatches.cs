@@ -247,12 +247,13 @@ namespace AndroidConsolizer.Patches
                 GamePadState gpState = GamePad.GetState(Microsoft.Xna.Framework.PlayerIndex.One);
 
                 // Touch interrupt guard: if we're holding an item via controller but A is NOT pressed,
-                // this is a touch event that would orphan the held item. Return it to its slot first.
+                // this is a touch event that would orphan the held item. Return it to its slot
+                // and block the touch to prevent tooltip/slot-reset side effects.
                 if (gpState.Buttons.A != ButtonState.Pressed && InventoryManagementPatches.IsCurrentlyHolding())
                 {
                     Monitor.Log($"[TouchGuard] leftClickHeld: touch while holding {Game1.player.CursorSlotItem?.Name} — cancelling hold", LogLevel.Info);
                     InventoryManagementPatches.CancelHold();
-                    return true; // Let the touch through normally
+                    return false; // Block touch to prevent tooltip/cursor-reset
                 }
 
                 if (gpState.Buttons.A == ButtonState.Pressed)
@@ -299,12 +300,13 @@ namespace AndroidConsolizer.Patches
                 GamePadState gpState = GamePad.GetState(Microsoft.Xna.Framework.PlayerIndex.One);
 
                 // Touch interrupt guard: if we're holding an item via controller but A is NOT pressed,
-                // this is a touch event that would orphan the held item. Return it to its slot first.
+                // this is a touch event that would orphan the held item. Return it to its slot
+                // and block the touch to prevent tooltip/slot-reset side effects.
                 if (gpState.Buttons.A != ButtonState.Pressed && InventoryManagementPatches.IsCurrentlyHolding())
                 {
                     Monitor.Log($"[TouchGuard] receiveLeftClick: touch while holding {Game1.player.CursorSlotItem?.Name} — cancelling hold", LogLevel.Info);
                     InventoryManagementPatches.CancelHold();
-                    return true; // Let the touch through normally
+                    return false; // Block touch to prevent tooltip/cursor-reset
                 }
 
                 if (gpState.Buttons.A == ButtonState.Pressed)
