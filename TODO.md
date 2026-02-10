@@ -155,11 +155,18 @@ These need to be re-implemented **one at a time, one per 0.0.1 patch, each commi
 - Close X: A simulates B press + suppress-A-until-release at GetState level (v2.9.28). Replaces the old 120-tick reopen hack.
 - See `CHESTNAV_SPEC.md` for the full navigation wiring spec.
 
-### 11. Touch Interrupt Returns Held Item — FIXED (v3.2.9-v3.2.10) + Intentional Item Drop (TODO)
+### 11. Touch Interrupt Returns Held Item — FIXED (v3.2.9-v3.2.10) + Drop Zone DONE (v3.2.11-v3.2.13)
 - **Touch interrupt FIXED:** In `InventoryPagePatches`, both `ReceiveLeftClick_Prefix` and `LeftClickHeld_Prefix` detect touch-during-hold (A not pressed + `IsCurrentlyHolding()`) and call `CancelHold()` to return item to source slot. Touch event is blocked (`return false`) to prevent tooltip/cursor-reset side effects.
 - **File:** `Patches/InventoryPagePatches.cs`
-- **Remaining — Intentional item drop (controller):** Since there's no "outside the inventory window" zone on mobile fullscreen, need a dedicated controller input for intentional drops. Proposed: **Left stick click (L3) while holding an item drops it on the ground.** This is an unused button in menus and provides a deliberate, hard-to-accidentally-press action.
-- Alternative considered: a snap-to "drop zone" component at the edge of the inventory grid. Less intuitive than a button press since every slot is already tightly packed on mobile.
+- **Drop zone DONE (v3.2.11-v3.2.13):** Invisible snap zone component (ID 110) between Sort (106) and Trash (105). A while holding drops item as debris at player's feet. Tooltip shows "Drop Item" when holding. Nav wired: sort ↔ drop zone ↔ trash vertically, inventory grid ↔ drop zone horizontally (nearest-Y heuristic).
+- **File:** `Patches/InventoryManagementPatches.cs`
+
+### 11b. Touch-Interrupt Side Effects — TODO
+- **Tooltip follows finger after touch cancel:** When touching the screen while holding an item, `CancelHold()` returns the item and blocks `receiveLeftClick`/`leftClickHeld`, but `performHoverAction` still fires from the touch event (not patched). The game's hover tooltip follows the finger across inventory slots until the finger lifts or touches something else.
+- **Root cause:** `performHoverAction` is called by the game's update loop based on mouse/touch position. Our touch guards block click events but not hover. Would need to either patch `performHoverAction` to suppress during/after touch cancel, or set a multi-frame suppression flag.
+- **Cursor resets to slot 0 after touch:** After a touch interrupt cancels the hold, the next joystick input snaps the cursor to slot 0 instead of returning to the slot the item was on. This is because the game calls `snapToDefaultClickableComponent()` when re-engaging controller after touch input.
+- **Fix approach:** Save `currentlySnappedComponent.myID` before `CancelHold()` in the touch guards, then on the next controller input, restore snap to that component instead of slot 0. May need a flag + saved ID checked in `OnUpdateTicked` when joystick input resumes.
+- **Priority:** Medium — annoying but not blocking. Items return safely, just need to re-navigate.
 
 ### 12. Right Joystick Cursor Mode + Zoom Control
 - Bundled feature (LARGE)
