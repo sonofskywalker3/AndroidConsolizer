@@ -520,14 +520,10 @@ namespace AndroidConsolizer.Patches
                 _buildingTileHeight = building?.tilesHigh.Value ?? 0;
             }
 
-            // Mode-dependent GetMouseState override:
-            // Move/demolish: keep active continuously so the game always reads our cursor
-            // position (receiveGamePadButton fires before this postfix and needs the override).
-            // Build: clear here, only activate momentarily during our receiveLeftClick call.
-            if (isMoving || isDemolishing)
-                _overridingMousePosition = true;
-            else
-                _overridingMousePosition = false;
+            // Continuous GetMouseState override for all modes on farm view.
+            // The game reads mouse position for ghost rendering and placement in every mode.
+            // With override always active, the ghost tracks the joystick cursor in real time.
+            _overridingMousePosition = true;
 
             // Center cursor on first farm-view frame so building ghost starts mid-screen
             if (!_cursorCentered)
@@ -627,8 +623,7 @@ namespace AndroidConsolizer.Patches
                 else
                 {
                     // Prefix blocked receiveGamePadButton(A) — position ghost at cursor.
-                    // Override is already active for move/demolish; set it for build mode.
-                    _overridingMousePosition = true;
+                    // Override is already active (continuous on farm view).
                     __instance.receiveLeftClick((int)_cursorX, (int)_cursorY);
                     _ghostPlaced = true;
                     if (ModEntry.Config.VerboseLogging)
@@ -642,9 +637,9 @@ namespace AndroidConsolizer.Patches
         }
 
         /// <summary>
-        /// Harmony postfix for GetMouseState. Only active during receiveLeftClick calls
+        /// Harmony postfix for GetMouseState. Active continuously on farm view
         /// (when _overridingMousePosition is true). Replaces X/Y with cursor position
-        /// so the game reads our coordinates for building placement.
+        /// so the ghost tracks the joystick cursor and placement uses our coordinates.
         /// </summary>
         private static void GetMouseState_Postfix(ref MouseState __result)
         {
