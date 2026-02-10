@@ -245,6 +245,16 @@ namespace AndroidConsolizer.Patches
             if (ModEntry.Config.EnableConsoleInventory)
             {
                 GamePadState gpState = GamePad.GetState(Microsoft.Xna.Framework.PlayerIndex.One);
+
+                // Touch interrupt guard: if we're holding an item via controller but A is NOT pressed,
+                // this is a touch event that would orphan the held item. Return it to its slot first.
+                if (gpState.Buttons.A != ButtonState.Pressed && InventoryManagementPatches.IsCurrentlyHolding())
+                {
+                    Monitor.Log($"[TouchGuard] leftClickHeld: touch while holding {Game1.player.CursorSlotItem?.Name} — cancelling hold", LogLevel.Info);
+                    InventoryManagementPatches.CancelHold();
+                    return true; // Let the touch through normally
+                }
+
                 if (gpState.Buttons.A == ButtonState.Pressed)
                 {
                     // Let the game handle non-inventory slots (equipment, sort, trash)
@@ -287,6 +297,16 @@ namespace AndroidConsolizer.Patches
             if (ModEntry.Config.EnableConsoleInventory)
             {
                 GamePadState gpState = GamePad.GetState(Microsoft.Xna.Framework.PlayerIndex.One);
+
+                // Touch interrupt guard: if we're holding an item via controller but A is NOT pressed,
+                // this is a touch event that would orphan the held item. Return it to its slot first.
+                if (gpState.Buttons.A != ButtonState.Pressed && InventoryManagementPatches.IsCurrentlyHolding())
+                {
+                    Monitor.Log($"[TouchGuard] receiveLeftClick: touch while holding {Game1.player.CursorSlotItem?.Name} — cancelling hold", LogLevel.Info);
+                    InventoryManagementPatches.CancelHold();
+                    return true; // Let the touch through normally
+                }
+
                 if (gpState.Buttons.A == ButtonState.Pressed)
                 {
                     // Let the game handle non-inventory slots (equipment, sort, trash)
