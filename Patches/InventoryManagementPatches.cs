@@ -54,6 +54,9 @@ namespace AndroidConsolizer.Patches
         // Cached A-button state from OnUpdateTicked — avoids redundant GamePad.GetState() in draw postfix
         private static bool CachedAButtonDown = false;
 
+        // Drop zone component ID (between sort 106 and trash 105)
+        private const int DropZoneId = 110;
+
         // When HandleAButton declines to process a non-inventory slot (equipment, sort, trash),
         // this flag tells the prefix patches in InventoryPagePatches to let the A press through
         // to the game's own handler. Cleared each tick in OnUpdateTicked.
@@ -319,6 +322,84 @@ namespace AndroidConsolizer.Patches
             // Clear the pass-through flag. It was set during HandleAButton (via OnButtonsChanged)
             // and consumed by prefix patches during this tick's input processing.
             AllowGameAPress = false;
+
+            // Inject drop zone component between sort (106) and trash (105) if not already present
+            if (Game1.activeClickableMenu is GameMenu gm2 && gm2.currentTab == GameMenu.inventoryTab)
+            {
+                var invPage2 = gm2.pages[GameMenu.inventoryTab] as InventoryPage;
+                if (invPage2 != null)
+                    EnsureDropZoneComponent(invPage2);
+            }
+        }
+
+        /// <summary>
+        /// Inject the drop zone component between sort (106) and trash (105) if not already present.
+        /// Also wires up snap navigation: sort ↔ drop zone ↔ trash.
+        /// </summary>
+        private static void EnsureDropZoneComponent(InventoryPage inventoryPage)
+        {
+            if (!ModEntry.Config.EnableConsoleInventory)
+                return;
+
+            try
+            {
+                // Check if drop zone already exists
+                foreach (var cc in inventoryPage.allClickableComponents)
+                {
+                    if (cc.myID == DropZoneId)
+                        return; // Already injected
+                }
+
+                // Find sort (106) and trash (105) to calculate position
+                ClickableComponent sort = null;
+                ClickableComponent trash = null;
+                foreach (var cc in inventoryPage.allClickableComponents)
+                {
+                    if (cc.myID == 106) sort = cc;
+                    else if (cc.myID == 105) trash = cc;
+                }
+
+                if (sort == null || trash == null)
+                {
+                    if (ModEntry.Config.VerboseLogging)
+                        Monitor?.Log("InventoryManagement: Cannot find sort/trash for drop zone placement", LogLevel.Debug);
+                    return;
+                }
+
+                // Position: same X as sort, centered vertically in gap between sort bottom and trash top
+                int sortBottom = sort.bounds.Y + sort.bounds.Height;
+                int trashTop = trash.bounds.Y;
+                int gapCenter = sortBottom + (trashTop - sortBottom) / 2;
+                int dropX = sort.bounds.X;
+                int dropY = gapCenter - 32; // 64x64 component, center it
+
+                var dropZone = new ClickableComponent(
+                    new Rectangle(dropX, dropY, 64, 64),
+                    "dropZone")
+                {
+                    myID = DropZoneId,
+                    upNeighborID = 106,        // sort
+                    downNeighborID = 105,       // trash
+                    leftNeighborID = sort.leftNeighborID,
+                    rightNeighborID = -1
+                };
+
+                inventoryPage.allClickableComponents.Add(dropZone);
+
+                // Wire sort (106) down → drop zone (was 105)
+                sort.downNeighborID = DropZoneId;
+
+                // Wire trash (105) up → drop zone (was 106)
+                trash.upNeighborID = DropZoneId;
+
+                if (ModEntry.Config.VerboseLogging)
+                    Monitor?.Log($"InventoryManagement: Injected drop zone at ({dropX},{dropY}), sort→drop→trash nav wired", LogLevel.Debug);
+            }
+            catch (Exception ex)
+            {
+                if (ModEntry.Config.VerboseLogging)
+                    Monitor?.Log($"InventoryManagement: EnsureDropZoneComponent error: {ex.Message}", LogLevel.Debug);
+            }
         }
 
         /// <summary>
@@ -690,6 +771,8 @@ namespace AndroidConsolizer.Patches
                           // snapped component position, so the sort button never gets hit.
                     InventoryPagePatches.SortPlayerInventory();
                     return true;
+                case DropZoneId: // Drop zone — nothing to pick up, consume input
+                    return true;
                 default:
                     // Non-equipment slot (trash 105, tab icons, etc.) — let game handle
                     if (ModEntry.Config.VerboseLogging)
@@ -828,6 +911,7 @@ namespace AndroidConsolizer.Patches
                 case 106: // Organize/sort button — sort inventory, keep held item on cursor
                     InventoryPagePatches.SortPlayerInventory();
                     return true;
+                case DropZoneId: return DropHeldItem(heldItem);
                 case 108: return TryEquipClothing(heldItem, isShirt: true);
                 case 109: return TryEquipClothing(heldItem, isShirt: false);
                 default:
@@ -976,6 +1060,20 @@ namespace AndroidConsolizer.Patches
 
             Monitor.Log($"InventoryManagement: Trashed {heldItem.Name}", LogLevel.Info);
             Game1.playSound("trashcan");
+            Game1.player.CursorSlotItem = null;
+            IsHoldingItem = false;
+            SourceSlotId = -1;
+            return true;
+        }
+
+        /// <summary>
+        /// Drop the held item on the ground as debris at the player's feet.
+        /// </summary>
+        private static bool DropHeldItem(Item heldItem)
+        {
+            Game1.createItemDebris(heldItem, Game1.player.getStandingPosition(), Game1.player.FacingDirection);
+            Game1.playSound("throwDownITem");
+            Monitor.Log($"InventoryManagement: Dropped {heldItem.Name} on ground", LogLevel.Info);
             Game1.player.CursorSlotItem = null;
             IsHoldingItem = false;
             SourceSlotId = -1;
