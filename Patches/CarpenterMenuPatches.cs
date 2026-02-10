@@ -317,19 +317,45 @@ namespace AndroidConsolizer.Patches
                         }
                     }
 
-                    // Demolish mode: always let A through to receiveGamePadButton.
+                    // Demolish mode: behavior depends on whether the game is frozen
+                    // (showing confirmation dialog) or not (selecting buildings).
                     // receiveLeftClick can't select or demolish buildings — only
-                    // receiveGamePadButton can. Per-tick guard prevents duplicate calls.
+                    // receiveGamePadButton can.
                     bool isDemolishingVal = DemolishingField != null && (bool)DemolishingField.GetValue(__instance);
                     if (isDemolishingVal)
                     {
-                        if (_demolishLastATick == Game1.ticks)
-                            return false; // already fired this tick
-                        _demolishLastATick = Game1.ticks;
-                        _buildPressHandled = true;
-                        if (ModEntry.Config.VerboseLogging)
-                            Monitor.Log("[CarpenterMenu] Demolish: letting A through for selection/confirm", LogLevel.Debug);
-                        return true;
+                        bool isFrozen = FreezeField != null && (bool)FreezeField.GetValue(__instance);
+                        if (!isFrozen)
+                        {
+                            // Not frozen → selection phase. Let every A through
+                            // (per-tick guard prevents same-tick double-fire).
+                            if (_demolishLastATick == Game1.ticks)
+                                return false;
+                            _demolishLastATick = Game1.ticks;
+                            _buildPressHandled = true;
+                            if (ModEntry.Config.VerboseLogging)
+                                Monitor.Log("[CarpenterMenu] Demolish: selection attempt (freeze=false)", LogLevel.Debug);
+                            return true;
+                        }
+                        else
+                        {
+                            // Frozen → confirmation dialog showing. Two-press guard
+                            // prevents accidental confirm when cursor moved off building.
+                            if (_ghostPlaced)
+                            {
+                                _ghostPlaced = false;
+                                _buildPressHandled = true;
+                                if (ModEntry.Config.VerboseLogging)
+                                    Monitor.Log("[CarpenterMenu] Demolish: letting A through to CONFIRM (freeze=true)", LogLevel.Debug);
+                                return true;
+                            }
+                            else
+                            {
+                                if (ModEntry.Config.VerboseLogging)
+                                    Monitor.Log("[CarpenterMenu] Demolish: BLOCKED A → positioning first (freeze=true)", LogLevel.Trace);
+                                return false;
+                            }
+                        }
                     }
 
                     // Move (building selected): two-press guard
@@ -461,9 +487,18 @@ namespace AndroidConsolizer.Patches
                 return;
             }
 
-            // Don't move during animations/transitions
+            // Don't move during animations/transitions (e.g., demolish confirmation).
+            // Still process _buildPressHandled so the two-press guard advances
+            // (prefix let A through → postfix sets _ghostPlaced for next A).
             if ((bool)FreezeField.GetValue(__instance))
             {
+                if (_buildPressHandled)
+                {
+                    _buildPressHandled = false;
+                    _ghostPlaced = true;
+                    if (ModEntry.Config.VerboseLogging)
+                        Monitor.Log("[CarpenterMenu] Action handled during freeze (demolish confirm pending)", LogLevel.Debug);
+                }
                 _overridingMousePosition = false;
                 return;
             }
