@@ -685,8 +685,13 @@ namespace AndroidConsolizer.Patches
                         Game1.player.pantsItem.Value = null;
                     }
                     break;
+                case 106: // Organize/sort button — handle directly because Android's
+                          // receiveLeftClick pass-through fires at mouse position, not
+                          // snapped component position, so the sort button never gets hit.
+                    InventoryPagePatches.SortPlayerInventory();
+                    return true;
                 default:
-                    // Non-equipment slot (organize 106, trash 105, etc.) — let game handle
+                    // Non-equipment slot (trash 105, tab icons, etc.) — let game handle
                     if (ModEntry.Config.VerboseLogging)
                         Monitor.Log($"InventoryManagement: Slot {slotId} is not equipment, passing through", LogLevel.Debug);
                     AllowGameAPress = true;
@@ -820,10 +825,13 @@ namespace AndroidConsolizer.Patches
                 case 103: return TryEquipRing(heldItem, isLeft: true);
                 case 104: return TryEquipBoots(heldItem);
                 case 105: return TrashHeldItem(heldItem);
+                case 106: // Organize/sort button — sort inventory, keep held item on cursor
+                    InventoryPagePatches.SortPlayerInventory();
+                    return true;
                 case 108: return TryEquipClothing(heldItem, isShirt: true);
                 case 109: return TryEquipClothing(heldItem, isShirt: false);
                 default:
-                    // Unknown non-inventory slot (organize button 106, etc.) — let game handle
+                    // Unknown non-inventory slot (tab icons, etc.) — let game handle
                     if (ModEntry.Config.VerboseLogging)
                         Monitor.Log($"InventoryManagement: Slot {slotId} is unknown non-inventory, passing through", LogLevel.Debug);
                     AllowGameAPress = true;
