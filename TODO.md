@@ -160,6 +160,7 @@ These need to be re-implemented **one at a time, one per 0.0.1 patch, each commi
 - **File:** `Patches/InventoryPagePatches.cs`
 - **Drop zone DONE (v3.2.11-v3.2.13):** Invisible snap zone component (ID 110) between Sort (106) and Trash (105). A while holding drops item as debris at player's feet. Tooltip shows "Drop Item" when holding. Nav wired: sort ↔ drop zone ↔ trash vertically, inventory grid ↔ drop zone horizontally (nearest-Y heuristic).
 - **File:** `Patches/InventoryManagementPatches.cs`
+- **BUG: Dropped items immediately picked back up.** `createItemDebris` spawns debris at the player's standing position, and the player's collection radius picks it up on the same or next frame. Likely vanilla behavior — debris spawned at `getStandingPosition()` is within auto-pickup range. **Fix approach:** Either (a) spawn debris further away (e.g. 2-3 tiles in `FacingDirection`), (b) set a pickup delay on the debris object if the API allows it, or (c) close the inventory menu first so the overworld pickup logic has time to move the debris away. Needs investigation.
 
 ### 11b. Touch-Interrupt Side Effects — TODO
 - **Tooltip follows finger after touch cancel:** When touching the screen while holding an item, `CancelHold()` returns the item and blocks `receiveLeftClick`/`leftClickHeld`, but `performHoverAction` still fires from the touch event (not patched). The game's hover tooltip follows the finger across inventory slots until the finger lifts or touches something else.
