@@ -136,16 +136,9 @@ These need to be re-implemented **one at a time, one per 0.0.1 patch, each commi
 - RB snaps cursor to Fill Stacks button in `ReceiveGamePadButton_Prefix`. Skips when color picker is open.
 - **File:** `Patches/ItemGrabMenuPatches.cs`
 
-### 8. Equipment Slot Placement Bug
-- Can navigate to equipment slots but A button does nothing
-- **Symptom:** In the inventory page, selected a ring with A (red outline), navigated to the ring equipment slot, pressed A — nothing happened. The ring was not equipped.
-- Confirmed on Logitech G Cloud.
-- Touch/drag DOES work to equip items, but using touch while an item is controller-selected causes the controller-selected item to be abandoned outside any slot.
-- **CRITICAL SIDE EFFECT:** When the menu was closed with an item "held" (selected but not in a slot), the item dropped on the ground and was lost (ring fell in river). See #11 for safety net.
-- **Investigation:** Check if `InventoryManagementPatches` handles equipment slot IDs. Equipment slots have different component IDs than the 36-slot inventory grid. The A-button handler may only be coded for inventory grid slots, not equipment slots (hat, shirt, pants, boots, ring1, ring2).
-- Fix: Extend A-button handling to recognize equipment slot component IDs and call the appropriate equip method.
-- **Same root cause as sort button bug (#16b).** Both are non-inventory slots where InventoryManagement says "not inventory slot, ignoring" and then the console inventory mode A-blocking eats the click before the game's own handler can process it. Fix for both: when InventoryManagement sees a non-inventory slot, pass through to the game instead of blocking.
-- **Read `ANDROID_INVENTORY_NOTES.md` before working on this.**
+### 8. Equipment Slot Placement Bug — FIXED
+- **Fixed:** `PickUpFromEquipmentSlot` handles all equipment slot IDs (101=Hat, 102=Right Ring, 103=Left Ring, 104=Boots, 108=Shirt, 109=Pants). Placing held items onto equipment slots handled via `TryEquipHat/Ring/Boots/Clothing`. `AllowGameAPress` flag passes through to game for unknown non-inventory slots. Sort button (106) handled directly in both pickup and placement paths.
+- **File:** `Patches/InventoryManagementPatches.cs`
 
 ### 9. Community Center Bundle Navigation + Cursor Bug
 - Multiple issues with CC bundle controller interaction
@@ -162,15 +155,11 @@ These need to be re-implemented **one at a time, one per 0.0.1 patch, each commi
 - Close X: A simulates B press + suppress-A-until-release at GetState level (v2.9.28). Replaces the old 120-tick reopen hack.
 - See `CHESTNAV_SPEC.md` for the full navigation wiring spec.
 
-### 11. Touch Interrupt Returns Held Item + Intentional Item Drop
-- Two related issues with held items
-- **Bug — Touch orphans controller-held items:** When an item is held by the cursor via our controller code (A-button pickup), using the touchscreen does NOT return that item to the inventory. Instead, the item remains "floating" on screen — still attached to the cursor but no longer associated with any slot. The cursor itself gets pulled away by touch, leaving the item orphaned. If the menu is then closed while the item is not in any inventory slot, it drops on the ground. User lost a ring to the river this way.
-- Confirmed on Logitech G Cloud.
-- **Fix for touch interrupt:** Detect when touch input begins (mouse event fires) while the mod has a controller-held item. When this happens, immediately return the item to its original inventory slot (or first open slot) before allowing touch to proceed. This prevents the orphaned state entirely.
-- **Do NOT add a menu-exit safety net.** Dropping items on the ground is intentional game behavior that should remain possible. On console, there's a snap-to zone outside the left edge of the inventory window (inventory isn't fullscreen). On mobile touch, releasing an item when no slot is highlighted in green drops it.
-- **Intentional item drop (controller):** Since there's no "outside the inventory window" zone on mobile fullscreen, need a dedicated controller input for intentional drops. Proposed: **Left stick click (L3) while holding an item drops it on the ground.** This is an unused button in menus and provides a deliberate, hard-to-accidentally-press action.
+### 11. Touch Interrupt Returns Held Item — FIXED (v3.2.9-v3.2.10) + Intentional Item Drop (TODO)
+- **Touch interrupt FIXED:** In `InventoryPagePatches`, both `ReceiveLeftClick_Prefix` and `LeftClickHeld_Prefix` detect touch-during-hold (A not pressed + `IsCurrentlyHolding()`) and call `CancelHold()` to return item to source slot. Touch event is blocked (`return false`) to prevent tooltip/cursor-reset side effects.
+- **File:** `Patches/InventoryPagePatches.cs`
+- **Remaining — Intentional item drop (controller):** Since there's no "outside the inventory window" zone on mobile fullscreen, need a dedicated controller input for intentional drops. Proposed: **Left stick click (L3) while holding an item drops it on the ground.** This is an unused button in menus and provides a deliberate, hard-to-accidentally-press action.
 - Alternative considered: a snap-to "drop zone" component at the edge of the inventory grid. Less intuitive than a button press since every slot is already tightly packed on mobile.
-- **Read `ANDROID_INVENTORY_NOTES.md` before working on this.**
 
 ### 12. Right Joystick Cursor Mode + Zoom Control
 - Bundled feature (LARGE)
@@ -243,11 +232,10 @@ These need to be re-implemented **one at a time, one per 0.0.1 patch, each commi
 
 ### 16. ~~Trash Can + Sort Button Fix~~ — IMPLEMENTED in v2.7.2+
 - (a) A on trash can (slot 105) now trashes held item via `Utility.trashItem()` (handles refund + sound)
-- (b) A on sort button (slot 106) now sorts inventory (cancels hold first if needed)
-  - **BUG (v3.1.15): Sort button broken.** Can navigate to it, but A press does nothing. Logs show slot 106 hits "not inventory slot, ignoring" in InventoryManagement, then A is blocked by "Blocking A button in GameMenu inventory (console inventory mode)". The console inventory A-blocking is eating the click before the sort handler can process it. **Same root cause as equipment slot bug (#8)** — both are non-inventory slots where InventoryManagement ignores the slot and the A-block eats the click. Fix both together.
+- (b) A on sort button (slot 106) now sorts inventory (cancels hold first if needed) — **BUG FIXED:** Sort button now handled directly in `InventoryManagementPatches.PickUpFromEquipmentSlot` (case 106) and placement path (case 106). `AllowGameAPress` fallback handles other unknown slots.
 - (c) B while holding snaps to trash can; B again cancels hold and closes menu
 - **REMAINING: Trash can lid animation does NOT work on Android.** See bug report below.
-- Also found: **slot 12341** is reachable by navigating far left/up from inventory grid - likely a tab icon. A press on it is also blocked. May want a general "pass through to game for non-inventory slots" fallback instead of blocking.
+- ~~Also found: **slot 12341** is reachable by navigating far left/up from inventory grid~~ — **FIXED:** `AllowGameAPress` default fallback now passes through all unknown non-inventory slots (tab icons, etc.) to the game.
 - **BUG: Trash Can Lid Animation on Android**
   - On console/desktop, hovering over the trash can animates the lid open (rotation from 0 to PI/2).
   - On Android with controller snap navigation, the lid does NOT animate despite multiple approaches tried.
