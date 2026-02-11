@@ -411,17 +411,73 @@ namespace AndroidConsolizer
                 if (currentEvent == null)
                     return;
 
+                // Dump all skip-related fields on the Event for diagnostics
+                var eventType = currentEvent.GetType();
+                this.Monitor.Log($"[CutsceneDiag] Event type: {eventType.FullName}", LogLevel.Info);
+
+                // Dump all fields that might relate to skipping
+                string[] fieldNames = new[] { "skippable", "skipped", "_skippable", "_skipped",
+                    "skipEvent", "questButton", "skipButton", "secretSantaRecipient",
+                    "showSkipButton", "_showSkipButton", "canSkip", "skipVisible",
+                    "eventFinished", "playerControlSequence" };
+                foreach (var name in fieldNames)
+                {
+                    var field = AccessTools.Field(eventType, name);
+                    if (field != null)
+                    {
+                        try
+                        {
+                            var val = field.GetValue(currentEvent);
+                            this.Monitor.Log($"[CutsceneDiag]   field '{name}' = {val} (type: {field.FieldType.Name})", LogLevel.Info);
+                        }
+                        catch (Exception ex2)
+                        {
+                            this.Monitor.Log($"[CutsceneDiag]   field '{name}' exists but read failed: {ex2.Message}", LogLevel.Info);
+                        }
+                    }
+                }
+
+                // Dump all properties that might relate to skipping
+                string[] propNames = new[] { "Skippable", "Skipped", "CanSkip", "IsSkippable",
+                    "ShowSkipButton", "SkipButtonVisible" };
+                foreach (var name in propNames)
+                {
+                    var prop = AccessTools.Property(eventType, name);
+                    if (prop != null)
+                    {
+                        try
+                        {
+                            var val = prop.GetValue(currentEvent);
+                            this.Monitor.Log($"[CutsceneDiag]   prop '{name}' = {val} (type: {prop.PropertyType.Name})", LogLevel.Info);
+                        }
+                        catch (Exception ex2)
+                        {
+                            this.Monitor.Log($"[CutsceneDiag]   prop '{name}' exists but read failed: {ex2.Message}", LogLevel.Info);
+                        }
+                    }
+                }
+
+                // Dump all methods that contain "skip" (case-insensitive)
+                var methods = eventType.GetMethods(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Static |
+                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
+                foreach (var m in methods)
+                {
+                    if (m.Name.IndexOf("skip", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        var parms = string.Join(", ", m.GetParameters().Select(p => $"{p.ParameterType.Name} {p.Name}"));
+                        this.Monitor.Log($"[CutsceneDiag]   method '{m.Name}({parms})' returns {m.ReturnType.Name}", LogLevel.Info);
+                    }
+                }
+
                 // Check if the event is skippable
                 if (EventSkippableField == null)
                     return;
 
                 bool isSkippable = (bool)EventSkippableField.GetValue(currentEvent);
+                this.Monitor.Log($"[CutsceneDiag] isSkippable={isSkippable}, cutsceneSkipPending={cutsceneSkipPending}", LogLevel.Info);
+
                 if (!isSkippable)
-                {
-                    if (Config.VerboseLogging)
-                        this.Monitor.Log("Current event is not skippable", LogLevel.Debug);
                     return;
-                }
 
                 int currentTick = Game1.ticks;
                 int ticksSinceFirstPress = currentTick - cutsceneSkipFirstPressTick;
@@ -439,15 +495,11 @@ namespace AndroidConsolizer
                 }
                 else
                 {
-                    // First press - show skip prompt and start timer
+                    // First press - start timer (no HUD message, we'll use the game's skip icon)
                     cutsceneSkipFirstPressTick = currentTick;
                     cutsceneSkipPending = true;
 
-                    // Show HUD message to indicate skip is pending
-                    Game1.addHUDMessage(new HUDMessage("Press Start again to skip", HUDMessage.newQuest_type) { noIcon = true });
-
-                    if (Config.VerboseLogging)
-                        this.Monitor.Log("Cutscene skip pending - press Start again within 3 seconds to confirm", LogLevel.Debug);
+                    this.Monitor.Log("Cutscene skip pending - press Start again within 3 seconds to confirm", LogLevel.Info);
                 }
             }
             catch (Exception ex)
