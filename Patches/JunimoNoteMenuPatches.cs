@@ -352,6 +352,7 @@ namespace AndroidConsolizer.Patches
                     if (_maxSlotIndex < 0) _maxSlotIndex = 0;
 
                     Monitor.Log($"[JunimoNote] Entered donation page, maxSlot={_maxSlotIndex}", LogLevel.Debug);
+                    DumpDonationPageComponents(__instance);
                     SnapToSlot(__instance);
                 }
                 else if (!specificBundle && _onDonationPage)
@@ -666,6 +667,73 @@ namespace AndroidConsolizer.Patches
             }
 
             Monitor.Log("========== END OVERVIEW DUMP ==========", LogLevel.Debug);
+        }
+
+        private static void DumpDonationPageComponents(JunimoNoteMenu menu)
+        {
+            Monitor.Log("========== JUNIMO NOTE DONATION PAGE: COMPONENT DUMP ==========", LogLevel.Debug);
+            Monitor.Log($"Menu position: ({menu.xPositionOnScreen},{menu.yPositionOnScreen}) size {menu.width}x{menu.height}", LogLevel.Debug);
+            Monitor.Log($"zoomLevel: {Game1.options.zoomLevel}", LogLevel.Debug);
+
+            var ingredientList = GetIngredientList(menu);
+            if (ingredientList != null)
+            {
+                Monitor.Log($"ingredientList count: {ingredientList.Count}", LogLevel.Debug);
+                for (int i = 0; i < ingredientList.Count; i++)
+                {
+                    var c = ingredientList[i];
+                    Monitor.Log($"  ingredientList[{i}] id={c.myID} name='{c.name}' label='{c.label}' " +
+                        $"bounds=({c.bounds.X},{c.bounds.Y},{c.bounds.Width},{c.bounds.Height}) " +
+                        $"neighbors L={c.leftNeighborID} R={c.rightNeighborID} U={c.upNeighborID} D={c.downNeighborID} " +
+                        $"hoverText='{c.hoverText}' type={c.GetType().Name}", LogLevel.Debug);
+                }
+            }
+            else
+            {
+                Monitor.Log("ingredientList is NULL", LogLevel.Debug);
+            }
+
+            var ingredientSlots = GetIngredientSlots(menu);
+            if (ingredientSlots != null)
+            {
+                Monitor.Log($"ingredientSlots count: {ingredientSlots.Count}", LogLevel.Debug);
+                for (int i = 0; i < ingredientSlots.Count; i++)
+                {
+                    var c = ingredientSlots[i];
+                    Monitor.Log($"  ingredientSlots[{i}] id={c.myID} name='{c.name}' label='{c.label}' " +
+                        $"bounds=({c.bounds.X},{c.bounds.Y},{c.bounds.Width},{c.bounds.Height}) " +
+                        $"neighbors L={c.leftNeighborID} R={c.rightNeighborID} U={c.upNeighborID} D={c.downNeighborID} " +
+                        $"hoverText='{c.hoverText}' type={c.GetType().Name}", LogLevel.Debug);
+                }
+            }
+            else
+            {
+                Monitor.Log("ingredientSlots is NULL", LogLevel.Debug);
+            }
+
+            // Dump first few inventory slots for position reference
+            if (menu.inventory?.inventory != null && menu.inventory.inventory.Count > 0)
+            {
+                var s0 = menu.inventory.inventory[0];
+                Monitor.Log($"inventory[0] bounds=({s0.bounds.X},{s0.bounds.Y},{s0.bounds.Width},{s0.bounds.Height})", LogLevel.Debug);
+                if (menu.inventory.inventory.Count > 5)
+                {
+                    var s5 = menu.inventory.inventory[5];
+                    Monitor.Log($"inventory[5] bounds=({s5.bounds.X},{s5.bounds.Y},{s5.bounds.Width},{s5.bounds.Height})", LogLevel.Debug);
+                }
+            }
+
+            // Back button on donation page
+            var backButton = AccessTools.Field(typeof(JunimoNoteMenu), "backButton")?.GetValue(menu) as ClickableComponent;
+            if (backButton != null)
+                Monitor.Log($"backButton: {FormatComponent(backButton)}", LogLevel.Debug);
+
+            // Purchase button
+            var purchaseButton = AccessTools.Field(typeof(JunimoNoteMenu), "purchaseButton")?.GetValue(menu) as ClickableComponent;
+            if (purchaseButton != null)
+                Monitor.Log($"purchaseButton: {FormatComponent(purchaseButton)}", LogLevel.Debug);
+
+            Monitor.Log("========== END DONATION PAGE DUMP ==========", LogLevel.Debug);
         }
 
         private static string FormatComponent(ClickableComponent c)
