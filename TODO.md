@@ -140,15 +140,30 @@ These need to be re-implemented **one at a time, one per 0.0.1 patch, each commi
 - **Fixed:** `PickUpFromEquipmentSlot` handles all equipment slot IDs (101=Hat, 102=Right Ring, 103=Left Ring, 104=Boots, 108=Shirt, 109=Pants). Placing held items onto equipment slots handled via `TryEquipHat/Ring/Boots/Clothing`. `AllowGameAPress` flag passes through to game for unknown non-inventory slots. Sort button (106) handled directly in both pickup and placement paths.
 - **File:** `Patches/InventoryManagementPatches.cs`
 
-### 9. Community Center Bundle Navigation + Cursor Bug
-- Multiple issues with CC bundle controller interaction
-- **Access method (working):** CC icon is on the tab line just right of the last GameMenu tab. Accessible from anywhere in the game. LB/RB switches between rooms correctly. This is vanilla behavior and works fine.
-- **Bug 1 - Can't switch bundles within a room:** When viewing a specific room's bundles, cannot use bumpers or triggers to switch between individual bundles within that room. Can only switch rooms. Need to confirm whether Switch allows intra-room bundle switching (user believes it does).
-- **Bug 2 - Cursor jumps when selecting items for donation:** When in a bundle's item submission view, the red outline cursor is used. Moving down to select an item (e.g., frog) and pressing A causes the cursor to jump ~4 slots and select the wrong item (e.g., catfish). Nothing gets added to the bundle.
-- **Bug 3 - Bundle interaction at actual CC building:** When standing at a specific room tile in the actual Community Center, limited to viewing only that room's bundles (as expected), but the cursor/selection issues from Bug 2 still apply.
-- Confirmed on Logitech G Cloud.
-- **Fix approach:** Apply the same cursor/snap navigation patches used in inventory to the bundle donation menu. The 4-slot jump suggests the cursor is interpreting A-press coordinates incorrectly (same class of bug as the inventory A-button-as-click issue).
-- May need patches on `JunimoNoteMenu` (the bundle UI class).
+### 9. Community Center Bundle Navigation — PARTIALLY DONE
+- **File:** `Patches/JunimoNoteMenuPatches.cs`
+- **Access method (working):** CC icon is on the tab line just right of the last GameMenu tab. LB/RB switches between rooms correctly. Vanilla behavior.
+
+#### 9a. Donation Page Inventory Navigation + A-press — DONE (v3.2.26-v3.2.29)
+- **Root cause (v3.2.25 diagnostic):** On the donation page, `currentlySnappedComponent` is null, `inventory.currentlySnappedComponent` stuck at slot 0, mouse frozen at (209,71) above all slots. Ingredient slots have id=-500 with all neighbors -1. Game's snap navigation is completely broken on this page.
+- **Fix:** Manage our own cursor over inventory slots. Override `GetMouseState` on A-press so `receiveLeftClick` reads the tracked slot's center (Android's `receiveLeftClick` ignores x,y params, reads `GetMouseState` internally — same pattern as CarpenterMenuPatches).
+- Thumbstick/DPad navigates 6-column inventory grid, blocks game's broken nav.
+- Draw_Prefix: overrides GetMouseState during draw for tooltips/highlights.
+- Draw_Postfix: draws cursor using `Game1.options.snappyMenus ? 44 : Game1.mouseCursor` tile at `bounds.Center`.
+- receiveLeftClick prefix: blocks stale touch-sim click for 3 ticks after page entry (A that opens the page would otherwise interact with slot 0 via touch sim).
+- **Confirmed working:** Pomegranate, Salmonberry, Fiber all donated successfully.
+
+#### 9b. Bundle Overview Screen — Cursor + Directional Navigation — TODO
+- On the bundle overview screen (room view, before selecting a specific bundle), the game uses a "red box" selector that works but navigation is erratic — it doesn't follow joystick direction reliably.
+- **Goal:** Replace or fix the navigation so the cursor moves in the direction the joystick is pressed (left=left, right=right, up=up, down=down). May need manual neighbor ID wiring for the bundle icon components.
+- Need to investigate what components exist on the overview page and how their neighbor IDs are currently set.
+- **Approach:** Similar to other menus — dump components on page entry, examine neighbor wiring, fix the data so the game's own snap navigation works correctly. If neighbor IDs are broken/random, manually wire them based on visual positions.
+
+#### 9c. Donation Page — Navigate to Bundle Ingredient Slots — TODO
+- Currently can only navigate inventory slots on the donation page. Need to also navigate to the ingredient list components (IDs 1000-1004, name='ingredient_list_slot') so the user can see what items the bundle needs.
+- **Goal:** Up from top inventory row moves cursor to ingredient list area. A on ingredient slot with matching held item donates it. Tooltips should show item names when cursor is on ingredient slots.
+- From v3.2.25 diagnostic dump: ingredient list at Y:301-377 (3+2 layout), ingredient slots at Y:473-549 (same 3+2 layout). Ingredient list IDs are 1000-1004. Ingredient slots all have id=-500 and broken neighbors.
+- **Approach:** Extend Navigate() to support a second zone (ingredient list). When at top inventory row and pressing up, move to nearest ingredient list component. When at ingredient list and pressing down, return to inventory. Override GetMouseState for A-press on ingredient components too.
 
 ### 10. Trash Can / Sort Unreachable in Item Grab Menus — FIXED in v2.9.8
 - **Fixed:** Sidebar buttons (Sort Chest, Fill Stacks, Color Toggle, Sort Inventory, Trash, Close X) are now reachable via snap navigation.
@@ -160,20 +175,16 @@ These need to be re-implemented **one at a time, one per 0.0.1 patch, each commi
 - **File:** `Patches/InventoryPagePatches.cs`
 - **Drop zone DONE (v3.2.11-v3.2.13):** Invisible snap zone component (ID 110) between Sort (106) and Trash (105). A while holding drops item as debris at player's feet. Tooltip shows "Drop Item" when holding. Nav wired: sort ↔ drop zone ↔ trash vertically, inventory grid ↔ drop zone horizontally (nearest-Y heuristic).
 - **File:** `Patches/InventoryManagementPatches.cs`
-- **BUG: Dropped items immediately picked back up.** `createItemDebris` spawns debris at the player's standing position, and the player's collection radius picks it up on the same or next frame. Likely vanilla behavior — debris spawned at `getStandingPosition()` is within auto-pickup range. **Preferred fix:** Drop at standing position (close to player) but set a ~5 second pickup delay that doesn't start counting down until the inventory menu is closed. Needs investigation into whether `Debris` objects support a pickup delay/timer, or if we need to track dropped debris ourselves and suppress collection via a Harmony patch on the pickup/magnet code until the timer expires.
+- **LOW PRIORITY: Dropped items immediately picked back up.** `createItemDebris` spawns debris at the player's standing position, and the player's collection radius picks it up on the same or next frame. **Switch does the same thing** — dropped items become lowest-priority pickup, so nearby items are grabbed first. Need to test Android behavior with a full inventory (can't auto-pickup when full) to see if it matches Switch. May not need a fix at all if behavior is already console-parity. Circle back after testing.
 
-### 11b. Touch-Interrupt Side Effects — TODO
+### 11b. Touch-Interrupt Side Effects — PARTIALLY FIXED
 - **Tooltip follows finger after touch cancel (INVENTORY — FIXED in v3.2.9-v3.2.10):** Inventory touch guards block `receiveLeftClick`/`leftClickHeld`, but `performHoverAction` still fires. Fixed for inventory. **Still occurs in chests** — `ItemGrabMenuPatches` has no equivalent touch guards for `performHoverAction`. Same fix needed: patch or suppress `performHoverAction` in `ItemGrabMenu` during/after touch while using controller.
-- **Touch on chest breaks sidebar navigation:** After touching the screen while a chest is open, controller snap navigation can no longer reach the chest sort button or close button.
-  - **Root cause (from log analysis):** In the 20:56:29 session, sidebar buttons worked at 20:56:37 and 20:56:41 (A on fill stacks succeeded). Then between 20:56:41-20:56:42, something broke — 30 seconds of frantic navigation with no successful side button hits, user gave up at 20:57:30. No touch events are logged because `ItemGrabMenuPatches` doesn't intercept touch.
-  - **Hypothesis:** The game calls `populateClickableComponentList()` when touch input is detected, which rebuilds `allClickableComponents` from internal sources. This removes our registered buttons (sortChest, sortInv, trashPlayer, closeX), reverts IDs to originals (106, 105, -500), and breaks all `rightNeighborID` wiring from grid → sidebar.
-  - **Fix approach:** In `Update_Postfix`, check each tick whether our custom IDs (54106, 54206, 54105, 54500) still exist in `allClickableComponents`. If any are missing, the list was rebuilt — re-run `FixSnapNavigation()` on the current `ItemGrabMenu` instance. This is cheap (one ID lookup per tick) and fully self-healing.
-  - **File:** `Patches/ItemGrabMenuPatches.cs` — add check in `Update_Postfix`.
+- **Touch on chest breaks sidebar navigation — FIXED (v3.2.16):** Self-healing check in `Update_Postfix` detects when `ID_SORT_CHEST` is missing from `allClickableComponents` (touch rebuilt the list) and re-runs `FixSnapNavigation()`. Cheap sentinel check, fully self-healing.
 - **Cursor resets to slot 0 after touch:** After a touch interrupt, the next joystick input snaps the cursor to slot 0 instead of returning to the item's slot. Observed behavior: cursor briefly appears at some other position, then moves to whichever direction was pressed (down/right from slot 0). This is the game calling `snapToDefaultClickableComponent()` when re-engaging controller after touch.
 - **Fix approach:** Save `currentlySnappedComponent.myID` before `CancelHold()` in the touch guards, then on the next controller input, restore snap to that component instead of slot 0. May need a flag + saved ID checked in `OnUpdateTicked` when joystick input resumes. Applies to both inventory and chest menus.
 - **Priority:** Medium — annoying but not blocking. Items return safely, just need to re-navigate.
 
-### 11c. Slingshot Ammo Add/Remove — TODO
+### 11c. Slingshot Ammo Add/Remove — DONE (v3.2.17)
 - **Desired behavior:** Same treatment as fishing rod bait/tackle (see `FishingRodPatches.cs`). Pick up ammo with A (cursor hold), then Y on slingshot attaches it. Y on slingshot without holding ammo detaches current ammo to cursor.
 - **Reference:** `FishingRodPatches` handles `FishingRod` with `attachments[0]` (bait) and `attachments[1]` (tackle). Slingshot uses `attachments[0]` for ammo.
 - **Implementation:** Create `SlingshotPatches.cs` mirroring `FishingRodPatches` structure, but for `Slingshot` type. Check `item is Slingshot`, handle single attachment slot `attachments[0]`. Need to determine ammo category — likely `SObject.ammoCategoryId` or check item type. Y on slingshot while holding ammo = attach, Y on slingshot while empty-handed = detach to cursor.
@@ -181,6 +192,20 @@ These need to be re-implemented **one at a time, one per 0.0.1 patch, each commi
 - **Log evidence (v3.2.13):** User pressed Y on slingshot in slot 5 while holding Stone/Copper Ore. FishingRod code fired but correctly rejected: `FishingRod: Slot 5 is not a fishing rod: Slingshot`. Y-pickup-single then tried to stack, failed with "Cannot stack different items." No slingshot-specific handling exists yet.
 - **Also see #25b** for slingshot combat/aiming issues (separate from inventory ammo management).
 - **Priority:** Medium — quality of life for slingshot users.
+
+### 11d. Chest Y-Transfer Strips Attachments from Fishing Rod / Slingshot
+- **Symptom:** Pressing Y on a loaded fishing rod or slingshot in the chest menu transfers the tool to the chest but all attachments (bait, tackle, ammo) are silently destroyed.
+- **Root cause:** `TransferOneToChest` (line ~1236 in `ItemGrabMenuPatches.cs`) calls `item.getOne()` which creates a bare copy of the tool without attachments. Then `item.Stack--` → 0 nulls the original (which had the attachments). Both `TransferToChest` (A button) and `TransferOneToChest` (Y button) are affected — A moves the reference directly (attachments preserved), but Y creates a copy (attachments lost).
+- **Log evidence (v3.2.23):** User had Fiberglass Rod with 33x Bait. Y in chest → `Put 1x Fiberglass Rod into chest (0 remain in player)` — bait destroyed. Same for Slingshot — ammo lost on Y transfer.
+- **Desired behavior (matches console):** Y on a loaded tool should detach attachments one at a time into the chest, then transfer the bare tool:
+  - **Fishing rod:** 1st Y = move bait (full stack) to chest, 2nd Y = move tackle to chest, 3rd Y = move bare rod
+  - **Slingshot:** 1st Y = move ammo (full stack) to chest, 2nd Y = move bare slingshot
+  - Attachments transfer as full stacks (all bait, all ammo), not one-at-a-time
+- **Implementation approach:** In the Y handler at line ~801 and ~817 in `ReceiveGamePadButton_Prefix`, before calling `TransferOneToChest`, check if the item is a `FishingRod` or `Slingshot` with non-empty `attachments`. If so, detach the first non-null attachment, create a standalone item from it (full stack), and transfer THAT to the chest instead of the tool. Leave the tool in place. When all attachments are empty, the next Y transfers the bare tool normally.
+- **Also applies to A button (TransferToChest):** A should also strip attachments first (one per press, full stack each), not move the loaded tool. This matches console: A on a loaded rod moves bait first, then tackle, then rod.
+- **Reverse direction (chest→player):** Not affected — tools stored in chest are already bare (attachments were stripped on the way in, or tool was stored bare). No change needed for `TransferFromChest`/`TransferOneFromChest`.
+- **File:** `Patches/ItemGrabMenuPatches.cs`
+- **Priority:** Medium — data loss bug (attachments destroyed silently).
 
 ### 12. Right Joystick Cursor Mode + Zoom Control
 - Bundled feature (LARGE)
@@ -232,12 +257,31 @@ These need to be re-implemented **one at a time, one per 0.0.1 patch, each commi
 - Possible root cause: `GameMenu.changeTab()` doesn't call `snapToDefaultClickableComponent()` on the new page. Fix: Patch tab change to force snap.
 - NOT a mod bug - vanilla Android controller issue
 - Previous conflicting test (Feb 3, Odin Pro: "all other tabs work fine") may have been testing different conditions or a fluke.
+- **Part of the Main Menu Overhaul project — see #14c.**
+
+### 14b. Collections/Shipping Tab — Vertical Sub-Tabs Unreachable
+- **Symptom:** On the Collections tab (shipping/fish/cooking/achievements/etc.), there is no way to switch between the vertical sub-tabs (Crops, Fish, Recipes, Achievements, etc.) using the controller. Only the first sub-tab is accessible.
+- **On console:** Triggers (LT/RT) swap between the vertical sub-tabs within the current main tab, while LB/RB swap main tabs.
+- **Possible fix approaches:**
+  1. **Triggers for sub-tab switching (console parity):** LT/RT cycle through vertical sub-tabs. Clean, no visual changes needed. Need to check if triggers are already used for something else on this tab.
+  2. **Replace red-box selector with visible cursor:** Swap the Android "red box" selection for a proper visible cursor that can navigate to the vertical tab buttons on the left side. More work but fixes the underlying navigation model.
+- **Part of the Main Menu Overhaul project — see #14c.**
+- **Priority:** Medium — entire categories of collections are inaccessible without touch.
+
+### 14c. Main Menu Overhaul Project
+- **Umbrella item** for fixing all GameMenu tabs that don't work properly with controller on Android. The vanilla Android port's controller support for non-inventory tabs is fundamentally broken — no visible cursor, no snap navigation, broken tab switching.
+- **Tabs that need work:**
+  - **Social tab (#14):** No visible cursor, villager list scrolls but no selection indicator, gift log accessible but blind. Cursor stays on tab icon visually.
+  - **Collections/Shipping tab (#14b):** Vertical sub-tabs unreachable — can only view the first category. Triggers should switch sub-tabs (console parity).
+  - **Options tab (#20):** Uses free cursor instead of snap navigation. Sliders/checkboxes/dropdowns not controller-friendly. Functional but imprecise.
+- **Approach:** These likely share a common root cause — Android's GameMenu doesn't properly initialize snap navigation on non-inventory pages. A unified set of patches on `GameMenu.changeTab()` + per-page snap setup may fix multiple tabs at once. Investigate whether a single `changeTab` postfix that calls `snapToDefaultClickableComponent()` on the new page solves #14 and partially fixes the others.
+- **Priority:** Medium-High as a group — multiple major menu sections are controller-broken.
 
 ---
 
 ## Lower Priority (Polish & Nice-to-Have)
 
-### 14b. CarpenterMenu "Build" Button Unaffordable — TO INVESTIGATE
+### 14e. CarpenterMenu "Build" Button Unaffordable — TO INVESTIGATE
 - **Symptom:** Clicking "Build" for a building you can't afford dumps you back to the shop screen. On console, the "Build" button is greyed out when you can't afford it.
 - **Need to check:** What is the vanilla Android behavior? Is this a vanilla Android bug or something we introduced?
 - **Desired behavior:** Either grey out the Build button (console parity) or at minimum don't exit to shop — show an error message or play a failure sound.
@@ -332,6 +376,17 @@ These need to be re-implemented **one at a time, one per 0.0.1 patch, each commi
 - **Root cause:** The mod likely reads trigger input as a digital button press, but the G Cloud's analog triggers cross multiple thresholds as they're pulled. Each threshold crossing fires a separate button event.
 - **Fix approach:** Add trigger debounce — after a trigger press is registered, ignore subsequent trigger events for a short window (~100-200ms or ~6-12 ticks). Alternatively, read the analog trigger value directly from `GamePad.GetState().Triggers.Left/Right` and only fire on the initial cross above a threshold (e.g., > 0.5), ignoring further changes until the trigger is fully released (< 0.1).
 - This may also affect Xbox wireless controllers that currently "need Bumper Mode" — the bumper mode requirement might be masking the same analog trigger issue rather than a complete trigger failure.
+
+### 22b. Dialogue Option Box — Counter-Intuitive Initial Selection
+- **Symptom:** When a dialogue choice box appears (e.g. "Yes / No", NPC gift responses, quest choices), nothing is visually selected. Pressing down selects the TOP option; pressing up selects the BOTTOM option. After the first input, navigation loops through visible options normally.
+- **Root cause (hypothesis):** The game initializes with an invisible "slot" above or below the visible options (likely index -1 or a null selection state). Navigation wraps around, so down from this invisible slot goes to index 0 (top), and up wraps to the last index (bottom). This is how the game handles "no selection" + looping navigation.
+- **Why it's unintuitive:** Users expect down = move toward bottom options and up = move toward top options. Starting from a null state that wraps makes the first input feel backwards.
+- **Possible fix approaches:**
+  1. **Start with top option pre-selected (convenient but risky):** On dialogue box open, snap to the first option immediately. Faster interaction, but risks accidental selection if A is pressed quickly. Console behavior should be checked — does Switch pre-select an option?
+  2. **Invisible start position BETWEEN options (safest):** Patch the initial selection state so that pressing up navigates to the top option and pressing down navigates to the bottom option. No option is pre-highlighted, so A does nothing until the player makes a deliberate choice. This requires the "null" position to be logically between options rather than outside them.
+  3. **Disable wrap-around on first input only:** Keep the null start, but suppress the wrap behavior on the very first navigation input. Down from null = top option, up from null = top option (or bottom, depending on preference). After the first selection, wrapping resumes normally.
+- **Investigation needed:** Find the dialogue choice class (`DialogueBox`? `ChoiceMenu`?), check how `currentlySnappedComponent` or selection index is initialized, and how navigation wrapping works. Check console behavior for comparison.
+- **Priority:** Low — cosmetic/feel issue, not blocking. Easy to work around once you know the pattern.
 
 ---
 
