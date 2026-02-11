@@ -33,7 +33,7 @@ namespace AndroidConsolizer.Patches
         private static int _maxSlotIndex = 23;
         private const int INV_COLUMNS = 6;
 
-        // GetMouseState override — one-shot, active only during our receiveLeftClick call
+        // GetMouseState override — active during A-press receiveLeftClick AND during draw
         private static bool _overridingMouse;
         private static int _overrideRawX, _overrideRawY;
 
@@ -79,9 +79,11 @@ namespace AndroidConsolizer.Patches
                 postfix: new HarmonyMethod(typeof(JunimoNoteMenuPatches), nameof(Update_Postfix))
             );
 
-            // draw — render finger cursor
+            // draw — override GetMouseState during draw so game's own drawMouse renders
+            // its native cursor at the tracked slot position (consistent with inventory/chest)
             harmony.Patch(
                 original: AccessTools.Method(typeof(JunimoNoteMenu), "draw", new[] { typeof(SpriteBatch) }),
+                prefix: new HarmonyMethod(typeof(JunimoNoteMenuPatches), nameof(Draw_Prefix)),
                 postfix: new HarmonyMethod(typeof(JunimoNoteMenuPatches), nameof(Draw_Postfix))
             );
 
@@ -262,9 +264,13 @@ namespace AndroidConsolizer.Patches
             }
         }
 
-        // ===== Draw postfix — finger cursor =====
+        // ===== Draw prefix/postfix — override GetMouseState during draw =====
+        // The game's draw method calls drawMouse(b) which reads getMouseX/Y.
+        // By overriding GetMouseState during draw, the game renders its native cursor
+        // (same sprite as inventory/chest) at the tracked slot's center position.
+        // Touch is unaffected: override is only active during the draw phase.
 
-        private static void Draw_Postfix(JunimoNoteMenu __instance, SpriteBatch b)
+        private static void Draw_Prefix(JunimoNoteMenu __instance)
         {
             try
             {
@@ -272,21 +278,18 @@ namespace AndroidConsolizer.Patches
                 if (__instance.inventory?.inventory == null || _trackedSlotIndex >= __instance.inventory.inventory.Count) return;
 
                 var slot = __instance.inventory.inventory[_trackedSlotIndex];
-
-                // Draw finger cursor at slot position (tip of finger points at slot)
-                b.Draw(
-                    Game1.mouseCursors,
-                    new Vector2(slot.bounds.X, slot.bounds.Y),
-                    Game1.getSourceRectForStandardTileSheet(Game1.mouseCursors, 0, 16, 16),
-                    Color.White,
-                    0f,
-                    Vector2.Zero,
-                    4f + Game1.dialogueButtonScale / 150f,
-                    SpriteEffects.None,
-                    1f
-                );
+                var center = slot.bounds.Center;
+                float zoom = Game1.options.zoomLevel;
+                _overrideRawX = (int)(center.X * zoom);
+                _overrideRawY = (int)(center.Y * zoom);
+                _overridingMouse = true;
             }
             catch { }
+        }
+
+        private static void Draw_Postfix(JunimoNoteMenu __instance, SpriteBatch b)
+        {
+            _overridingMouse = false;
         }
 
         // ===== Reflection accessors =====
