@@ -37,6 +37,10 @@ namespace AndroidConsolizer.Patches
         private static bool _overridingMouse;
         private static int _overrideRawX, _overrideRawY;
 
+        // Guard against stale touch-sim click when A opens the donation page
+        private static int _enteredPageTick = -100;
+        private static bool _weInitiatedClick;
+
         public static void Apply(Harmony harmony, IMonitor monitor)
         {
             Monitor = monitor;
@@ -66,6 +70,12 @@ namespace AndroidConsolizer.Patches
                     postfix: new HarmonyMethod(typeof(JunimoNoteMenuPatches), nameof(GetMouseState_Postfix))
                 );
             }
+
+            // receiveLeftClick — block stale touch-sim click when A opens the page
+            harmony.Patch(
+                original: AccessTools.Method(typeof(JunimoNoteMenu), nameof(JunimoNoteMenu.receiveLeftClick)),
+                prefix: new HarmonyMethod(typeof(JunimoNoteMenuPatches), nameof(ReceiveLeftClick_Prefix))
+            );
 
             // receiveGamePadButton — handle navigation and A press
             harmony.Patch(
@@ -107,6 +117,27 @@ namespace AndroidConsolizer.Patches
                 __result.LeftButton, __result.MiddleButton, __result.RightButton,
                 __result.XButton1, __result.XButton2
             );
+        }
+
+        // ===== receiveLeftClick prefix — block stale touch-sim clicks =====
+        // When A opens the donation page, Android fires a touch-sim receiveLeftClick.
+        // Our SnapToSlot moved the mouse to slot 0's center, so the stale click would
+        // interact with slot 0 (causing item swaps/flicker). Block clicks for a few
+        // ticks after page entry unless we initiated them via HandleAPress.
+
+        private static bool ReceiveLeftClick_Prefix(JunimoNoteMenu __instance, int x, int y)
+        {
+            if (!_onDonationPage) return true;
+            if (_weInitiatedClick) return true; // our A-press click — allow
+
+            // Block clicks within 3 ticks of page entry
+            if (Game1.ticks - _enteredPageTick <= 3)
+            {
+                Monitor.Log($"[JunimoNote] Blocked stale click ({x},{y}) {Game1.ticks - _enteredPageTick} ticks after entry", LogLevel.Debug);
+                return false;
+            }
+
+            return true; // normal touch clicks after cooldown — allow
         }
 
         // ===== receiveGamePadButton prefix =====
@@ -209,12 +240,14 @@ namespace AndroidConsolizer.Patches
             Item invItem = (_trackedSlotIndex < Game1.player.Items.Count) ? Game1.player.Items[_trackedSlotIndex] : null;
             Monitor.Log($"[JunimoNote] A on slot {_trackedSlotIndex} ({invItem?.DisplayName ?? "empty"}): click ({center.X},{center.Y}) raw=({_overrideRawX},{_overrideRawY}) held={heldBefore?.DisplayName ?? "null"}", LogLevel.Debug);
 
+            _weInitiatedClick = true;
             try
             {
                 menu.receiveLeftClick(center.X, center.Y);
             }
             finally
             {
+                _weInitiatedClick = false;
                 _overridingMouse = false;
             }
 
@@ -234,6 +267,7 @@ namespace AndroidConsolizer.Patches
                 {
                     _onDonationPage = true;
                     _trackedSlotIndex = 0;
+                    _enteredPageTick = Game1.ticks;
 
                     // Determine max slot index based on player's actual inventory size
                     int invCount = Game1.player.Items.Count;
