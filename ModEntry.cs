@@ -71,6 +71,7 @@ namespace AndroidConsolizer
             Patches.ShippingBinPatches.Apply(harmony, this.Monitor);
             Patches.GameplayButtonPatches.Apply(harmony, this.Monitor);
             Patches.FishingRodPatches.Apply(harmony, this.Monitor);
+            Patches.SlingshotPatches.Apply(harmony, this.Monitor);
             Patches.InventoryManagementPatches.Apply(harmony, this.Monitor);
             Patches.CarpenterMenuPatches.Apply(harmony, this.Monitor);
 
@@ -128,6 +129,7 @@ namespace AndroidConsolizer
             {
                 Patches.InventoryManagementPatches.OnMenuClosed();
                 Patches.FishingRodPatches.ClearSelection();
+                Patches.SlingshotPatches.ClearSelection();
             }
 
             // Fix snap navigation in ItemGrabMenu (chests, fishing treasure, etc.)
@@ -302,10 +304,11 @@ namespace AndroidConsolizer
                             }
                         }
 
-                        // Fall back to fishing rod bait tracking
+                        // Fall back to fishing rod bait / slingshot ammo tracking
                         if (Config.EnableConsoleInventory)
                         {
                             Patches.FishingRodPatches.OnAButtonPressed(gameMenu, this.Monitor);
+                            Patches.SlingshotPatches.OnAButtonPressed(gameMenu, this.Monitor);
                             // Don't suppress - let normal A behavior continue
                         }
                     }
@@ -321,6 +324,16 @@ namespace AndroidConsolizer
                             {
                                 this.Helper.Input.Suppress(button);
                                 continue; // Handled by fishing rod
+                            }
+                        }
+
+                        // Try slingshot ammo management
+                        if (Config.EnableConsoleInventory)
+                        {
+                            if (Patches.SlingshotPatches.TryHandleAmmo(gameMenu, this.Helper, this.Monitor))
+                            {
+                                this.Helper.Input.Suppress(button);
+                                continue; // Handled by slingshot
                             }
                         }
                         // Single-stack pickup is handled via polling in OnUpdateTicked

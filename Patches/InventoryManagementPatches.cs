@@ -236,7 +236,7 @@ namespace AndroidConsolizer.Patches
                             if (item != null)
                             {
                                 // Check if fishing rod is hovered - let fishing rod patches handle that
-                                if (item is not FishingRod)
+                                if (item is not FishingRod && item is not Slingshot)
                                 {
                                     PickupSingleItem(invPage, YButtonHoldSlotId, item);
                                 }
