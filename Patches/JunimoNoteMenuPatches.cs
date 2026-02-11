@@ -26,6 +26,10 @@ namespace AndroidConsolizer.Patches
         private static FieldInfo _heldItemField;
         private static FieldInfo _ingredientSlotsField;
         private static FieldInfo _ingredientListField;
+        private static FieldInfo _bundlesField;
+
+        // Overview page state
+        private static bool _onOverviewPage;
 
         // Donation page state
         private static bool _onDonationPage;
@@ -53,6 +57,7 @@ namespace AndroidConsolizer.Patches
             _heldItemField = AccessTools.Field(typeof(JunimoNoteMenu), "heldItem");
             _ingredientSlotsField = AccessTools.Field(typeof(JunimoNoteMenu), "ingredientSlots");
             _ingredientListField = AccessTools.Field(typeof(JunimoNoteMenu), "ingredientList");
+            _bundlesField = AccessTools.Field(typeof(JunimoNoteMenu), "bundles");
 
             // Patch GetMouseState — both input wrapper and XNA Mouse paths
             var inputType = Game1.input.GetType();
@@ -107,6 +112,7 @@ namespace AndroidConsolizer.Patches
         public static void OnMenuChanged()
         {
             _onDonationPage = false;
+            _onOverviewPage = false;
             _overridingMouse = false;
             _dumpedOverviewComponents = false;
         }
@@ -153,10 +159,16 @@ namespace AndroidConsolizer.Patches
             {
                 if (!GetSpecificBundlePage(__instance))
                 {
+                    // Overview page — intercept A for GetMouseState override, let game handle nav
+                    if (_onOverviewPage && b == Buttons.A)
+                    {
+                        HandleOverviewAPress(__instance);
+                        return false;
+                    }
                     // DIAGNOSTIC: Log overview page navigation before game handles it
                     var snapped = __instance.currentlySnappedComponent;
                     Monitor.Log($"[JunimoNote:Overview] BEFORE button={b} snapped={FormatComponent(snapped)}", LogLevel.Debug);
-                    return true; // not on donation page — let game handle
+                    return true; // let game handle navigation (data is now fixed)
                 }
 
                 switch (b)
@@ -294,9 +306,25 @@ namespace AndroidConsolizer.Patches
                     DumpOverviewComponents(__instance);
                 }
 
+                // Overview page entry — populate allClickableComponents and wire neighbors
+                if (!specificBundle && !_onOverviewPage)
+                {
+                    if (InitOverviewNavigation(__instance))
+                        _onOverviewPage = true;
+                }
+
+                // Keep currentlySnappedComponent alive on overview (game may reset it)
+                if (_onOverviewPage && __instance.currentlySnappedComponent == null
+                    && __instance.allClickableComponents != null && __instance.allClickableComponents.Count > 0)
+                {
+                    __instance.currentlySnappedComponent = __instance.allClickableComponents[0];
+                    __instance.snapCursorToCurrentSnappedComponent();
+                }
+
                 if (specificBundle && !_onDonationPage)
                 {
                     _onDonationPage = true;
+                    _onOverviewPage = false; // will re-init on return
                     _trackedSlotIndex = 0;
                     _enteredPageTick = Game1.ticks;
 
@@ -340,11 +368,21 @@ namespace AndroidConsolizer.Patches
         {
             try
             {
-                if (!_onDonationPage) return;
-                if (__instance.inventory?.inventory == null || _trackedSlotIndex >= __instance.inventory.inventory.Count) return;
+                ClickableComponent target = null;
 
-                var slot = __instance.inventory.inventory[_trackedSlotIndex];
-                var center = slot.bounds.Center;
+                if (_onDonationPage)
+                {
+                    if (__instance.inventory?.inventory != null && _trackedSlotIndex < __instance.inventory.inventory.Count)
+                        target = __instance.inventory.inventory[_trackedSlotIndex];
+                }
+                else if (_onOverviewPage)
+                {
+                    target = __instance.currentlySnappedComponent;
+                }
+
+                if (target == null) return;
+
+                var center = target.bounds.Center;
                 float zoom = Game1.options.zoomLevel;
                 _overrideRawX = (int)(center.X * zoom);
                 _overrideRawY = (int)(center.Y * zoom);
@@ -358,16 +396,24 @@ namespace AndroidConsolizer.Patches
             try
             {
                 // Draw our own cursor — Android suppresses the game's drawMouse on this page.
-                // Use tile 44 (snappy/controller cursor) at bounds.Center for consistency
-                // with how snapCursorToCurrentSnappedComponent positions the cursor.
+                ClickableComponent target = null;
+
                 if (_onDonationPage && __instance.inventory?.inventory != null
                     && _trackedSlotIndex < __instance.inventory.inventory.Count)
                 {
-                    var slot = __instance.inventory.inventory[_trackedSlotIndex];
+                    target = __instance.inventory.inventory[_trackedSlotIndex];
+                }
+                else if (_onOverviewPage)
+                {
+                    target = __instance.currentlySnappedComponent;
+                }
+
+                if (target != null)
+                {
                     int cursorTile = Game1.options.snappyMenus ? 44 : Game1.mouseCursor;
                     b.Draw(
                         Game1.mouseCursors,
-                        new Vector2(slot.bounds.Center.X, slot.bounds.Center.Y),
+                        new Vector2(target.bounds.Center.X, target.bounds.Center.Y),
                         Game1.getSourceRectForStandardTileSheet(Game1.mouseCursors, cursorTile, 16, 16),
                         Color.White,
                         0f,
@@ -379,6 +425,135 @@ namespace AndroidConsolizer.Patches
                 }
             }
             catch { }
+            finally
+            {
+                _overridingMouse = false;
+            }
+        }
+
+        // ===== Overview page navigation =====
+
+        private static bool InitOverviewNavigation(JunimoNoteMenu menu)
+        {
+            var bundlesList = _bundlesField?.GetValue(menu) as System.Collections.IList;
+            if (bundlesList == null || bundlesList.Count == 0)
+                return false;
+
+            var components = new List<ClickableComponent>();
+            foreach (var item in bundlesList)
+            {
+                if (item is ClickableComponent cc)
+                    components.Add(cc);
+            }
+
+            // Add back button with a unique ID for navigation
+            var backButtonField = AccessTools.Field(typeof(JunimoNoteMenu), "backButton");
+            var backButton = backButtonField?.GetValue(menu) as ClickableComponent;
+            if (backButton != null)
+            {
+                backButton.myID = 5100;
+                components.Add(backButton);
+            }
+
+            // Add area next/back buttons if they exist (room switching)
+            var areaNext = AccessTools.Field(typeof(JunimoNoteMenu), "areaNextButton")?.GetValue(menu) as ClickableComponent;
+            if (areaNext != null)
+            {
+                if (areaNext.myID < 0) areaNext.myID = 5101;
+                components.Add(areaNext);
+            }
+            var areaBack = AccessTools.Field(typeof(JunimoNoteMenu), "areaBackButton")?.GetValue(menu) as ClickableComponent;
+            if (areaBack != null)
+            {
+                if (areaBack.myID < 0) areaBack.myID = 5102;
+                components.Add(areaBack);
+            }
+
+            menu.allClickableComponents = components;
+            WireNeighborsByPosition(components);
+
+            // Set initial snapped component to first bundle
+            menu.currentlySnappedComponent = components[0];
+            menu.snapCursorToCurrentSnappedComponent();
+
+            Monitor.Log($"[JunimoNote:Overview] Initialized navigation: {components.Count} components", LogLevel.Debug);
+            foreach (var c in components)
+            {
+                Monitor.Log($"  {FormatComponent(c)}", LogLevel.Debug);
+            }
+
+            return true;
+        }
+
+        private static void WireNeighborsByPosition(List<ClickableComponent> components)
+        {
+            foreach (var c in components)
+            {
+                int cx = c.bounds.Center.X;
+                int cy = c.bounds.Center.Y;
+
+                int bestRightId = -1, bestLeftId = -1, bestDownId = -1, bestUpId = -1;
+                int bestRightScore = int.MaxValue, bestLeftScore = int.MaxValue;
+                int bestDownScore = int.MaxValue, bestUpScore = int.MaxValue;
+
+                foreach (var other in components)
+                {
+                    if (other == c) continue;
+                    int ox = other.bounds.Center.X;
+                    int oy = other.bounds.Center.Y;
+                    int dx = ox - cx;
+                    int dy = oy - cy;
+
+                    // Right: must be to the right, penalize vertical offset 2x
+                    if (dx > 0)
+                    {
+                        int score = dx + Math.Abs(dy) * 2;
+                        if (score < bestRightScore) { bestRightScore = score; bestRightId = other.myID; }
+                    }
+                    // Left: must be to the left
+                    if (dx < 0)
+                    {
+                        int score = -dx + Math.Abs(dy) * 2;
+                        if (score < bestLeftScore) { bestLeftScore = score; bestLeftId = other.myID; }
+                    }
+                    // Down: must be below, penalize horizontal offset 2x
+                    if (dy > 0)
+                    {
+                        int score = dy + Math.Abs(dx) * 2;
+                        if (score < bestDownScore) { bestDownScore = score; bestDownId = other.myID; }
+                    }
+                    // Up: must be above
+                    if (dy < 0)
+                    {
+                        int score = -dy + Math.Abs(dx) * 2;
+                        if (score < bestUpScore) { bestUpScore = score; bestUpId = other.myID; }
+                    }
+                }
+
+                c.rightNeighborID = bestRightId;
+                c.leftNeighborID = bestLeftId;
+                c.downNeighborID = bestDownId;
+                c.upNeighborID = bestUpId;
+            }
+        }
+
+        private static void HandleOverviewAPress(JunimoNoteMenu menu)
+        {
+            var snapped = menu.currentlySnappedComponent;
+            if (snapped == null) return;
+
+            var center = snapped.bounds.Center;
+            float zoom = Game1.options.zoomLevel;
+            _overrideRawX = (int)(center.X * zoom);
+            _overrideRawY = (int)(center.Y * zoom);
+            _overridingMouse = true;
+
+            Monitor.Log($"[JunimoNote:Overview] A press on {FormatComponent(snapped)}, click ({center.X},{center.Y})", LogLevel.Debug);
+
+            try
+            {
+                menu.receiveLeftClick(center.X, center.Y);
+            }
             finally
             {
                 _overridingMouse = false;
