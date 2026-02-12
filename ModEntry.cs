@@ -648,31 +648,13 @@ namespace AndroidConsolizer
                         this.Monitor.Log($"RB: Row {currentRow} -> {newRow}, Index {currentIndex} -> {newIndex}", LogLevel.Debug);
                 }
 
-                // LT - Move left in current row
+                // LT/RT slot navigation is handled by HandleTriggersDirectly() in OnUpdateTicked
+                // with proper release-gated edge detection. Here we only suppress the SMAPI events
+                // so they don't leak through to the game's own trigger handling.
                 if (e.Pressed.Contains(SButton.LeftTrigger))
-                {
                     this.Helper.Input.Suppress(SButton.LeftTrigger);
-                    int newPosition = positionInRow - 1;
-                    if (newPosition < 0) newPosition = 11;
-                    int newIndex = (currentRow * 12) + newPosition;
-                    player.CurrentToolIndex = newIndex;
-                    Game1.playSound("shwip");
-                    if (Config.VerboseLogging)
-                        this.Monitor.Log($"LT: Position {positionInRow} -> {newPosition}, Index {currentIndex} -> {newIndex}", LogLevel.Debug);
-                }
-
-                // RT - Move right in current row
                 if (e.Pressed.Contains(SButton.RightTrigger))
-                {
                     this.Helper.Input.Suppress(SButton.RightTrigger);
-                    int newPosition = positionInRow + 1;
-                    if (newPosition > 11) newPosition = 0;
-                    int newIndex = (currentRow * 12) + newPosition;
-                    player.CurrentToolIndex = newIndex;
-                    Game1.playSound("shwip");
-                    if (Config.VerboseLogging)
-                        this.Monitor.Log($"RT: Position {positionInRow} -> {newPosition}, Index {currentIndex} -> {newIndex}", LogLevel.Debug);
-                }
             }
         }
 
