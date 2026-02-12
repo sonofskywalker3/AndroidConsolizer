@@ -39,6 +39,14 @@ These need to be re-implemented **one at a time, one per 0.0.1 patch, each commi
 
 ## High Priority (Core Gameplay Feel)
 
+### 22. Analog Trigger Multi-Read (G Cloud / Analog Triggers) — HIGHEST PRIORITY
+- Analog triggers register multiple discrete presses
+- **Symptom:** On Logitech G Cloud, analog triggers register multiple button presses at different pull distances. A full trigger pull moves the toolbar selection by 4 slots instead of 1. A slight pull moves by 1, pulling further adds another, etc.
+- **Workaround:** Bumper Mode fixes this — when bumper mode is enabled, triggers work correctly as single presses (one pull = one slot regardless of distance).
+- **Root cause:** The mod likely reads trigger input as a digital button press, but the G Cloud's analog triggers cross multiple thresholds as they're pulled. Each threshold crossing fires a separate button event.
+- **Fix approach:** Add trigger debounce — after a trigger press is registered, ignore subsequent trigger events for a short window (~100-200ms or ~6-12 ticks). Alternatively, read the analog trigger value directly from `GamePad.GetState().Triggers.Left/Right` and only fire on the initial cross above a threshold (e.g., > 0.5), ignoring further changes until the trigger is fully released (< 0.1).
+- This may also affect Xbox wireless controllers that currently "need Bumper Mode" — the bumper mode requirement might be masking the same analog trigger issue rather than a complete trigger failure.
+
 ### 1. Robin's Building Menu Fix — FIXED in v2.7.4
 - **Root cause (identified v2.7.3):** The A button press from Robin's dialogue carries over as a mouse-down state. `snapToDefaultClickableComponent()` snaps to the cancel button (ID 107). When A is released, the call chain is: `releaseLeftClick()` → `OnReleaseCancelButton()` → `exitThisMenu()`. The four standard input methods (`receiveLeftClick`, `receiveKeyPress`, `receiveGamePadButton`) are NEVER called — only `leftClickHeld` (from the held state) and `releaseLeftClick` (on release).
 - **Fix (v2.7.4):** Prefix patches on `releaseLeftClick`, `leftClickHeld`, and `exitThisMenu` (safety net) with 20-tick grace period after menu opens.
@@ -379,13 +387,7 @@ These need to be re-implemented **one at a time, one per 0.0.1 patch, each commi
 - Future: Build comprehensive testing checklist, grade every controller on pass/fail per feature. Possibly test across multiple Android devices.
 - Controllers to test: 8BitDo, PS4/PS5 DualSense, others on hand
 
-### 22. Analog Trigger Multi-Read (G Cloud / Analog Triggers)
-- Analog triggers register multiple discrete presses
-- **Symptom:** On Logitech G Cloud, analog triggers register multiple button presses at different pull distances. A full trigger pull moves the toolbar selection by 4 slots instead of 1. A slight pull moves by 1, pulling further adds another, etc.
-- **Workaround:** Bumper Mode fixes this — when bumper mode is enabled, triggers work correctly as single presses (one pull = one slot regardless of distance).
-- **Root cause:** The mod likely reads trigger input as a digital button press, but the G Cloud's analog triggers cross multiple thresholds as they're pulled. Each threshold crossing fires a separate button event.
-- **Fix approach:** Add trigger debounce — after a trigger press is registered, ignore subsequent trigger events for a short window (~100-200ms or ~6-12 ticks). Alternatively, read the analog trigger value directly from `GamePad.GetState().Triggers.Left/Right` and only fire on the initial cross above a threshold (e.g., > 0.5), ignoring further changes until the trigger is fully released (< 0.1).
-- This may also affect Xbox wireless controllers that currently "need Bumper Mode" — the bumper mode requirement might be masking the same analog trigger issue rather than a complete trigger failure.
+### ~~22. Analog Trigger Multi-Read~~ — Moved to High Priority (#22)
 
 ### 22b. Dialogue Option Box — Counter-Intuitive Initial Selection
 - **Symptom:** When a dialogue choice box appears (e.g. "Yes / No", NPC gift responses, quest choices), nothing is visually selected. Pressing down selects the TOP option; pressing up selects the BOTTOM option. After the first input, navigation loops through visible options normally.
