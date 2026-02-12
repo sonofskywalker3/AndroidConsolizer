@@ -29,6 +29,7 @@ namespace AndroidConsolizer.Patches
 
         // Overview page state
         private static bool _onOverviewPage;
+        private static int _savedOverviewComponentId = -1;
 
         // Donation page state
         private static bool _onDonationPage;
@@ -114,6 +115,7 @@ namespace AndroidConsolizer.Patches
             _overridingMouse = false;
             _inIngredientZone = false;
             _ingredientRows = null;
+            _savedOverviewComponentId = -1;
         }
 
         // ===== GetMouseState postfix =====
@@ -462,6 +464,7 @@ namespace AndroidConsolizer.Patches
 
                 if (specificBundle && !_onDonationPage)
                 {
+                    _savedOverviewComponentId = __instance.currentlySnappedComponent?.myID ?? -1;
                     _onDonationPage = true;
                     _onOverviewPage = false;
                     _trackedSlotIndex = 0;
@@ -644,7 +647,21 @@ namespace AndroidConsolizer.Patches
             menu.allClickableComponents = components;
             WireNeighborsByPosition(components);
 
-            menu.currentlySnappedComponent = components[0];
+            ClickableComponent startComponent = components[0];
+            if (_savedOverviewComponentId >= 0)
+            {
+                foreach (var c in components)
+                {
+                    if (c.myID == _savedOverviewComponentId)
+                    {
+                        startComponent = c;
+                        break;
+                    }
+                }
+                _savedOverviewComponentId = -1;
+            }
+
+            menu.currentlySnappedComponent = startComponent;
             menu.snapCursorToCurrentSnappedComponent();
 
             return true;
