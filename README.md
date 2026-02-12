@@ -2,7 +2,7 @@
 
 A SMAPI mod that brings console-style controller support to Android Stardew Valley. Play with a controller like you would on Nintendo Switch - 12-slot toolbar rows, proper shop purchasing, chest management, and more.
 
-## Current Version: 3.2.0 — The Robin Release
+## Current Version: 3.3.0 — The Community Center Release
 
 ## Features
 
@@ -75,6 +75,17 @@ When "Use Bumpers Instead of Triggers" is enabled:
   - **Demolish mode**: Press A on a building to highlight it (green), press A again to confirm demolition. Move cursor off the building to deselect without demolishing.
   - Touch still works normally alongside the joystick cursor
 
+### Community Center Bundle Navigation
+- **Full controller support** for the Community Center JunimoNoteMenu
+- **Bundle overview**: Navigate between bundles with D-Pad/thumbstick, A opens the donation page
+  - Cursor remembers which bundle you were viewing when returning from the donation page
+  - LB/RB switches between Community Center rooms (vanilla behavior)
+- **Donation page**: Navigate inventory with D-Pad/thumbstick (6-column grid), A donates items
+  - Right from the last inventory column enters the ingredient list zone
+  - Navigate ingredients to see what each bundle slot needs (tooltip shows item name)
+  - Left from the ingredient list returns to inventory
+- Custom cursor drawn on both overview and donation pages (Android suppresses the default cursor here)
+
 ### Furniture Placement Fix
 - Y button no longer rapid-toggles furniture between picked up and placed
 - One press = one interaction (pickup OR placement, never both)
@@ -116,6 +127,10 @@ When "Use Bumpers Instead of Triggers" is enabled:
 | **Building (build)** | A | Confirm building placement at cursor |
 | **Building (move)** | A | Select building / confirm new placement |
 | **Building (demolish)** | A | Select building (highlights green) / confirm demolition |
+| **CC overview** | D-Pad/stick | Navigate between bundles |
+| **CC overview** | A | Open bundle donation page |
+| **CC donation** | D-Pad/stick | Navigate inventory / ingredient list |
+| **CC donation** | A | Donate item from inventory |
 
 ## Dependencies
 
@@ -234,7 +249,6 @@ Output: `bin/Release/net6.0/AndroidConsolizer X.X.X.zip`
 - Clicking "Build" for a building you can't afford exits to the shop screen (investigating whether this is vanilla Android behavior)
 - Shop sell tab not navigable when switched via touchscreen tap (Y button works)
 - Equipment slots not accessible via A button in inventory
-- Community Center bundle navigation and cursor issues
 - Social tab cursor doesn't visually follow when switching tabs with LB/RB
 - Held items can be orphaned if touch input interrupts controller selection
 - Geode breaking menu works but has no visual feedback with controller
@@ -267,6 +281,27 @@ Android Stardew Valley has broken controller support that makes it nearly unplay
 MIT License - Feel free to modify and redistribute.
 
 ## Changelog
+
+### 3.3.0 — The Community Center Release
+- **Community Center Bundle Navigation** — Full controller support for the JunimoNoteMenu
+  - **Bundle overview**: D-Pad/thumbstick navigates between bundles, A opens the donation page
+  - Cursor remembers your position when returning from the donation page (no reset to first bundle)
+  - Correct bundle highlights as you navigate (hover animation tracks the cursor)
+  - Custom cursor drawn on both overview and donation pages (Android suppresses the default cursor)
+  - LB/RB switches between Community Center rooms (vanilla behavior, unchanged)
+  - **Donation page**: Navigate 6-column inventory grid with D-Pad/thumbstick, A donates items
+  - Right from last inventory column enters the ingredient list — see what each bundle slot needs
+  - Navigate between ingredient rows, tooltips show item names
+  - Left from ingredient list returns to inventory
+- **Equipment Slot Fixes** — A button now works on all equipment slots (hat, rings, boots, shirt, pants)
+  - Pick up equipment to cursor, place/swap equipment with A
+  - Sort button (slot 106) and trash can handled correctly
+- **Slingshot Ammo Management** — Same treatment as fishing rod bait/tackle
+  - A on ammo picks it up to cursor, Y on slingshot attaches/detaches ammo
+- **Touch Interrupt Fixes**
+  - Touching the screen while holding an item with controller now safely returns it to its source slot
+  - Drop zone between Sort and Trash buttons — A while holding an item drops it as debris at player's feet
+  - Touch on chest no longer breaks sidebar navigation (self-healing component check)
 
 ### 3.2.0 — The Robin Release
 - **Robin's Build Menu — Full Controller Support** - Build, Move, and Demolish all work with the joystick
