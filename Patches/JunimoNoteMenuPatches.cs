@@ -37,6 +37,12 @@ namespace AndroidConsolizer.Patches
         private static int _maxSlotIndex = 23;
         private const int INV_COLUMNS = 6;
 
+        // Ingredient zone state
+        private static bool _inIngredientZone;
+        private static int _trackedIngredientIndex;
+        private static int _lastInventoryRow;
+        private static List<List<int>> _ingredientRows; // indices into ingredientList, grouped by visual row
+
         // GetMouseState override — active during A-press receiveLeftClick AND during draw
         private static bool _overridingMouse;
         private static int _overrideRawX, _overrideRawY;
@@ -115,6 +121,8 @@ namespace AndroidConsolizer.Patches
             _onOverviewPage = false;
             _overridingMouse = false;
             _dumpedOverviewComponents = false;
+            _inIngredientZone = false;
+            _ingredientRows = null;
         }
 
         // ===== GetMouseState postfix =====
@@ -243,9 +251,22 @@ namespace AndroidConsolizer.Patches
 
         private static void Navigate(JunimoNoteMenu menu, int dx, int dy)
         {
+            if (_inIngredientZone)
+            {
+                NavigateIngredientZone(menu, dx, dy);
+                return;
+            }
+
             int col = _trackedSlotIndex % INV_COLUMNS;
             int row = _trackedSlotIndex / INV_COLUMNS;
             int maxRow = _maxSlotIndex / INV_COLUMNS;
+
+            // Right from rightmost column → enter ingredient zone
+            if (dx > 0 && col == INV_COLUMNS - 1)
+            {
+                EnterIngredientZone(menu, row);
+                return;
+            }
 
             col += dx;
             row += dy;
@@ -273,10 +294,143 @@ namespace AndroidConsolizer.Patches
             menu.snapCursorToCurrentSnappedComponent();
         }
 
+        // ===== Ingredient zone navigation =====
+
+        private static void BuildIngredientRows(JunimoNoteMenu menu)
+        {
+            _ingredientRows = new List<List<int>>();
+            var ingredientList = GetIngredientList(menu);
+            if (ingredientList == null || ingredientList.Count == 0) return;
+
+            // Group by Y coordinate, sorted ascending
+            var yGroups = new SortedDictionary<int, List<int>>();
+            for (int i = 0; i < ingredientList.Count; i++)
+            {
+                int y = ingredientList[i].bounds.Y;
+                if (!yGroups.ContainsKey(y))
+                    yGroups[y] = new List<int>();
+                yGroups[y].Add(i);
+            }
+
+            // Sort each row by X coordinate
+            foreach (var group in yGroups.Values)
+            {
+                group.Sort((a, b) => ingredientList[a].bounds.X.CompareTo(ingredientList[b].bounds.X));
+                _ingredientRows.Add(group);
+            }
+
+            Monitor.Log($"[JunimoNote] Built ingredient rows: {_ingredientRows.Count} rows, counts={string.Join(",", _ingredientRows.ConvertAll(r => r.Count.ToString()))}", LogLevel.Debug);
+        }
+
+        private static void EnterIngredientZone(JunimoNoteMenu menu, int fromInvRow)
+        {
+            if (_ingredientRows == null || _ingredientRows.Count == 0) return;
+
+            var ingredientList = GetIngredientList(menu);
+            if (ingredientList == null) return;
+
+            _lastInventoryRow = fromInvRow;
+            _inIngredientZone = true;
+
+            // Find closest ingredient row by Y to the current inventory row
+            int invCenterY = 0;
+            int invSlotIndex = fromInvRow * INV_COLUMNS;
+            if (menu.inventory?.inventory != null && invSlotIndex < menu.inventory.inventory.Count)
+                invCenterY = menu.inventory.inventory[invSlotIndex].bounds.Center.Y;
+
+            int bestRow = 0;
+            int bestDist = int.MaxValue;
+            for (int r = 0; r < _ingredientRows.Count; r++)
+            {
+                int idx = _ingredientRows[r][0];
+                int rowCenterY = ingredientList[idx].bounds.Center.Y;
+                int dist = Math.Abs(rowCenterY - invCenterY);
+                if (dist < bestDist)
+                {
+                    bestDist = dist;
+                    bestRow = r;
+                }
+            }
+
+            // Snap to leftmost ingredient in that row
+            _trackedIngredientIndex = _ingredientRows[bestRow][0];
+            SnapToIngredient(menu);
+            Monitor.Log($"[JunimoNote] Entered ingredient zone: row={bestRow} index={_trackedIngredientIndex} ('{ingredientList[_trackedIngredientIndex].hoverText}')", LogLevel.Debug);
+        }
+
+        private static void ExitIngredientZone(JunimoNoteMenu menu)
+        {
+            _inIngredientZone = false;
+            int targetRow = _lastInventoryRow;
+            int maxRow = _maxSlotIndex / INV_COLUMNS;
+            targetRow = Math.Min(targetRow, maxRow);
+            _trackedSlotIndex = targetRow * INV_COLUMNS + (INV_COLUMNS - 1); // rightmost column
+            _trackedSlotIndex = Math.Min(_trackedSlotIndex, _maxSlotIndex);
+            SnapToSlot(menu);
+            Monitor.Log($"[JunimoNote] Exited ingredient zone → inventory slot {_trackedSlotIndex}", LogLevel.Debug);
+        }
+
+        private static void NavigateIngredientZone(JunimoNoteMenu menu, int dx, int dy)
+        {
+            if (_ingredientRows == null || _ingredientRows.Count == 0) return;
+
+            // Find current row and position within row
+            int curRow = -1, curPosInRow = -1;
+            for (int r = 0; r < _ingredientRows.Count; r++)
+            {
+                int pos = _ingredientRows[r].IndexOf(_trackedIngredientIndex);
+                if (pos >= 0)
+                {
+                    curRow = r;
+                    curPosInRow = pos;
+                    break;
+                }
+            }
+            if (curRow < 0) return;
+
+            if (dx != 0)
+            {
+                int newPos = curPosInRow + dx;
+                if (newPos < 0)
+                {
+                    // Left past leftmost → return to inventory
+                    ExitIngredientZone(menu);
+                    return;
+                }
+                if (newPos >= _ingredientRows[curRow].Count)
+                    return; // right past rightmost → clamp
+                _trackedIngredientIndex = _ingredientRows[curRow][newPos];
+            }
+            else if (dy != 0)
+            {
+                int newRow = curRow + dy;
+                if (newRow < 0 || newRow >= _ingredientRows.Count)
+                    return; // can't go further
+                // Keep same position in row, clamped
+                int newPos = Math.Min(curPosInRow, _ingredientRows[newRow].Count - 1);
+                _trackedIngredientIndex = _ingredientRows[newRow][newPos];
+            }
+
+            SnapToIngredient(menu);
+        }
+
+        private static void SnapToIngredient(JunimoNoteMenu menu)
+        {
+            var ingredientList = GetIngredientList(menu);
+            if (ingredientList == null || _trackedIngredientIndex >= ingredientList.Count) return;
+            menu.currentlySnappedComponent = ingredientList[_trackedIngredientIndex];
+        }
+
         // ===== A-press handling =====
 
         private static void HandleAPress(JunimoNoteMenu menu)
         {
+            if (_inIngredientZone)
+            {
+                HandleIngredientAPress(menu);
+                return;
+            }
+
             if (menu.inventory?.inventory == null || _trackedSlotIndex >= menu.inventory.inventory.Count)
                 return;
 
@@ -306,6 +460,33 @@ namespace AndroidConsolizer.Patches
 
             var heldAfter = GetHeldItem(menu);
             Monitor.Log($"[JunimoNote] After A: held={heldAfter?.DisplayName ?? "null"} cursor={Game1.player.CursorSlotItem?.DisplayName ?? "null"} onPage={GetSpecificBundlePage(menu)}", LogLevel.Debug);
+        }
+
+        private static void HandleIngredientAPress(JunimoNoteMenu menu)
+        {
+            var ingredientList = GetIngredientList(menu);
+            if (ingredientList == null || _trackedIngredientIndex >= ingredientList.Count) return;
+
+            var comp = ingredientList[_trackedIngredientIndex];
+            var center = comp.bounds.Center;
+
+            float zoom = Game1.options.zoomLevel;
+            _overrideRawX = (int)(center.X * zoom);
+            _overrideRawY = (int)(center.Y * zoom);
+            _overridingMouse = true;
+
+            Monitor.Log($"[JunimoNote] A on ingredient {_trackedIngredientIndex} ('{comp.hoverText}'): click ({center.X},{center.Y})", LogLevel.Debug);
+
+            _weInitiatedClick = true;
+            try
+            {
+                menu.receiveLeftClick(center.X, center.Y);
+            }
+            finally
+            {
+                _weInitiatedClick = false;
+                _overridingMouse = false;
+            }
         }
 
         // ===== Update postfix =====
@@ -343,6 +524,7 @@ namespace AndroidConsolizer.Patches
                     _onDonationPage = true;
                     _onOverviewPage = false; // will re-init on return
                     _trackedSlotIndex = 0;
+                    _inIngredientZone = false;
                     _enteredPageTick = Game1.ticks;
 
                     // Determine max slot index based on player's actual inventory size
@@ -350,6 +532,8 @@ namespace AndroidConsolizer.Patches
                     int slotCount = __instance.inventory?.inventory?.Count ?? 36;
                     _maxSlotIndex = Math.Min(invCount, slotCount) - 1;
                     if (_maxSlotIndex < 0) _maxSlotIndex = 0;
+
+                    BuildIngredientRows(__instance);
 
                     Monitor.Log($"[JunimoNote] Entered donation page, maxSlot={_maxSlotIndex}", LogLevel.Debug);
                     DumpDonationPageComponents(__instance);
@@ -359,15 +543,26 @@ namespace AndroidConsolizer.Patches
                 {
                     _onDonationPage = false;
                     _overridingMouse = false;
+                    _inIngredientZone = false;
+                    _ingredientRows = null;
                     _dumpedOverviewComponents = false; // re-dump when returning to overview
                     Monitor.Log("[JunimoNote] Left donation page", LogLevel.Debug);
                 }
 
                 // Keep currentlySnappedComponent in sync (game may reset it)
-                if (_onDonationPage && __instance.inventory?.inventory != null
-                    && _trackedSlotIndex < __instance.inventory.inventory.Count)
+                if (_onDonationPage)
                 {
-                    __instance.currentlySnappedComponent = __instance.inventory.inventory[_trackedSlotIndex];
+                    if (_inIngredientZone)
+                    {
+                        var ingredientList = GetIngredientList(__instance);
+                        if (ingredientList != null && _trackedIngredientIndex < ingredientList.Count)
+                            __instance.currentlySnappedComponent = ingredientList[_trackedIngredientIndex];
+                    }
+                    else if (__instance.inventory?.inventory != null
+                        && _trackedSlotIndex < __instance.inventory.inventory.Count)
+                    {
+                        __instance.currentlySnappedComponent = __instance.inventory.inventory[_trackedSlotIndex];
+                    }
                 }
             }
             catch (Exception ex)
@@ -390,8 +585,16 @@ namespace AndroidConsolizer.Patches
 
                 if (_onDonationPage)
                 {
-                    if (__instance.inventory?.inventory != null && _trackedSlotIndex < __instance.inventory.inventory.Count)
+                    if (_inIngredientZone)
+                    {
+                        var ingredientList = GetIngredientList(__instance);
+                        if (ingredientList != null && _trackedIngredientIndex < ingredientList.Count)
+                            target = ingredientList[_trackedIngredientIndex];
+                    }
+                    else if (__instance.inventory?.inventory != null && _trackedSlotIndex < __instance.inventory.inventory.Count)
+                    {
                         target = __instance.inventory.inventory[_trackedSlotIndex];
+                    }
                 }
                 else if (_onOverviewPage)
                 {
@@ -416,10 +619,19 @@ namespace AndroidConsolizer.Patches
                 // Draw our own cursor — Android suppresses the game's drawMouse on this page.
                 ClickableComponent target = null;
 
-                if (_onDonationPage && __instance.inventory?.inventory != null
-                    && _trackedSlotIndex < __instance.inventory.inventory.Count)
+                if (_onDonationPage)
                 {
-                    target = __instance.inventory.inventory[_trackedSlotIndex];
+                    if (_inIngredientZone)
+                    {
+                        var ingredientList = GetIngredientList(__instance);
+                        if (ingredientList != null && _trackedIngredientIndex < ingredientList.Count)
+                            target = ingredientList[_trackedIngredientIndex];
+                    }
+                    else if (__instance.inventory?.inventory != null
+                        && _trackedSlotIndex < __instance.inventory.inventory.Count)
+                    {
+                        target = __instance.inventory.inventory[_trackedSlotIndex];
+                    }
                 }
                 else if (_onOverviewPage)
                 {
@@ -440,6 +652,20 @@ namespace AndroidConsolizer.Patches
                         SpriteEffects.None,
                         1f
                     );
+                }
+
+                // Draw tooltip when hovering an ingredient
+                if (_onDonationPage && _inIngredientZone)
+                {
+                    var ingredientList = GetIngredientList(__instance);
+                    if (ingredientList != null && _trackedIngredientIndex < ingredientList.Count)
+                    {
+                        var comp = ingredientList[_trackedIngredientIndex];
+                        if (!string.IsNullOrEmpty(comp.hoverText))
+                        {
+                            IClickableMenu.drawHoverText(b, comp.hoverText, Game1.smallFont);
+                        }
+                    }
                 }
             }
             catch { }
