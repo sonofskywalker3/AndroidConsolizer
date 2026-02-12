@@ -21,3 +21,9 @@ packages/
 # Windows
 Thumbs.db
 Desktop.ini
+
+# Dev artifacts / agent prompts
+AGENT_PROMPT_*.md
+CARPENTER_PAN_SPEC.md
+preview_button_icon.html
+publish-nexus.ps1

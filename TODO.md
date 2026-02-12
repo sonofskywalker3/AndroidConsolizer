@@ -158,23 +158,22 @@ These need to be re-implemented **one at a time, one per 0.0.1 patch, each commi
 - **Fix:** On overview page entry, populate `allClickableComponents` from `bundles` list + back button. Wire neighbor IDs using spatial nearest-in-direction algorithm with angle filter (require `|primary_axis| > |perpendicular_axis| / 4` to prevent near-perpendicular pairs). Handle all thumbstick/dpad/A ourselves (game's `receiveGamePadButton` uses mouse-hover, not snap nav). A press uses GetMouseState override (same pattern as donation page).
 - **File:** `Patches/JunimoNoteMenuPatches.cs`
 
-#### 9b-i. Invisible Snap Point in Bottom-Left of Overview — TODO
-- **Symptom:** There's an invisible/empty snap target in the bottom-left corner of the bundle overview screen. Navigating left from the leftmost bundle eventually reaches it.
-- **Root cause:** `InitOverviewNavigation` adds the back button (field `backButton`, reassigned id=5100) at position (24,376). This button exists in the game data but has no visible sprite on the overview page — it's visually invisible but navigable via our wired neighbor IDs.
-- **Fix:** Either exclude the back button from `allClickableComponents` if it's not meant to be interactive on the overview, or investigate what it does when clicked (maybe it's the room-exit button and should be usable). If it IS useful, draw a visual indicator so the user knows what they're selecting.
-- **Log evidence (v3.2.33):** `backButton: id=5100 name='Back' label='' bounds=(24,376,80,76) neighbors L=-1 R=... U=... D=...` — included in navigation wiring but has no label or visible sprite.
+#### 9b-i. Invisible Snap Point in Bottom-Left of Overview — DONE (v3.2.38)
+- **Root cause:** `InitOverviewNavigation` added the back button (field `backButton`, id=5100) at position (24,376). Visually invisible but navigable.
+- **Fix:** Excluded back button from `allClickableComponents`. B button already exits the CC menu, so back button was redundant.
 
-#### 9b-ii. Overview Cursor Resets to First Bundle After Exiting Donation Page — TODO
-- **Symptom:** When the user opens a bundle's donation page (A on a bundle) and then exits back to the overview (B), the cursor always resets to the first/top-center bundle instead of returning to the bundle they were just viewing. The exited bundle remains animated but the cursor is elsewhere.
-- **Root cause:** `InitOverviewNavigation` always sets `currentlySnappedComponent = components[0]` (the first bundle). When returning from the donation page, `_onOverviewPage` is false so `InitOverviewNavigation` re-runs and resets to `components[0]`.
-- **Fix:** Before entering the donation page, save the `myID` of the current snapped component. When re-initializing overview navigation on return, restore snap to the saved component ID instead of defaulting to `components[0]`.
-- **File:** `Patches/JunimoNoteMenuPatches.cs`
+#### 9b-ii. Overview Cursor Resets to First Bundle After Exiting Donation Page — DONE (v3.2.37, v3.2.39)
+- **Root cause:** `InitOverviewNavigation` always set `currentlySnappedComponent = components[0]`. Returning from donation page re-ran init and reset to first bundle.
+- **Fix (v3.2.37):** Save `currentlySnappedComponent.myID` before entering donation page, restore on return.
+- **Fix (v3.2.39):** Keep GetMouseState override active continuously on overview page so game's hover detection highlights the correct bundle (not the last-touched one).
 
-#### 9c. Donation Page — Navigate to Bundle Ingredient Slots — TODO
-- Currently can only navigate inventory slots on the donation page. Need to also navigate to the ingredient list components (IDs 1000-1004, name='ingredient_list_slot') so the user can see what items the bundle needs.
-- **Goal:** Up from top inventory row moves cursor to ingredient list area. A on ingredient slot with matching held item donates it. Tooltips should show item names when cursor is on ingredient slots.
-- From v3.2.25 diagnostic dump: ingredient list at Y:301-377 (3+2 layout), ingredient slots at Y:473-549 (same 3+2 layout). Ingredient list IDs are 1000-1004. Ingredient slots all have id=-500 and broken neighbors.
-- **Approach:** Extend Navigate() to support a second zone (ingredient list). When at top inventory row and pressing up, move to nearest ingredient list component. When at ingredient list and pressing down, return to inventory. Override GetMouseState for A-press on ingredient components too.
+#### 9c. Donation Page — Navigate to Ingredient List — DONE (v3.2.35-v3.2.36)
+- Right from inventory column 5 enters ingredient zone. Left from leftmost ingredient returns to inventory column 5.
+- Ingredient rows built dynamically by grouping `ingredientList` components by Y coordinate (1 row for 3-4 items at Y=337, 2 rows for 5+ items at Y=301/377).
+- Up/Down navigates between ingredient rows. A-press clicks via GetMouseState override (same pattern as inventory).
+- Tooltip shows `hoverText` (item name) when cursor is on an ingredient component.
+- `ingredientList` (IDs 1000+, unique, has hoverText) is the correct target — NOT `ingredientSlots` (all id=-500, no hoverText, fewer entries for "choose X of Y" bundles).
+- v3.2.36: Removed all diagnostic dumps and debug logging.
 
 ### 10. Trash Can / Sort Unreachable in Item Grab Menus — FIXED in v2.9.8
 - **Fixed:** Sidebar buttons (Sort Chest, Fill Stacks, Color Toggle, Sort Inventory, Trash, Close X) are now reachable via snap navigation.
