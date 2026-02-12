@@ -248,20 +248,18 @@ Output: `bin/Release/net6.0/AndroidConsolizer X.X.X.zip`
 
 - Clicking "Build" for a building you can't afford exits to the shop screen (investigating whether this is vanilla Android behavior)
 - Shop sell tab not navigable when switched via touchscreen tap (Y button works)
-- Equipment slots not accessible via A button in inventory
 - Social tab cursor doesn't visually follow when switching tabs with LB/RB
-- Held items can be orphaned if touch input interrupts controller selection
 - Geode breaking menu works but has no visual feedback with controller
 - Analog triggers register multiple presses on some controllers (use Bumper Mode as workaround)
 - Trash can lid animation doesn't play on Android with controller hover
 
 ## TODO / Roadmap
 
-- Equipment slot A-button fix
+- Analog trigger debounce (fix multi-read on G Cloud and similar controllers)
 - Right joystick free cursor mode for menus and gameplay
 - Zoom control slider in options menu
-- Intentional item drop with controller (L3 while holding item)
 - Museum donation menu controller support
+- Social tab / collections tab controller navigation
 - Settings menu snap navigation
 - Cutscene skip visual fix (skip button renders behind dialogue)
 - Expanded controller testing (8BitDo, DualSense, etc.)
