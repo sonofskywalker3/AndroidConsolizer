@@ -502,6 +502,17 @@ namespace AndroidConsolizer.Patches
                         __instance.currentlySnappedComponent = __instance.inventory.inventory[_trackedSlotIndex];
                     }
                 }
+
+                // Keep GetMouseState override active on overview so game's hover detection
+                // highlights the correct bundle (not the last-touched one)
+                if (_onOverviewPage && __instance.currentlySnappedComponent != null)
+                {
+                    var center = __instance.currentlySnappedComponent.bounds.Center;
+                    float zoom = Game1.options.zoomLevel;
+                    _overrideRawX = (int)(center.X * zoom);
+                    _overrideRawY = (int)(center.Y * zoom);
+                    _overridingMouse = true;
+                }
             }
             catch (Exception ex)
             {
@@ -604,7 +615,8 @@ namespace AndroidConsolizer.Patches
             catch { }
             finally
             {
-                _overridingMouse = false;
+                if (!_onOverviewPage)
+                    _overridingMouse = false;
             }
         }
 
