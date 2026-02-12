@@ -31,6 +31,17 @@ namespace AndroidConsolizer.Patches
         /// Set by ItemGrabMenuPatches when A on Close X closes a chest.</summary>
         internal static bool SuppressAUntilRelease;
 
+        /// <summary>True for one tick when Start is newly pressed during a skippable event.
+        /// Consumed by ModEntry.OnUpdateTicked for cutscene skip handling.</summary>
+        internal static bool StartPressedThisTick;
+
+        /// <summary>Previous tick's raw Start state for edge detection.</summary>
+        private static bool _prevStartPressed;
+
+        /// <summary>When set to a tick number, GetMouseState postfix will report LeftButton
+        /// as Pressed for that tick, simulating a screen touch. Used for cutscene skip.</summary>
+        internal static int SimulateTouchClickOnTick = -1;
+
         /// <summary>Invalidate the cached GetState so the next call recomputes.
         /// Must be called after setting Suppress*UntilRelease flags mid-tick,
         /// since the cache may already have the unsuppressed state.</summary>
@@ -105,20 +116,28 @@ namespace AndroidConsolizer.Patches
         /// state so it suppresses the LOGICAL button the game sees.</summary>
         private static GamePadState ApplyButtonSuppression(GamePadState state)
         {
-            if (!SuppressAUntilRelease)
+            bool suppressA = SuppressAUntilRelease;
+            bool suppressStart = ModEntry.IsCurrentEventSkippable() && state.Buttons.Start == ButtonState.Pressed;
+
+            if (!suppressA && !suppressStart)
                 return state;
 
-            if (state.Buttons.A != ButtonState.Pressed)
+            // Clear A suppression when button is released
+            if (suppressA && state.Buttons.A != ButtonState.Pressed)
             {
                 SuppressAUntilRelease = false;
-                return state;
+                suppressA = false;
             }
 
+            if (!suppressA && !suppressStart)
+                return state;
+
             var newButtons = new GamePadButtons(
+                ((!suppressA && state.Buttons.A == ButtonState.Pressed) ? Buttons.A : 0) |
                 ((state.Buttons.B == ButtonState.Pressed) ? Buttons.B : 0) |
                 ((state.Buttons.X == ButtonState.Pressed) ? Buttons.X : 0) |
                 ((state.Buttons.Y == ButtonState.Pressed) ? Buttons.Y : 0) |
-                ((state.Buttons.Start == ButtonState.Pressed) ? Buttons.Start : 0) |
+                ((!suppressStart && state.Buttons.Start == ButtonState.Pressed) ? Buttons.Start : 0) |
                 ((state.Buttons.Back == ButtonState.Pressed) ? Buttons.Back : 0) |
                 ((state.Buttons.LeftStick == ButtonState.Pressed) ? Buttons.LeftStick : 0) |
                 ((state.Buttons.RightStick == ButtonState.Pressed) ? Buttons.RightStick : 0) |
@@ -158,6 +177,13 @@ namespace AndroidConsolizer.Patches
                     RawRightStickY = _cachedRawRightStickY;
                     return;
                 }
+
+                // Edge detection for Start during skippable events (before any swaps/suppression)
+                StartPressedThisTick = false;
+                bool rawStartPressed = __result.Buttons.Start == ButtonState.Pressed;
+                if (rawStartPressed && !_prevStartPressed && ModEntry.IsCurrentEventSkippable())
+                    StartPressedThisTick = true;
+                _prevStartPressed = rawStartPressed;
 
                 // Cache raw right stick Y before any suppression, so ShopMenuPatches can use it
                 RawRightStickY = __result.ThumbSticks.Right.Y;

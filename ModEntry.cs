@@ -50,6 +50,19 @@ namespace AndroidConsolizer
         private static FieldInfo EventSkippedField;
         private static MethodInfo EventSkipMethod;
 
+        /// <summary>Check if the current event is skippable and cutscene skip is enabled.
+        /// Used by GameplayButtonPatches to suppress Start at GetState level.</summary>
+        internal static bool IsCurrentEventSkippable()
+        {
+            if (Config == null || !Config.EnableCutsceneSkip)
+                return false;
+            var ev = Game1.CurrentEvent;
+            if (ev == null || EventSkippableField == null)
+                return false;
+            try { return (bool)EventSkippableField.GetValue(ev); }
+            catch { return false; }
+        }
+
         /*********
         ** Public methods
         *********/
@@ -159,6 +172,25 @@ namespace AndroidConsolizer
         /// <summary>Raised every game tick. Used to enforce toolbar row locking and handle triggers.</summary>
         private void OnUpdateTicked(object sender, UpdateTickedEventArgs e)
         {
+            // Cutscene skip: detect Start press via GetState edge detection
+            // (SMAPI can't see Start because it's suppressed at GetState level during events)
+            if (Config.EnableCutsceneSkip && Patches.GameplayButtonPatches.StartPressedThisTick)
+            {
+                Patches.GameplayButtonPatches.StartPressedThisTick = false;
+                if (Game1.CurrentEvent != null)
+                    HandleCutsceneSkip();
+            }
+
+            // Reset cutscene skip state when event ends or timeout expires
+            if (cutsceneSkipPending)
+            {
+                if (Game1.CurrentEvent == null || Game1.ticks - cutsceneSkipFirstPressTick > 180)
+                {
+                    cutsceneSkipPending = false;
+                    cutsceneSkipFirstPressTick = -1;
+                }
+            }
+
             // X/Y swap is now handled by GameplayButtonPatches at the GamePad.GetState level
 
             // Clear furniture debounce suppress flag when tool button is released
@@ -368,15 +400,8 @@ namespace AndroidConsolizer
                 HandleShopQuantityNonBumper(e, shopMenuNonBumper);
             }
 
-            // Cutscene skip - Start button skips events (double-press to confirm)
-            if (Config.EnableCutsceneSkip && Game1.CurrentEvent != null)
-            {
-                if (e.Pressed.Contains(SButton.ControllerStart))
-                {
-                    this.Helper.Input.Suppress(SButton.ControllerStart);
-                    HandleCutsceneSkip();
-                }
-            }
+            // Cutscene skip is now handled in OnUpdateTicked via GetState edge detection
+            // (Start is suppressed at GetState level during events, so SMAPI doesn't see it)
 
             // Journal button - Start opens Quest Log during gameplay
             if (Config.EnableJournalButton && Game1.activeClickableMenu == null && Context.IsPlayerFree)
@@ -422,80 +447,18 @@ namespace AndroidConsolizer
             }
         }
 
-        /// <summary>Handle cutscene skip with Start button (double-press to confirm).</summary>
+        /// <summary>Handle cutscene skip with Start button.
+        /// First press: simulate a screen touch so the game shows its native skip icon.
+        /// Second press within 3 seconds: skip the event directly.</summary>
         private void HandleCutsceneSkip()
         {
             try
             {
                 var currentEvent = Game1.CurrentEvent;
-                if (currentEvent == null)
-                    return;
-
-                // Dump all skip-related fields on the Event for diagnostics
-                var eventType = currentEvent.GetType();
-                this.Monitor.Log($"[CutsceneDiag] Event type: {eventType.FullName}", LogLevel.Info);
-
-                // Dump all fields that might relate to skipping
-                string[] fieldNames = new[] { "skippable", "skipped", "_skippable", "_skipped",
-                    "skipEvent", "questButton", "skipButton", "secretSantaRecipient",
-                    "showSkipButton", "_showSkipButton", "canSkip", "skipVisible",
-                    "eventFinished", "playerControlSequence" };
-                foreach (var name in fieldNames)
-                {
-                    var field = AccessTools.Field(eventType, name);
-                    if (field != null)
-                    {
-                        try
-                        {
-                            var val = field.GetValue(currentEvent);
-                            this.Monitor.Log($"[CutsceneDiag]   field '{name}' = {val} (type: {field.FieldType.Name})", LogLevel.Info);
-                        }
-                        catch (Exception ex2)
-                        {
-                            this.Monitor.Log($"[CutsceneDiag]   field '{name}' exists but read failed: {ex2.Message}", LogLevel.Info);
-                        }
-                    }
-                }
-
-                // Dump all properties that might relate to skipping
-                string[] propNames = new[] { "Skippable", "Skipped", "CanSkip", "IsSkippable",
-                    "ShowSkipButton", "SkipButtonVisible" };
-                foreach (var name in propNames)
-                {
-                    var prop = AccessTools.Property(eventType, name);
-                    if (prop != null)
-                    {
-                        try
-                        {
-                            var val = prop.GetValue(currentEvent);
-                            this.Monitor.Log($"[CutsceneDiag]   prop '{name}' = {val} (type: {prop.PropertyType.Name})", LogLevel.Info);
-                        }
-                        catch (Exception ex2)
-                        {
-                            this.Monitor.Log($"[CutsceneDiag]   prop '{name}' exists but read failed: {ex2.Message}", LogLevel.Info);
-                        }
-                    }
-                }
-
-                // Dump all methods that contain "skip" (case-insensitive)
-                var methods = eventType.GetMethods(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Static |
-                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
-                foreach (var m in methods)
-                {
-                    if (m.Name.IndexOf("skip", StringComparison.OrdinalIgnoreCase) >= 0)
-                    {
-                        var parms = string.Join(", ", m.GetParameters().Select(p => $"{p.ParameterType.Name} {p.Name}"));
-                        this.Monitor.Log($"[CutsceneDiag]   method '{m.Name}({parms})' returns {m.ReturnType.Name}", LogLevel.Info);
-                    }
-                }
-
-                // Check if the event is skippable
-                if (EventSkippableField == null)
+                if (currentEvent == null || EventSkippableField == null)
                     return;
 
                 bool isSkippable = (bool)EventSkippableField.GetValue(currentEvent);
-                this.Monitor.Log($"[CutsceneDiag] isSkippable={isSkippable}, cutsceneSkipPending={cutsceneSkipPending}", LogLevel.Info);
-
                 if (!isSkippable)
                     return;
 
@@ -505,7 +468,7 @@ namespace AndroidConsolizer
 
                 if (cutsceneSkipPending && ticksSinceFirstPress <= skipWindowTicks)
                 {
-                    // Second press within window - skip the event
+                    // Second press within window — skip the event
                     EventSkippedField?.SetValue(currentEvent, true);
                     EventSkipMethod?.Invoke(currentEvent, null);
 
@@ -515,11 +478,13 @@ namespace AndroidConsolizer
                 }
                 else
                 {
-                    // First press - start timer (no HUD message, we'll use the game's skip icon)
+                    // First press — simulate a screen touch so the game shows its native skip icon.
+                    // GetMouseState postfix will report LeftButton as Pressed for this tick.
+                    Patches.GameplayButtonPatches.SimulateTouchClickOnTick = currentTick;
                     cutsceneSkipFirstPressTick = currentTick;
                     cutsceneSkipPending = true;
 
-                    this.Monitor.Log("Cutscene skip pending - press Start again within 3 seconds to confirm", LogLevel.Info);
+                    this.Monitor.Log("Cutscene skip: simulated touch to show skip icon, press Start again to confirm", LogLevel.Info);
                 }
             }
             catch (Exception ex)

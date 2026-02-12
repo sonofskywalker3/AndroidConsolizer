@@ -718,6 +718,21 @@ namespace AndroidConsolizer.Patches
         /// </summary>
         private static void GetMouseState_Postfix(ref MouseState __result)
         {
+            // Global touch simulation: report LeftButton pressed for one tick.
+            // Used by cutscene skip to simulate a screen tap when Start is pressed.
+            if (GameplayButtonPatches.SimulateTouchClickOnTick == Game1.ticks)
+            {
+                __result = new MouseState(
+                    __result.X, __result.Y,
+                    __result.ScrollWheelValue,
+                    ButtonState.Pressed,
+                    __result.MiddleButton,
+                    __result.RightButton,
+                    __result.XButton1,
+                    __result.XButton2
+                );
+            }
+
             if (!_overridingMousePosition)
                 return;
 
