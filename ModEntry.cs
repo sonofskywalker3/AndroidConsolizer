@@ -39,6 +39,14 @@ namespace AndroidConsolizer
         /// <summary>Threshold for trigger activation (0.0 to 1.0).</summary>
         private const float TriggerThreshold = 0.5f;
 
+        /// <summary>The slot index we set on the last trigger press. While a trigger is held,
+        /// any external changes (from the game's native trigger handling) are corrected back.</summary>
+        private int _triggerSlotTarget = -1;
+
+        /// <summary>Player's CurrentToolIndex at the end of the last tick. Used to calculate
+        /// trigger moves relative to OUR position, not the game's already-moved position.</summary>
+        private int _positionEndOfLastTick = -1;
+
         /// <summary>Tick when Start was first pressed during a skippable event (for double-press skip).</summary>
         private int cutsceneSkipFirstPressTick = -1;
 
@@ -251,6 +259,7 @@ namespace AndroidConsolizer
             }
 
             lastToolIndex = currentIndex;
+            _positionEndOfLastTick = currentIndex;
         }
 
         /// <summary>Handle trigger input directly via GamePadState for slot navigation.</summary>
@@ -274,8 +283,10 @@ namespace AndroidConsolizer
             bool isLeftTriggerDown = leftTrigger > TriggerThreshold;
             bool isRightTriggerDown = rightTrigger > TriggerThreshold;
 
-            int currentIndex = player.CurrentToolIndex;
-            int positionInRow = currentIndex % 12;
+            // Use our tracked position from end of last tick, not the game's
+            // potentially-already-moved position, to avoid double-counting.
+            int baseIndex = _positionEndOfLastTick >= 0 ? _positionEndOfLastTick : player.CurrentToolIndex;
+            int positionInRow = baseIndex % 12;
 
             // Left trigger - move left (on press edge)
             if (isLeftTriggerDown && !wasLeftTriggerDown)
@@ -284,9 +295,10 @@ namespace AndroidConsolizer
                 if (newPosition < 0) newPosition = 11; // Wrap to end of row
                 int newIndex = rowStart + newPosition;
                 player.CurrentToolIndex = newIndex;
+                _triggerSlotTarget = newIndex;
                 Game1.playSound("shwip");
                 if (Config.VerboseLogging)
-                    this.Monitor.Log($"LT (direct): Position {positionInRow} -> {newPosition}, Index {currentIndex} -> {newIndex}", LogLevel.Debug);
+                    this.Monitor.Log($"LT (direct): Position {positionInRow} -> {newPosition}, Index {baseIndex} -> {newIndex}", LogLevel.Debug);
             }
 
             // Right trigger - move right (on press edge)
@@ -296,10 +308,26 @@ namespace AndroidConsolizer
                 if (newPosition > 11) newPosition = 0; // Wrap to start of row
                 int newIndex = rowStart + newPosition;
                 player.CurrentToolIndex = newIndex;
+                _triggerSlotTarget = newIndex;
                 Game1.playSound("shwip");
                 if (Config.VerboseLogging)
-                    this.Monitor.Log($"RT (direct): Position {positionInRow} -> {newPosition}, Index {currentIndex} -> {newIndex}", LogLevel.Debug);
+                    this.Monitor.Log($"RT (direct): Position {positionInRow} -> {newPosition}, Index {baseIndex} -> {newIndex}", LogLevel.Debug);
             }
+
+            // While a trigger is held, enforce our position against the game's native handling
+            if (_triggerSlotTarget >= 0 && (isLeftTriggerDown || isRightTriggerDown))
+            {
+                if (player.CurrentToolIndex != _triggerSlotTarget)
+                {
+                    if (Config.VerboseLogging)
+                        this.Monitor.Log($"Slot correction: game moved to {player.CurrentToolIndex}, correcting to {_triggerSlotTarget}", LogLevel.Debug);
+                    player.CurrentToolIndex = _triggerSlotTarget;
+                }
+            }
+
+            // Clear slot lock when both triggers released
+            if (!isLeftTriggerDown && !isRightTriggerDown)
+                _triggerSlotTarget = -1;
 
             wasLeftTriggerDown = isLeftTriggerDown;
             wasRightTriggerDown = isRightTriggerDown;
