@@ -49,6 +49,12 @@ namespace AndroidConsolizer
         /// this grace period catches and corrects it.</summary>
         private int _triggerReleaseGraceTicks = 0;
 
+        /// <summary>Player's CurrentToolIndex captured BEFORE Game.Update() runs each tick.
+        /// The game's native trigger code moves the slot during Update(), so by the time
+        /// our OnUpdateTicked fires, CurrentToolIndex is already corrupted. This captures
+        /// the true pre-corruption value via UpdateTicking.</summary>
+        private int _preUpdateToolIndex = -1;
+
         /// <summary>Tick when Start was first pressed during a skippable event (for double-press skip).</summary>
         private int cutsceneSkipFirstPressTick = -1;
 
@@ -103,6 +109,7 @@ namespace AndroidConsolizer
             helper.Events.GameLoop.GameLaunched += this.OnGameLaunched;
             helper.Events.GameLoop.SaveLoaded += this.OnSaveLoaded;
             helper.Events.Input.ButtonsChanged += this.OnButtonsChanged;
+            helper.Events.GameLoop.UpdateTicking += this.OnUpdateTicking;
             helper.Events.GameLoop.UpdateTicked += this.OnUpdateTicked;
             helper.Events.Display.MenuChanged += this.OnMenuChanged;
 
@@ -177,6 +184,16 @@ namespace AndroidConsolizer
             {
                 Patches.JunimoNoteMenuPatches.OnMenuChanged();
             }
+        }
+
+        /// <summary>Raised at start of each tick, BEFORE Game.Update(). Captures CurrentToolIndex
+        /// before the game's native trigger code can corrupt it.</summary>
+        private void OnUpdateTicking(object sender, UpdateTickingEventArgs e)
+        {
+            if (!Context.IsWorldReady) return;
+            var player = Game1.player;
+            if (player != null)
+                _preUpdateToolIndex = player.CurrentToolIndex;
         }
 
         /// <summary>Raised every game tick. Used to enforce toolbar row locking and handle triggers.</summary>
@@ -286,8 +303,11 @@ namespace AndroidConsolizer
 
             // Use _triggerSlotTarget as base for next move — it persists our last
             // trigger-set position and is immune to the game's extra +1 corruption.
-            // Only fall back to CurrentToolIndex if we've never set a trigger position.
-            int baseIndex = _triggerSlotTarget >= 0 ? _triggerSlotTarget : player.CurrentToolIndex;
+            // Fall back to _preUpdateToolIndex (captured BEFORE Game.Update corrupts it),
+            // not player.CurrentToolIndex which is already moved by the game on the press tick.
+            int baseIndex = _triggerSlotTarget >= 0 ? _triggerSlotTarget
+                : _preUpdateToolIndex >= 0 ? _preUpdateToolIndex
+                : player.CurrentToolIndex;
             int positionInRow = baseIndex % 12;
 
             // Left trigger - move left (on press edge)
