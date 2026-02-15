@@ -39,13 +39,15 @@ namespace AndroidConsolizer
         /// <summary>Threshold for trigger activation (0.0 to 1.0).</summary>
         private const float TriggerThreshold = 0.5f;
 
-        /// <summary>The slot index we set on the last trigger press. While a trigger is held,
-        /// any external changes (from the game's native trigger handling) are corrected back.</summary>
+        /// <summary>The slot index we set on the last trigger press. Persists across presses
+        /// to serve as the base for the next trigger move. Cleared after grace period expires
+        /// with no new trigger input, so other navigation methods can take over.</summary>
         private int _triggerSlotTarget = -1;
 
-        /// <summary>Player's CurrentToolIndex at the end of the last tick. Used to calculate
-        /// trigger moves relative to OUR position, not the game's already-moved position.</summary>
-        private int _positionEndOfLastTick = -1;
+        /// <summary>Remaining ticks to keep enforcing _triggerSlotTarget after triggers are released.
+        /// The game's native trigger handling can make a delayed +1 move after we release —
+        /// this grace period catches and corrects it.</summary>
+        private int _triggerReleaseGraceTicks = 0;
 
         /// <summary>Tick when Start was first pressed during a skippable event (for double-press skip).</summary>
         private int cutsceneSkipFirstPressTick = -1;
@@ -259,7 +261,6 @@ namespace AndroidConsolizer
             }
 
             lastToolIndex = currentIndex;
-            _positionEndOfLastTick = currentIndex;
         }
 
         /// <summary>Handle trigger input directly via GamePadState for slot navigation.</summary>
@@ -283,9 +284,10 @@ namespace AndroidConsolizer
             bool isLeftTriggerDown = leftTrigger > TriggerThreshold;
             bool isRightTriggerDown = rightTrigger > TriggerThreshold;
 
-            // Use our tracked position from end of last tick, not the game's
-            // potentially-already-moved position, to avoid double-counting.
-            int baseIndex = _positionEndOfLastTick >= 0 ? _positionEndOfLastTick : player.CurrentToolIndex;
+            // Use _triggerSlotTarget as base for next move — it persists our last
+            // trigger-set position and is immune to the game's extra +1 corruption.
+            // Only fall back to CurrentToolIndex if we've never set a trigger position.
+            int baseIndex = _triggerSlotTarget >= 0 ? _triggerSlotTarget : player.CurrentToolIndex;
             int positionInRow = baseIndex % 12;
 
             // Left trigger - move left (on press edge)
@@ -296,6 +298,7 @@ namespace AndroidConsolizer
                 int newIndex = rowStart + newPosition;
                 player.CurrentToolIndex = newIndex;
                 _triggerSlotTarget = newIndex;
+                _triggerReleaseGraceTicks = 0;
                 Game1.playSound("shwip");
                 if (Config.VerboseLogging)
                     this.Monitor.Log($"LT (direct): Position {positionInRow} -> {newPosition}, Index {baseIndex} -> {newIndex}", LogLevel.Debug);
@@ -309,14 +312,16 @@ namespace AndroidConsolizer
                 int newIndex = rowStart + newPosition;
                 player.CurrentToolIndex = newIndex;
                 _triggerSlotTarget = newIndex;
+                _triggerReleaseGraceTicks = 0;
                 Game1.playSound("shwip");
                 if (Config.VerboseLogging)
                     this.Monitor.Log($"RT (direct): Position {positionInRow} -> {newPosition}, Index {baseIndex} -> {newIndex}", LogLevel.Debug);
             }
 
-            // While a trigger is held, enforce our position against the game's native handling
+            // Enforce our position while trigger is held
             if (_triggerSlotTarget >= 0 && (isLeftTriggerDown || isRightTriggerDown))
             {
+                _triggerReleaseGraceTicks = 5; // Reset grace period while held
                 if (player.CurrentToolIndex != _triggerSlotTarget)
                 {
                     if (Config.VerboseLogging)
@@ -324,10 +329,24 @@ namespace AndroidConsolizer
                     player.CurrentToolIndex = _triggerSlotTarget;
                 }
             }
-
-            // Clear slot lock when both triggers released
-            if (!isLeftTriggerDown && !isRightTriggerDown)
+            // After release, keep enforcing for a grace period to catch the game's
+            // delayed +1 move that happens after we release the trigger
+            else if (_triggerSlotTarget >= 0 && _triggerReleaseGraceTicks > 0)
+            {
+                _triggerReleaseGraceTicks--;
+                if (player.CurrentToolIndex != _triggerSlotTarget)
+                {
+                    if (Config.VerboseLogging)
+                        this.Monitor.Log($"Grace correction: game moved to {player.CurrentToolIndex}, correcting to {_triggerSlotTarget} (grace={_triggerReleaseGraceTicks})", LogLevel.Debug);
+                    player.CurrentToolIndex = _triggerSlotTarget;
+                }
+            }
+            // Grace period expired and triggers fully released — clear target
+            // so other navigation methods (D-pad, bumpers) can change the slot
+            else if (_triggerSlotTarget >= 0 && !isLeftTriggerDown && !isRightTriggerDown)
+            {
                 _triggerSlotTarget = -1;
+            }
 
             wasLeftTriggerDown = isLeftTriggerDown;
             wasRightTriggerDown = isRightTriggerDown;
