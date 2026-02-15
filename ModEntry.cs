@@ -44,16 +44,9 @@ namespace AndroidConsolizer
         /// with no new trigger input, so other navigation methods can take over.</summary>
         private int _triggerSlotTarget = -1;
 
-        /// <summary>Remaining ticks to keep enforcing _triggerSlotTarget after triggers are released.
-        /// The game's native trigger handling can make a delayed +1 move after we release —
-        /// this grace period catches and corrects it.</summary>
-        private int _triggerReleaseGraceTicks = 0;
-
-        /// <summary>Player's CurrentToolIndex captured BEFORE Game.Update() runs each tick.
-        /// The game's native trigger code moves the slot during Update(), so by the time
-        /// our OnUpdateTicked fires, CurrentToolIndex is already corrupted. This captures
-        /// the true pre-corruption value via UpdateTicking.</summary>
-        private int _preUpdateToolIndex = -1;
+        /// <summary>Ticks since the last trigger press or release. Used to decide when to
+        /// stop enforcing _triggerSlotTarget so other navigation can take over.</summary>
+        private int _ticksSinceLastTriggerActivity = 0;
 
         /// <summary>Tick when Start was first pressed during a skippable event (for double-press skip).</summary>
         private int cutsceneSkipFirstPressTick = -1;
@@ -186,14 +179,18 @@ namespace AndroidConsolizer
             }
         }
 
-        /// <summary>Raised at start of each tick, BEFORE Game.Update(). Captures CurrentToolIndex
-        /// before the game's native trigger code can corrupt it.</summary>
+        /// <summary>Raised at start of each tick, BEFORE Game.Update(). Enforces our trigger
+        /// slot target so the game's native trigger code can't corrupt the position.</summary>
         private void OnUpdateTicking(object sender, UpdateTickingEventArgs e)
         {
             if (!Context.IsWorldReady) return;
             var player = Game1.player;
-            if (player != null)
-                _preUpdateToolIndex = player.CurrentToolIndex;
+            if (player == null || _triggerSlotTarget < 0) return;
+
+            // Enforce our target position BEFORE Game.Update() runs.
+            // This prevents the game's native trigger code from compounding moves.
+            if (player.CurrentToolIndex != _triggerSlotTarget)
+                player.CurrentToolIndex = _triggerSlotTarget;
         }
 
         /// <summary>Raised every game tick. Used to enforce toolbar row locking and handle triggers.</summary>
@@ -301,14 +298,17 @@ namespace AndroidConsolizer
             bool isLeftTriggerDown = leftTrigger > TriggerThreshold;
             bool isRightTriggerDown = rightTrigger > TriggerThreshold;
 
-            // Use _triggerSlotTarget as base for next move — it persists our last
-            // trigger-set position and is immune to the game's extra +1 corruption.
-            // Fall back to _preUpdateToolIndex (captured BEFORE Game.Update corrupts it),
-            // not player.CurrentToolIndex which is already moved by the game on the press tick.
-            int baseIndex = _triggerSlotTarget >= 0 ? _triggerSlotTarget
-                : _preUpdateToolIndex >= 0 ? _preUpdateToolIndex
-                : player.CurrentToolIndex;
+            // Use _triggerSlotTarget as base — it persists our last trigger-set position
+            // and is immune to the game's corruption. OnUpdateTicking enforces it before
+            // Game.Update each tick, so the game can never compound moves.
+            int baseIndex = _triggerSlotTarget >= 0 ? _triggerSlotTarget : player.CurrentToolIndex;
             int positionInRow = baseIndex % 12;
+
+            // Track trigger activity for idle timeout
+            if (isLeftTriggerDown || isRightTriggerDown)
+                _ticksSinceLastTriggerActivity = 0;
+            else
+                _ticksSinceLastTriggerActivity++;
 
             // Left trigger - move left (on press edge)
             if (isLeftTriggerDown && !wasLeftTriggerDown)
@@ -318,7 +318,6 @@ namespace AndroidConsolizer
                 int newIndex = rowStart + newPosition;
                 player.CurrentToolIndex = newIndex;
                 _triggerSlotTarget = newIndex;
-                _triggerReleaseGraceTicks = 0;
                 Game1.playSound("shwip");
                 if (Config.VerboseLogging)
                     this.Monitor.Log($"LT (direct): Position {positionInRow} -> {newPosition}, Index {baseIndex} -> {newIndex}", LogLevel.Debug);
@@ -332,41 +331,23 @@ namespace AndroidConsolizer
                 int newIndex = rowStart + newPosition;
                 player.CurrentToolIndex = newIndex;
                 _triggerSlotTarget = newIndex;
-                _triggerReleaseGraceTicks = 0;
                 Game1.playSound("shwip");
                 if (Config.VerboseLogging)
                     this.Monitor.Log($"RT (direct): Position {positionInRow} -> {newPosition}, Index {baseIndex} -> {newIndex}", LogLevel.Debug);
             }
 
-            // Enforce our position while trigger is held
-            if (_triggerSlotTarget >= 0 && (isLeftTriggerDown || isRightTriggerDown))
+            // Post-Update correction: undo any game moves this tick
+            if (_triggerSlotTarget >= 0 && player.CurrentToolIndex != _triggerSlotTarget)
             {
-                _triggerReleaseGraceTicks = 5; // Reset grace period while held
-                if (player.CurrentToolIndex != _triggerSlotTarget)
-                {
-                    if (Config.VerboseLogging)
-                        this.Monitor.Log($"Slot correction: game moved to {player.CurrentToolIndex}, correcting to {_triggerSlotTarget}", LogLevel.Debug);
-                    player.CurrentToolIndex = _triggerSlotTarget;
-                }
+                if (Config.VerboseLogging)
+                    this.Monitor.Log($"Slot correction: game moved to {player.CurrentToolIndex}, correcting to {_triggerSlotTarget}", LogLevel.Debug);
+                player.CurrentToolIndex = _triggerSlotTarget;
             }
-            // After release, keep enforcing for a grace period to catch the game's
-            // delayed +1 move that happens after we release the trigger
-            else if (_triggerSlotTarget >= 0 && _triggerReleaseGraceTicks > 0)
-            {
-                _triggerReleaseGraceTicks--;
-                if (player.CurrentToolIndex != _triggerSlotTarget)
-                {
-                    if (Config.VerboseLogging)
-                        this.Monitor.Log($"Grace correction: game moved to {player.CurrentToolIndex}, correcting to {_triggerSlotTarget} (grace={_triggerReleaseGraceTicks})", LogLevel.Debug);
-                    player.CurrentToolIndex = _triggerSlotTarget;
-                }
-            }
-            // Grace period expired and triggers fully released — clear target
-            // so other navigation methods (D-pad, bumpers) can change the slot
-            else if (_triggerSlotTarget >= 0 && !isLeftTriggerDown && !isRightTriggerDown)
-            {
+
+            // Clear target after triggers idle for 30 ticks (~0.5s) so other
+            // navigation methods (D-pad, bumpers) can change the slot
+            if (_triggerSlotTarget >= 0 && _ticksSinceLastTriggerActivity > 30)
                 _triggerSlotTarget = -1;
-            }
 
             wasLeftTriggerDown = isLeftTriggerDown;
             wasRightTriggerDown = isRightTriggerDown;
