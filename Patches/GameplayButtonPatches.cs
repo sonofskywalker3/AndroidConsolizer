@@ -226,13 +226,30 @@ namespace AndroidConsolizer.Patches
 
                 // Zero out triggers during gameplay when our toolbar handles slot navigation.
                 // This prevents the game's own trigger-based toolbar code from also moving slots.
+                // Must zero BOTH analog values AND digital trigger buttons (Buttons.LeftTrigger/
+                // RightTrigger) since the GamePadState constructor preserves buttons as-is.
                 // Our HandleTriggersDirectly() reads RawLeftTrigger/RawRightTrigger instead.
                 if (ShouldSuppressTriggers() && (__result.Triggers.Left > 0f || __result.Triggers.Right > 0f))
                 {
+                    var btns = __result.Buttons;
+                    var cleanButtons = new GamePadButtons(
+                        ((btns.A == ButtonState.Pressed) ? Buttons.A : 0) |
+                        ((btns.B == ButtonState.Pressed) ? Buttons.B : 0) |
+                        ((btns.X == ButtonState.Pressed) ? Buttons.X : 0) |
+                        ((btns.Y == ButtonState.Pressed) ? Buttons.Y : 0) |
+                        ((btns.Start == ButtonState.Pressed) ? Buttons.Start : 0) |
+                        ((btns.Back == ButtonState.Pressed) ? Buttons.Back : 0) |
+                        ((btns.LeftStick == ButtonState.Pressed) ? Buttons.LeftStick : 0) |
+                        ((btns.RightStick == ButtonState.Pressed) ? Buttons.RightStick : 0) |
+                        ((btns.LeftShoulder == ButtonState.Pressed) ? Buttons.LeftShoulder : 0) |
+                        ((btns.RightShoulder == ButtonState.Pressed) ? Buttons.RightShoulder : 0) |
+                        ((btns.BigButton == ButtonState.Pressed) ? Buttons.BigButton : 0)
+                        // Intentionally omitting Buttons.LeftTrigger and Buttons.RightTrigger
+                    );
                     __result = new GamePadState(
                         __result.ThumbSticks,
                         new GamePadTriggers(0f, 0f),
-                        __result.Buttons,
+                        cleanButtons,
                         __result.DPad
                     );
                 }
