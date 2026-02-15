@@ -54,14 +54,15 @@ namespace AndroidConsolizer.Patches
         internal static void InvalidateCache() { _cachedTick = -1; }
 
         /// <summary>Whether triggers should be zeroed in GetState to prevent the game's
-        /// native toolbar navigation from firing (our code reads RawLeftTrigger/RawRightTrigger instead).</summary>
+        /// native toolbar navigation from firing (our code reads RawLeftTrigger/RawRightTrigger instead).
+        /// Does NOT check Context.IsPlayerFree — that can flicker during tool animations,
+        /// causing the first GetState call of a tick to leak real trigger values to the game.</summary>
         internal static bool ShouldSuppressTriggers()
         {
             return ModEntry.Config != null
                 && ModEntry.Config.EnableConsoleToolbar
                 && !ModEntry.Config.UseBumpersInsteadOfTriggers
-                && Game1.activeClickableMenu == null
-                && Context.IsPlayerFree;
+                && Game1.activeClickableMenu == null;
         }
 
         /// <summary>Apply Harmony patches.</summary>
