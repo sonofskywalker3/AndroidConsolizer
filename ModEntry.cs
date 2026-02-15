@@ -260,10 +260,10 @@ namespace AndroidConsolizer
             if (Config.UseBumpersInsteadOfTriggers)
                 return;
 
-            GamePadState gpState = GamePad.GetState(PlayerIndex.One);
-
-            float leftTrigger = gpState.Triggers.Left;
-            float rightTrigger = gpState.Triggers.Right;
+            // Read raw trigger values cached by GetState_Postfix before it zeroes them.
+            // Triggers are zeroed at GetState level to block the game's own toolbar navigation.
+            float leftTrigger = Patches.GameplayButtonPatches.RawLeftTrigger;
+            float rightTrigger = Patches.GameplayButtonPatches.RawRightTrigger;
 
             // Debug: Log trigger values when they're non-zero
             if (Config.VerboseLogging && (leftTrigger > 0.01f || rightTrigger > 0.01f))

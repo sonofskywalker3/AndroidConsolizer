@@ -22,9 +22,15 @@ namespace AndroidConsolizer.Patches
         /// <summary>Raw right stick Y cached from GetState before suppression, for ShopMenuPatches navigation.</summary>
         internal static float RawRightStickY;
 
+        /// <summary>Raw trigger values cached from GetState before suppression, for HandleTriggersDirectly.</summary>
+        internal static float RawLeftTrigger;
+        internal static float RawRightTrigger;
+
         /// <summary>Cached swapped GamePadState to ensure all GetState() calls within the same tick return identical results.</summary>
         private static GamePadState? _cachedState;
         private static float _cachedRawRightStickY;
+        private static float _cachedRawLeftTrigger;
+        private static float _cachedRawRightTrigger;
         private static int _cachedTick = -1;
 
         /// <summary>Suppress logical A in GetState output until the physical button is released.
@@ -46,6 +52,17 @@ namespace AndroidConsolizer.Patches
         /// Must be called after setting Suppress*UntilRelease flags mid-tick,
         /// since the cache may already have the unsuppressed state.</summary>
         internal static void InvalidateCache() { _cachedTick = -1; }
+
+        /// <summary>Whether triggers should be zeroed in GetState to prevent the game's
+        /// native toolbar navigation from firing (our code reads RawLeftTrigger/RawRightTrigger instead).</summary>
+        internal static bool ShouldSuppressTriggers()
+        {
+            return ModEntry.Config != null
+                && ModEntry.Config.EnableConsoleToolbar
+                && !ModEntry.Config.UseBumpersInsteadOfTriggers
+                && Game1.activeClickableMenu == null
+                && Context.IsPlayerFree;
+        }
 
         /// <summary>Apply Harmony patches.</summary>
         public static void Apply(Harmony harmony, IMonitor monitor)
@@ -175,6 +192,8 @@ namespace AndroidConsolizer.Patches
                 {
                     __result = _cachedState.Value;
                     RawRightStickY = _cachedRawRightStickY;
+                    RawLeftTrigger = _cachedRawLeftTrigger;
+                    RawRightTrigger = _cachedRawRightTrigger;
                     return;
                 }
 
@@ -187,6 +206,10 @@ namespace AndroidConsolizer.Patches
 
                 // Cache raw right stick Y before any suppression, so ShopMenuPatches can use it
                 RawRightStickY = __result.ThumbSticks.Right.Y;
+
+                // Cache raw trigger values before suppression, so HandleTriggersDirectly can use them
+                RawLeftTrigger = __result.Triggers.Left;
+                RawRightTrigger = __result.Triggers.Right;
 
                 // Zero out right thumbstick when ShopMenu is on buy tab.
                 // This prevents vanilla (and Game1's scroll-wheel conversion) from scrolling
@@ -201,7 +224,18 @@ namespace AndroidConsolizer.Patches
                     );
                 }
 
-
+                // Zero out triggers during gameplay when our toolbar handles slot navigation.
+                // This prevents the game's own trigger-based toolbar code from also moving slots.
+                // Our HandleTriggersDirectly() reads RawLeftTrigger/RawRightTrigger instead.
+                if (ShouldSuppressTriggers() && (__result.Triggers.Left > 0f || __result.Triggers.Right > 0f))
+                {
+                    __result = new GamePadState(
+                        __result.ThumbSticks,
+                        new GamePadTriggers(0f, 0f),
+                        __result.Buttons,
+                        __result.DPad
+                    );
+                }
 
                 // A/B swap applies everywhere (main menu, game menus, gameplay)
                 bool swapAB = ShouldSwapAB();
@@ -215,6 +249,8 @@ namespace AndroidConsolizer.Patches
                     __result = ApplyButtonSuppression(__result);
                     _cachedState = __result;
                     _cachedRawRightStickY = RawRightStickY;
+                    _cachedRawLeftTrigger = RawLeftTrigger;
+                    _cachedRawRightTrigger = RawRightTrigger;
                     _cachedTick = currentTick;
                     return;
                 }
@@ -237,6 +273,8 @@ namespace AndroidConsolizer.Patches
                     __result = ApplyButtonSuppression(__result);
                     _cachedState = __result;
                     _cachedRawRightStickY = RawRightStickY;
+                    _cachedRawLeftTrigger = RawLeftTrigger;
+                    _cachedRawRightTrigger = RawRightTrigger;
                     _cachedTick = currentTick;
                     return;
                 }
@@ -266,6 +304,8 @@ namespace AndroidConsolizer.Patches
                 __result = ApplyButtonSuppression(__result);
                 _cachedState = __result;
                 _cachedRawRightStickY = RawRightStickY;
+                _cachedRawLeftTrigger = RawLeftTrigger;
+                _cachedRawRightTrigger = RawRightTrigger;
                 _cachedTick = currentTick;
             }
             catch
