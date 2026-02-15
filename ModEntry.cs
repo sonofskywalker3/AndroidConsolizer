@@ -44,9 +44,6 @@ namespace AndroidConsolizer
         /// with no new trigger input, so other navigation methods can take over.</summary>
         private int _triggerSlotTarget = -1;
 
-        /// <summary>Ticks since the last trigger press or release. Used to decide when to
-        /// stop enforcing _triggerSlotTarget so other navigation can take over.</summary>
-        private int _ticksSinceLastTriggerActivity = 0;
 
         /// <summary>Tick when Start was first pressed during a skippable event (for double-press skip).</summary>
         private int cutsceneSkipFirstPressTick = -1;
@@ -304,12 +301,6 @@ namespace AndroidConsolizer
             int baseIndex = _triggerSlotTarget >= 0 ? _triggerSlotTarget : player.CurrentToolIndex;
             int positionInRow = baseIndex % 12;
 
-            // Track trigger activity for idle timeout
-            if (isLeftTriggerDown || isRightTriggerDown)
-                _ticksSinceLastTriggerActivity = 0;
-            else
-                _ticksSinceLastTriggerActivity++;
-
             // Left trigger - move left (on press edge)
             if (isLeftTriggerDown && !wasLeftTriggerDown)
             {
@@ -344,10 +335,6 @@ namespace AndroidConsolizer
                 player.CurrentToolIndex = _triggerSlotTarget;
             }
 
-            // Clear target after triggers idle for 30 ticks (~0.5s) so other
-            // navigation methods (D-pad, bumpers) can change the slot
-            if (_triggerSlotTarget >= 0 && _ticksSinceLastTriggerActivity > 30)
-                _triggerSlotTarget = -1;
 
             wasLeftTriggerDown = isLeftTriggerDown;
             wasRightTriggerDown = isRightTriggerDown;
@@ -360,6 +347,15 @@ namespace AndroidConsolizer
             if (Config.VerboseLogging && e.Pressed.Any())
             {
                 this.Monitor.Log($"Buttons pressed: {string.Join(", ", e.Pressed)}", LogLevel.Debug);
+            }
+
+            // Clear trigger slot enforcement when bumpers or D-pad are used for navigation,
+            // so those methods can freely change the toolbar slot.
+            if (_triggerSlotTarget >= 0 &&
+                (e.Pressed.Contains(SButton.LeftShoulder) || e.Pressed.Contains(SButton.RightShoulder) ||
+                 e.Pressed.Contains(SButton.DPadLeft) || e.Pressed.Contains(SButton.DPadRight)))
+            {
+                _triggerSlotTarget = -1;
             }
 
             // Handle inventory menu buttons (sort, bait/tackle)
