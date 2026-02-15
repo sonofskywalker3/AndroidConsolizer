@@ -48,6 +48,10 @@ namespace AndroidConsolizer.Patches
         /// as Pressed for that tick, simulating a screen touch. Used for cutscene skip.</summary>
         internal static int SimulateTouchClickOnTick = -1;
 
+        /// <summary>Guard to prevent 2-param GetState postfix from running when called
+        /// from within the 1-param overload (which delegates to 2-param internally).</summary>
+        private static bool _inOneParamGetState;
+
         /// <summary>Invalidate the cached GetState so the next call recomputes.
         /// Must be called after setting Suppress*UntilRelease flags mid-tick,
         /// since the cache may already have the unsuppressed state.</summary>
@@ -83,6 +87,7 @@ namespace AndroidConsolizer.Patches
                 {
                     harmony.Patch(
                         original: getStateMethod,
+                        prefix: new HarmonyMethod(typeof(GameplayButtonPatches), nameof(GetState_OneParam_Prefix)),
                         postfix: new HarmonyMethod(typeof(GameplayButtonPatches), nameof(GetState_Postfix))
                     );
                     Monitor.Log("Gameplay button patches applied successfully.", LogLevel.Trace);
@@ -90,6 +95,21 @@ namespace AndroidConsolizer.Patches
                 else
                 {
                     Monitor.Log("Could not find GamePad.GetState method!", LogLevel.Error);
+                }
+
+                // Also patch the 2-param overload: GetState(PlayerIndex, GamePadDeadZone)
+                // The game's toolbar code may call this directly, bypassing our 1-param postfix.
+                var getStateDeadZone = typeof(GamePad).GetMethod(
+                    nameof(GamePad.GetState),
+                    new Type[] { typeof(PlayerIndex), typeof(GamePadDeadZone) }
+                );
+                if (getStateDeadZone != null)
+                {
+                    harmony.Patch(
+                        original: getStateDeadZone,
+                        postfix: new HarmonyMethod(typeof(GameplayButtonPatches), nameof(GetState_DeadZone_Postfix))
+                    );
+                    Monitor.Log("GetState(PlayerIndex, GamePadDeadZone) patch applied.", LogLevel.Trace);
                 }
             }
             catch (Exception ex)
@@ -172,6 +192,13 @@ namespace AndroidConsolizer.Patches
             );
         }
 
+        /// <summary>Prefix for 1-param GetState — sets nesting guard so the 2-param postfix
+        /// (called internally by the 1-param overload) knows to skip.</summary>
+        private static void GetState_OneParam_Prefix()
+        {
+            _inOneParamGetState = true;
+        }
+
         /// <summary>
         /// Postfix for GamePad.GetState - modifies the returned state to swap buttons as needed.
         /// A/B swap applies EVERYWHERE (main menu, game menus, gameplay).
@@ -179,6 +206,8 @@ namespace AndroidConsolizer.Patches
         /// </summary>
         private static void GetState_Postfix(PlayerIndex playerIndex, ref GamePadState __result)
         {
+            _inOneParamGetState = false; // Clear nesting guard
+
             try
             {
                 // Only modify for player one
@@ -330,6 +359,20 @@ namespace AndroidConsolizer.Patches
             {
                 // Silently ignore errors to not spam logs every frame
             }
+        }
+
+        /// <summary>Postfix for GetState(PlayerIndex, GamePadDeadZone) — the 2-param overload.
+        /// Only runs when called DIRECTLY (not nested from the 1-param overload).
+        /// Zeroes triggers and applies button swaps/suppression so the game's native toolbar
+        /// code can't move slots through this alternate code path.</summary>
+        private static void GetState_DeadZone_Postfix(PlayerIndex playerIndex, ref GamePadState __result)
+        {
+            // Skip if nested inside 1-param GetState (which handles everything already)
+            if (_inOneParamGetState)
+                return;
+
+            // Delegate to the same processing as the 1-param postfix
+            GetState_Postfix(playerIndex, ref __result);
         }
     }
 }
