@@ -94,6 +94,7 @@ namespace AndroidConsolizer
             Patches.InventoryManagementPatches.Apply(harmony, this.Monitor);
             Patches.CarpenterMenuPatches.Apply(harmony, this.Monitor);
             Patches.JunimoNoteMenuPatches.Apply(harmony, this.Monitor);
+            Patches.GameMenuPatches.Apply(harmony, this.Monitor);
 
             // Register events
             helper.Events.GameLoop.GameLaunched += this.OnGameLaunched;
@@ -173,6 +174,12 @@ namespace AndroidConsolizer
             if (e.OldMenu is JunimoNoteMenu || e.NewMenu is JunimoNoteMenu)
             {
                 Patches.JunimoNoteMenuPatches.OnMenuChanged();
+            }
+
+            // GameMenu diagnostic dump on open
+            if (e.NewMenu is GameMenu newGameMenu)
+            {
+                Patches.GameMenuPatches.OnGameMenuOpened(newGameMenu);
             }
         }
 
