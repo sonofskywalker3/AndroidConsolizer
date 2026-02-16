@@ -327,6 +327,28 @@ namespace AndroidConsolizer.Patches
                 if (__instance.pages == null || __instance.currentTab < 0 || __instance.currentTab >= __instance.pages.Count)
                     return true;
 
+                // Trigger-based tab switching (console parity — LT/RT switch tabs)
+                if (b == Buttons.LeftTrigger)
+                {
+                    int prevTab = __instance.currentTab - 1;
+                    if (prevTab >= 0)
+                    {
+                        Game1.playSound("smallSelect");
+                        __instance.changeTab(prevTab);
+                    }
+                    return false;
+                }
+                if (b == Buttons.RightTrigger)
+                {
+                    int nextTab = __instance.currentTab + 1;
+                    if (nextTab < __instance.pages.Count)
+                    {
+                        Game1.playSound("smallSelect");
+                        __instance.changeTab(nextTab);
+                    }
+                    return false;
+                }
+
                 var page = __instance.pages[__instance.currentTab];
                 string typeName = page.GetType().Name;
 
