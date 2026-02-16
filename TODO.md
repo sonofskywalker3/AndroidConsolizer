@@ -205,7 +205,7 @@ These need to be re-implemented **one at a time, one per 0.0.1 patch, each commi
 - **Also see #25b** for slingshot combat/aiming issues (separate from inventory ammo management).
 - **Priority:** Medium — quality of life for slingshot users.
 
-### 11d. Chest Y-Transfer Strips Attachments from Fishing Rod / Slingshot
+### 11d. Chest Y-Transfer Strips Attachments from Fishing Rod / Slingshot — FIXED in v3.3.12-v3.3.13
 - **Symptom:** Pressing Y on a loaded fishing rod or slingshot in the chest menu transfers the tool to the chest but all attachments (bait, tackle, ammo) are silently destroyed.
 - **Root cause:** `TransferOneToChest` (line ~1236 in `ItemGrabMenuPatches.cs`) calls `item.getOne()` which creates a bare copy of the tool without attachments. Then `item.Stack--` → 0 nulls the original (which had the attachments). Both `TransferToChest` (A button) and `TransferOneToChest` (Y button) are affected — A moves the reference directly (attachments preserved), but Y creates a copy (attachments lost).
 - **Log evidence (v3.2.23):** User had Fiberglass Rod with 33x Bait. Y in chest → `Put 1x Fiberglass Rod into chest (0 remain in player)` — bait destroyed. Same for Slingshot — ammo lost on Y transfer.
