@@ -38,6 +38,9 @@ namespace AndroidConsolizer.Patches
         private static FieldInfo _socialSlotPositionField;
         private static FieldInfo _socialSlotsYStartField;
 
+        // Track slotPosition to detect right-stick scroll changes
+        private static int _lastSocialSlotPosition = -1;
+
         public static void Apply(Harmony harmony, IMonitor monitor)
         {
             Monitor = monitor;
@@ -300,6 +303,7 @@ namespace AndroidConsolizer.Patches
                         Monitor?.Log($"[GameMenu] SocialPage: snapped to slot[{slotPosition}] ID={firstVisibleSlot.myID} at ({firstVisibleSlot.bounds.X},{firstVisibleSlot.bounds.Y})", LogLevel.Info);
                 }
 
+                _lastSocialSlotPosition = slotPosition;
                 Monitor?.Log($"[GameMenu] SocialPage: fixed {charSlots.Count} slot bounds", LogLevel.Trace);
             }
             catch (Exception ex)
@@ -466,17 +470,31 @@ namespace AndroidConsolizer.Patches
 
         /// <summary>
         /// Navigate to the next (+1) or previous (-1) social slot.
-        /// Scroll-aware: updates slotPosition and re-fixes bounds when
-        /// navigating past the visible area.
+        /// Uses the game's own receiveScrollWheelAction to scroll when navigating
+        /// past the visible area, keeping the MobileScrollbox in sync.
+        /// Also re-fixes bounds when slotPosition changes from right-stick scroll.
         /// </summary>
         private static void NavigateSocialSlot(IClickableMenu page, int direction)
         {
             try
             {
-                if (_socialCharacterSlotsField == null) return;
+                if (_socialCharacterSlotsField == null || _socialSlotPositionField == null ||
+                    _socialSlotHeightField == null || _socialMainBoxField == null) return;
 
                 var charSlots = _socialCharacterSlotsField.GetValue(page) as IList;
                 if (charSlots == null || charSlots.Count == 0) return;
+
+                int slotPosition = (int)_socialSlotPositionField.GetValue(page);
+                int slotHeight = (int)_socialSlotHeightField.GetValue(page);
+                var mainBox = (Rectangle)_socialMainBoxField.GetValue(page);
+                int visibleSlots = mainBox.Height / slotHeight;
+
+                // If slotPosition changed since last fix (e.g., right stick scroll), re-fix bounds
+                if (slotPosition != _lastSocialSlotPosition)
+                {
+                    RefixSocialBounds(page, charSlots, slotPosition, slotHeight, mainBox);
+                    _lastSocialSlotPosition = slotPosition;
+                }
 
                 // Find current slot index
                 var current = page.currentlySnappedComponent;
@@ -489,35 +507,39 @@ namespace AndroidConsolizer.Patches
                         break;
                     }
                 }
-
-                if (currentIndex < 0) currentIndex = 0;
+                if (currentIndex < 0) currentIndex = slotPosition;
 
                 int newIndex = currentIndex + direction;
 
-                // Clamp to valid range — don't wrap
+                // Clamp to total range
                 if (newIndex < 0 || newIndex >= charSlots.Count)
                     return;
 
                 // Check if we need to scroll
-                if (_socialSlotPositionField != null && _socialSlotHeightField != null && _socialMainBoxField != null)
+                if (newIndex < slotPosition || newIndex >= slotPosition + visibleSlots)
                 {
-                    int slotPosition = (int)_socialSlotPositionField.GetValue(page);
-                    int slotHeight = (int)_socialSlotHeightField.GetValue(page);
-                    var mainBox = (Rectangle)_socialMainBoxField.GetValue(page);
-                    int visibleSlots = mainBox.Height / slotHeight;
+                    // Use the game's own scroll mechanism to keep MobileScrollbox in sync
+                    // In Stardew: positive direction = scroll up, negative = scroll down
+                    int scrollDir = direction > 0 ? -1 : 1;
+                    page.receiveScrollWheelAction(scrollDir);
 
-                    if (newIndex < slotPosition)
+                    // Re-read slotPosition after game scrolled
+                    int newSlotPos = (int)_socialSlotPositionField.GetValue(page);
+                    if (newSlotPos != slotPosition)
                     {
-                        // Scrolling up past the top visible slot
-                        _socialSlotPositionField.SetValue(page, newIndex);
-                        FixSocialPage(page);
+                        slotPosition = newSlotPos;
+                        RefixSocialBounds(page, charSlots, slotPosition, slotHeight, mainBox);
+                        _lastSocialSlotPosition = slotPosition;
                     }
-                    else if (newIndex >= slotPosition + visibleSlots)
+                    else
                     {
-                        // Scrolling down past the bottom visible slot
-                        _socialSlotPositionField.SetValue(page, newIndex - visibleSlots + 1);
-                        FixSocialPage(page);
+                        // Game didn't scroll (at boundary) — don't navigate past visible
+                        return;
                     }
+
+                    // Verify target is now visible after scroll
+                    if (newIndex < slotPosition || newIndex >= slotPosition + visibleSlots)
+                        return;
                 }
 
                 var newSlot = charSlots[newIndex] as ClickableComponent;
@@ -528,11 +550,35 @@ namespace AndroidConsolizer.Patches
                 Game1.playSound("shiny4");
 
                 if (ModEntry.Config.VerboseLogging)
-                    Monitor?.Log($"[GameMenu] SocialPage: nav {(direction > 0 ? "down" : "up")} → slot[{newIndex}] ID={newSlot.myID} at ({newSlot.bounds.X},{newSlot.bounds.Y})", LogLevel.Info);
+                    Monitor?.Log($"[GameMenu] SocialPage: nav {(direction > 0 ? "down" : "up")} → slot[{newIndex}] ID={newSlot.myID} at ({newSlot.bounds.X},{newSlot.bounds.Y}), slotPosition={slotPosition}", LogLevel.Info);
             }
             catch (Exception ex)
             {
                 Monitor?.Log($"[GameMenu] Error in NavigateSocialSlot: {ex.Message}", LogLevel.Error);
+            }
+        }
+
+        /// <summary>
+        /// Re-fix slot bounds without changing the snap target.
+        /// Used after scroll position changes (right stick or receiveScrollWheelAction).
+        /// </summary>
+        private static void RefixSocialBounds(IClickableMenu page, IList charSlots, int slotPosition, int slotHeight, Rectangle mainBox)
+        {
+            int slotsYOffset = 0;
+            if (_socialSlotsYStartField != null)
+                slotsYOffset = (int)_socialSlotsYStartField.GetValue(page);
+            int slotsYStart = mainBox.Y + slotsYOffset;
+
+            for (int i = 0; i < charSlots.Count; i++)
+            {
+                var slot = charSlots[i] as ClickableComponent;
+                if (slot == null) continue;
+
+                int visualIndex = i - slotPosition;
+                int newY = slotsYStart + (visualIndex * slotHeight);
+
+                var b = slot.bounds;
+                slot.bounds = new Rectangle(b.X, newY, b.Width, slotHeight);
             }
         }
 
