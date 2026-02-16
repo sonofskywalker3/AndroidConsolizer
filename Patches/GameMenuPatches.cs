@@ -37,12 +37,22 @@ namespace AndroidConsolizer.Patches
         private static FieldInfo _socialMainBoxField;
         private static FieldInfo _socialSlotPositionField;
         private static FieldInfo _socialSlotsYStartField;
+        private static FieldInfo _socialClickedEntryField;
+        private static FieldInfo _socialScrollAreaField;
 
         // Track slotPosition to detect right-stick scroll changes
         private static int _lastSocialSlotPosition = -1;
 
+        // GetMouseState override for A-press on Social tab
+        // (Android's receiveLeftClick reads GetMouseState internally, ignores x,y params)
+        private static bool _overridingSocialMouse;
+        private static int _socialMouseRawX, _socialMouseRawY;
+
         // Diagnostic: track child menu on SocialPage (gift log)
         private static bool _dumpedChildMenu = false;
+
+        // Diagnostic: one-time dump of SocialPage fields to find scrollbox
+        private static bool _dumpedSocialFields = false;
 
         public static void Apply(Harmony harmony, IMonitor monitor)
         {
@@ -64,6 +74,25 @@ namespace AndroidConsolizer.Patches
                     original: AccessTools.Method(typeof(GameMenu), nameof(GameMenu.receiveGamePadButton)),
                     prefix: new HarmonyMethod(typeof(GameMenuPatches), nameof(ReceiveGamePadButton_Prefix))
                 );
+
+                // GetMouseState override for A-press on Social tab
+                var inputType = Game1.input.GetType();
+                var getMouseStateMethod = AccessTools.Method(inputType, "GetMouseState");
+                if (getMouseStateMethod != null)
+                {
+                    harmony.Patch(
+                        original: getMouseStateMethod,
+                        postfix: new HarmonyMethod(typeof(GameMenuPatches), nameof(GetMouseState_Postfix))
+                    );
+                }
+                var mouseGetState = AccessTools.Method(typeof(Mouse), nameof(Mouse.GetState));
+                if (mouseGetState != null)
+                {
+                    harmony.Patch(
+                        original: mouseGetState,
+                        postfix: new HarmonyMethod(typeof(GameMenuPatches), nameof(GetMouseState_Postfix))
+                    );
+                }
 
                 Monitor.Log("GameMenu patches applied.", LogLevel.Trace);
             }
@@ -245,6 +274,8 @@ namespace AndroidConsolizer.Patches
                     _socialMainBoxField = AccessTools.Field(pageType, "mainBox");
                     _socialSlotPositionField = AccessTools.Field(pageType, "slotPosition");
                     _socialSlotsYStartField = AccessTools.Field(pageType, "slotsYStart");
+                    _socialClickedEntryField = AccessTools.Field(pageType, "clickedEntry");
+                    _socialScrollAreaField = AccessTools.Field(pageType, "scrollArea");
                 }
 
                 if (_socialCharacterSlotsField == null || _socialSlotHeightField == null || _socialMainBoxField == null)
@@ -308,6 +339,98 @@ namespace AndroidConsolizer.Patches
 
                 _lastSocialSlotPosition = slotPosition;
                 Monitor?.Log($"[GameMenu] SocialPage: fixed {charSlots.Count} slot bounds", LogLevel.Trace);
+
+                // One-time dump of all SocialPage fields to find scrollbox
+                if (!_dumpedSocialFields)
+                {
+                    _dumpedSocialFields = true;
+                    Monitor?.Log("[SocialDiag] === SocialPage field dump ===", LogLevel.Trace);
+                    var pageType = page.GetType();
+                    foreach (var field in pageType.GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public))
+                    {
+                        try
+                        {
+                            var val = field.GetValue(page);
+                            string valStr = val?.GetType().Name ?? "null";
+                            if (val is int i) valStr = i.ToString();
+                            else if (val is bool b) valStr = b.ToString();
+                            else if (val is float f) valStr = f.ToString();
+                            else if (val is Rectangle r) valStr = $"{{X:{r.X} Y:{r.Y} W:{r.Width} H:{r.Height}}}";
+                            else if (val is IList list) valStr = $"{val.GetType().Name}[{list.Count}]";
+                            Monitor?.Log($"[SocialDiag]   {field.Name}: {field.FieldType.Name} = {valStr}", LogLevel.Trace);
+                        }
+                        catch { }
+                    }
+                    // Also check base class (IClickableMenu) fields
+                    foreach (var field in typeof(IClickableMenu).GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public))
+                    {
+                        try
+                        {
+                            var val = field.GetValue(page);
+                            string valStr = val?.GetType().Name ?? "null";
+                            if (val is IList list) valStr = $"{val.GetType().Name}[{list.Count}]";
+                            Monitor?.Log($"[SocialDiag]   (base) {field.Name}: {field.FieldType.Name} = {valStr}", LogLevel.Trace);
+                        }
+                        catch { }
+                    }
+                    // Dump MobileScrollbox fields to understand scroll API
+                    if (_socialScrollAreaField != null)
+                    {
+                        var scrollArea = _socialScrollAreaField.GetValue(page);
+                        if (scrollArea != null)
+                        {
+                            Monitor?.Log("[SocialDiag] === MobileScrollbox field dump ===", LogLevel.Trace);
+                            var scrollType = scrollArea.GetType();
+                            foreach (var field in scrollType.GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public))
+                            {
+                                try
+                                {
+                                    var val = field.GetValue(scrollArea);
+                                    string valStr = val?.GetType().Name ?? "null";
+                                    if (val is int iv) valStr = iv.ToString();
+                                    else if (val is bool bv) valStr = bv.ToString();
+                                    else if (val is float fv) valStr = fv.ToString();
+                                    else if (val is double dv) valStr = dv.ToString();
+                                    else if (val is Rectangle rv) valStr = $"{{X:{rv.X} Y:{rv.Y} W:{rv.Width} H:{rv.Height}}}";
+                                    else if (val is Vector2 v2) valStr = $"({v2.X},{v2.Y})";
+                                    else if (val is IList lv) valStr = $"{val.GetType().Name}[{lv.Count}]";
+                                    Monitor?.Log($"[SocialDiag]   scroll.{field.Name}: {field.FieldType.Name} = {valStr}", LogLevel.Trace);
+                                }
+                                catch { }
+                            }
+                            // Also check base class fields
+                            var baseType = scrollType.BaseType;
+                            if (baseType != null && baseType != typeof(object))
+                            {
+                                Monitor?.Log($"[SocialDiag]   --- base: {baseType.Name} ---", LogLevel.Trace);
+                                foreach (var field in baseType.GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.DeclaredOnly))
+                                {
+                                    try
+                                    {
+                                        var val = field.GetValue(scrollArea);
+                                        string valStr = val?.GetType().Name ?? "null";
+                                        if (val is int iv) valStr = iv.ToString();
+                                        else if (val is bool bv) valStr = bv.ToString();
+                                        else if (val is float fv) valStr = fv.ToString();
+                                        else if (val is Rectangle rv) valStr = $"{{X:{rv.X} Y:{rv.Y} W:{rv.Width} H:{rv.Height}}}";
+                                        Monitor?.Log($"[SocialDiag]   scroll(base).{field.Name}: {field.FieldType.Name} = {valStr}", LogLevel.Trace);
+                                    }
+                                    catch { }
+                                }
+                            }
+                            // List methods too (for scroll API discovery)
+                            Monitor?.Log("[SocialDiag]   --- MobileScrollbox methods ---", LogLevel.Trace);
+                            foreach (var method in scrollType.GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly))
+                            {
+                                var parms = method.GetParameters();
+                                string parmStr = string.Join(", ", Array.ConvertAll(parms, p => $"{p.ParameterType.Name} {p.Name}"));
+                                Monitor?.Log($"[SocialDiag]   scroll.{method.Name}({parmStr}) → {method.ReturnType.Name}", LogLevel.Trace);
+                            }
+                            Monitor?.Log("[SocialDiag] === end MobileScrollbox dump ===", LogLevel.Trace);
+                        }
+                    }
+                    Monitor?.Log("[SocialDiag] === end field dump ===", LogLevel.Trace);
+                }
             }
             catch (Exception ex)
             {
@@ -358,7 +481,10 @@ namespace AndroidConsolizer.Patches
                 if (typeName == "AnimalPage")
                     return HandleAnimalInput(page, b);
                 if (typeName == "SocialPage")
+                {
+                    Monitor?.Log($"[SocialDiag] Prefix dispatching to HandleSocialInput, button={b}", LogLevel.Trace);
                     return HandleSocialInput(page, b);
+                }
 
                 return true; // pass through for unhandled tabs
             }
@@ -367,6 +493,19 @@ namespace AndroidConsolizer.Patches
                 Monitor?.Log($"[GameMenu] Error in ReceiveGamePadButton_Prefix: {ex.Message}", LogLevel.Error);
                 return true;
             }
+        }
+
+        // ===== GetMouseState postfix for Social tab A-press =====
+
+        private static void GetMouseState_Postfix(ref MouseState __result)
+        {
+            if (!_overridingSocialMouse) return;
+            __result = new MouseState(
+                _socialMouseRawX, _socialMouseRawY,
+                __result.ScrollWheelValue,
+                __result.LeftButton, __result.MiddleButton, __result.RightButton,
+                __result.XButton1, __result.XButton2
+            );
         }
 
         /// <summary>
@@ -461,19 +600,49 @@ namespace AndroidConsolizer.Patches
         /// </summary>
         private static bool HandleSocialInput(IClickableMenu page, Buttons b)
         {
+            Monitor?.Log($"[SocialDiag] HandleSocialInput called, button={b}", LogLevel.Trace);
+
             switch (b)
             {
                 case Buttons.A:
                 {
                     var snapped = page.currentlySnappedComponent;
-                    if (snapped != null && snapped.bounds.Y > 0)
-                    {
-                        int cx = snapped.bounds.Center.X;
-                        int cy = snapped.bounds.Center.Y;
-                        page.receiveLeftClick(cx, cy, true);
+                    Monitor?.Log($"[SocialDiag] A-press: snapped={snapped?.myID.ToString() ?? "null"}, bounds={snapped?.bounds.ToString() ?? "n/a"}", LogLevel.Trace);
 
-                        if (ModEntry.Config.VerboseLogging)
-                            Monitor?.Log($"[GameMenu] SocialPage: A-press → receiveLeftClick({cx},{cy})", LogLevel.Info);
+                    if (snapped == null)
+                    {
+                        Monitor?.Log($"[SocialDiag] A-press SKIPPED (snapped null)", LogLevel.Trace);
+                        return false;
+                    }
+
+                    // Find which characterSlot index this snapped component corresponds to
+                    var charSlots = _socialCharacterSlotsField?.GetValue(page) as IList;
+                    if (charSlots == null)
+                    {
+                        Monitor?.Log($"[SocialDiag] A-press SKIPPED (charSlots null)", LogLevel.Trace);
+                        return false;
+                    }
+
+                    int slotIndex = -1;
+                    for (int i = 0; i < charSlots.Count; i++)
+                    {
+                        if (charSlots[i] == snapped)
+                        {
+                            slotIndex = i;
+                            break;
+                        }
+                    }
+
+                    if (slotIndex >= 0 && _socialClickedEntryField != null)
+                    {
+                        // Android's touch input sets clickedEntry to open profiles.
+                        // receiveLeftClick doesn't work — it goes through MobileScrollbox.
+                        _socialClickedEntryField.SetValue(page, slotIndex);
+                        Monitor?.Log($"[SocialDiag] A-press → set clickedEntry={slotIndex}", LogLevel.Trace);
+                    }
+                    else
+                    {
+                        Monitor?.Log($"[SocialDiag] A-press: slotIndex={slotIndex}, clickedEntryField={(_socialClickedEntryField != null ? "found" : "null")}", LogLevel.Trace);
                     }
                     return false;
                 }
@@ -504,19 +673,30 @@ namespace AndroidConsolizer.Patches
             try
             {
                 if (_socialCharacterSlotsField == null || _socialSlotPositionField == null ||
-                    _socialSlotHeightField == null || _socialMainBoxField == null) return;
+                    _socialSlotHeightField == null || _socialMainBoxField == null)
+                {
+                    Monitor?.Log($"[SocialDiag] NavigateSocialSlot: reflection fields null, aborting", LogLevel.Trace);
+                    return;
+                }
 
                 var charSlots = _socialCharacterSlotsField.GetValue(page) as IList;
-                if (charSlots == null || charSlots.Count == 0) return;
+                if (charSlots == null || charSlots.Count == 0)
+                {
+                    Monitor?.Log($"[SocialDiag] NavigateSocialSlot: charSlots null/empty", LogLevel.Trace);
+                    return;
+                }
 
                 int slotPosition = (int)_socialSlotPositionField.GetValue(page);
                 int slotHeight = (int)_socialSlotHeightField.GetValue(page);
                 var mainBox = (Rectangle)_socialMainBoxField.GetValue(page);
                 int visibleSlots = mainBox.Height / slotHeight;
 
+                Monitor?.Log($"[SocialDiag] Nav dir={direction}, slotPos={slotPosition}, lastSlotPos={_lastSocialSlotPosition}, visibleSlots={visibleSlots}, totalSlots={charSlots.Count}", LogLevel.Trace);
+
                 // If slotPosition changed since last fix (e.g., right stick scroll), re-fix bounds
                 if (slotPosition != _lastSocialSlotPosition)
                 {
+                    Monitor?.Log($"[SocialDiag] slotPosition changed ({_lastSocialSlotPosition}→{slotPosition}), refixing bounds", LogLevel.Trace);
                     RefixSocialBounds(page, charSlots, slotPosition, slotHeight, mainBox);
                     _lastSocialSlotPosition = slotPosition;
                 }
@@ -532,24 +712,33 @@ namespace AndroidConsolizer.Patches
                         break;
                     }
                 }
+
+                Monitor?.Log($"[SocialDiag] currentSnapped ID={current?.myID.ToString() ?? "null"}, matchedIndex={currentIndex}", LogLevel.Trace);
                 if (currentIndex < 0) currentIndex = slotPosition;
 
                 int newIndex = currentIndex + direction;
 
                 // Clamp to total range
                 if (newIndex < 0 || newIndex >= charSlots.Count)
+                {
+                    Monitor?.Log($"[SocialDiag] newIndex={newIndex} out of range [0,{charSlots.Count}), clamped", LogLevel.Trace);
                     return;
+                }
 
                 // Check if we need to scroll
                 if (newIndex < slotPosition || newIndex >= slotPosition + visibleSlots)
                 {
+                    Monitor?.Log($"[SocialDiag] newIndex={newIndex} outside visible [{slotPosition},{slotPosition + visibleSlots}), scrolling...", LogLevel.Trace);
+
                     // Use the game's own scroll mechanism to keep MobileScrollbox in sync
-                    // In Stardew: positive direction = scroll up, negative = scroll down
                     int scrollDir = direction > 0 ? -1 : 1;
+                    Monitor?.Log($"[SocialDiag] calling receiveScrollWheelAction({scrollDir})", LogLevel.Trace);
                     page.receiveScrollWheelAction(scrollDir);
 
                     // Re-read slotPosition after game scrolled
                     int newSlotPos = (int)_socialSlotPositionField.GetValue(page);
+                    Monitor?.Log($"[SocialDiag] after scroll: slotPosition {slotPosition}→{newSlotPos}", LogLevel.Trace);
+
                     if (newSlotPos != slotPosition)
                     {
                         slotPosition = newSlotPos;
@@ -558,24 +747,30 @@ namespace AndroidConsolizer.Patches
                     }
                     else
                     {
-                        // Game didn't scroll (at boundary) — don't navigate past visible
+                        Monitor?.Log($"[SocialDiag] scroll had no effect (boundary), aborting", LogLevel.Trace);
                         return;
                     }
 
                     // Verify target is now visible after scroll
                     if (newIndex < slotPosition || newIndex >= slotPosition + visibleSlots)
+                    {
+                        Monitor?.Log($"[SocialDiag] newIndex={newIndex} still outside visible [{slotPosition},{slotPosition + visibleSlots}) after scroll, aborting", LogLevel.Trace);
                         return;
+                    }
                 }
 
                 var newSlot = charSlots[newIndex] as ClickableComponent;
-                if (newSlot == null) return;
+                if (newSlot == null)
+                {
+                    Monitor?.Log($"[SocialDiag] slot[{newIndex}] is null", LogLevel.Trace);
+                    return;
+                }
 
                 page.currentlySnappedComponent = newSlot;
                 page.snapCursorToCurrentSnappedComponent();
                 Game1.playSound("shiny4");
 
-                if (ModEntry.Config.VerboseLogging)
-                    Monitor?.Log($"[GameMenu] SocialPage: nav {(direction > 0 ? "down" : "up")} → slot[{newIndex}] ID={newSlot.myID} at ({newSlot.bounds.X},{newSlot.bounds.Y}), slotPosition={slotPosition}", LogLevel.Info);
+                Monitor?.Log($"[SocialDiag] snapped to slot[{newIndex}] ID={newSlot.myID} bounds=({newSlot.bounds.X},{newSlot.bounds.Y},{newSlot.bounds.Width},{newSlot.bounds.Height})", LogLevel.Trace);
             }
             catch (Exception ex)
             {
