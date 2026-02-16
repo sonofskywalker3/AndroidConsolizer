@@ -973,7 +973,7 @@ namespace AndroidConsolizer
 
             configMenu.AddBoolOption(
                 mod: this.ModManifest,
-                name: () => "GameMenu Tab Navigation",
+                name: () => "Console Menus",
                 tooltip: () => "Fix controller navigation on GameMenu tabs that lack it (Social, Animals, Crafting, Collections).",
                 getValue: () => Config.EnableGameMenuNavigation,
                 setValue: value => Config.EnableGameMenuNavigation = value
