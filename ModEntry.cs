@@ -973,6 +973,14 @@ namespace AndroidConsolizer
 
             configMenu.AddBoolOption(
                 mod: this.ModManifest,
+                name: () => "GameMenu Tab Navigation",
+                tooltip: () => "Fix controller navigation on GameMenu tabs that lack it (Social, Animals, Crafting, Collections).",
+                getValue: () => Config.EnableGameMenuNavigation,
+                setValue: value => Config.EnableGameMenuNavigation = value
+            );
+
+            configMenu.AddBoolOption(
+                mod: this.ModManifest,
                 name: () => "Use Bumpers Instead of Triggers",
                 tooltip: () => "For controllers where triggers aren't detected (e.g., Xbox via Bluetooth).\n" +
                               "Toolbar: D-Pad Up/Down switches rows, LB/RB moves within row.\n" +

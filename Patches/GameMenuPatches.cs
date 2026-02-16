@@ -3,6 +3,8 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
+using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Graphics;
 using StardewModdingAPI;
 using StardewValley;
 using StardewValley.Menus;
@@ -10,13 +12,22 @@ using StardewValley.Menus;
 namespace AndroidConsolizer.Patches
 {
     /// <summary>
-    /// Diagnostic patches for GameMenu tab switching.
-    /// Dumps component data for each tab to help fix controller navigation
-    /// on Social, Collections, and Options tabs.
+    /// Patches for GameMenu tab switching.
+    /// Fixes controller navigation on tabs where it's broken (Animals, Social, etc.)
+    /// by fixing component bounds so the game's own snap navigation works.
     /// </summary>
     internal static class GameMenuPatches
     {
         private static IMonitor Monitor;
+
+        // Track last fixed tab to avoid redundant fixes
+        private static int _lastFixedTab = -1;
+
+        // Cached reflection fields for AnimalPage (and SocialPage — same structure)
+        private static FieldInfo _characterSlotsField;
+        private static FieldInfo _slotHeightField;
+        private static FieldInfo _mainBoxField;
+        private static FieldInfo _slotPositionField;
 
         public static void Apply(Harmony harmony, IMonitor monitor)
         {
@@ -28,7 +39,13 @@ namespace AndroidConsolizer.Patches
                     original: AccessTools.Method(typeof(GameMenu), nameof(GameMenu.changeTab)),
                     postfix: new HarmonyMethod(typeof(GameMenuPatches), nameof(ChangeTab_Postfix))
                 );
-                Monitor.Log("GameMenu diagnostic patches applied.", LogLevel.Trace);
+
+                harmony.Patch(
+                    original: AccessTools.Method(typeof(GameMenu), "draw", new[] { typeof(SpriteBatch) }),
+                    postfix: new HarmonyMethod(typeof(GameMenuPatches), nameof(Draw_Postfix))
+                );
+
+                Monitor.Log("GameMenu patches applied.", LogLevel.Trace);
             }
             catch (Exception ex)
             {
@@ -39,14 +56,20 @@ namespace AndroidConsolizer.Patches
         /// <summary>Called from ModEntry.OnMenuChanged when GameMenu opens.</summary>
         public static void OnGameMenuOpened(GameMenu menu)
         {
+            _lastFixedTab = -1;
             try
             {
-                Monitor?.Log($"[GameMenuDiag] GameMenu opened, currentTab={menu.currentTab}", LogLevel.Info);
-                DumpTabState(menu, menu.currentTab);
+                if (ModEntry.Config.VerboseLogging)
+                {
+                    Monitor?.Log($"[GameMenuDiag] GameMenu opened, currentTab={menu.currentTab}", LogLevel.Info);
+                    DumpTabState(menu, menu.currentTab);
+                }
+
+                FixCurrentTab(menu, menu.currentTab);
             }
             catch (Exception ex)
             {
-                Monitor?.Log($"[GameMenuDiag] Error in OnGameMenuOpened: {ex.Message}", LogLevel.Error);
+                Monitor?.Log($"[GameMenu] Error in OnGameMenuOpened: {ex.Message}", LogLevel.Error);
             }
         }
 
@@ -54,13 +77,179 @@ namespace AndroidConsolizer.Patches
         {
             try
             {
-                DumpTabState(__instance, whichTab);
+                if (ModEntry.Config.VerboseLogging)
+                    DumpTabState(__instance, whichTab);
+
+                FixCurrentTab(__instance, whichTab);
             }
             catch (Exception ex)
             {
-                Monitor?.Log($"[GameMenuDiag] Error in ChangeTab_Postfix: {ex.Message}", LogLevel.Error);
+                Monitor?.Log($"[GameMenu] Error in ChangeTab_Postfix: {ex.Message}", LogLevel.Error);
             }
         }
+
+        /// <summary>Dispatch to per-tab fix methods based on the page type.</summary>
+        private static void FixCurrentTab(GameMenu menu, int tabIndex)
+        {
+            if (!ModEntry.Config.EnableGameMenuNavigation)
+                return;
+
+            if (menu.pages == null || tabIndex < 0 || tabIndex >= menu.pages.Count)
+                return;
+
+            var page = menu.pages[tabIndex];
+            if (page == null)
+                return;
+
+            // Use type name check (reflection-safe for Android vs PC differences)
+            string typeName = page.GetType().Name;
+
+            if (typeName == "AnimalPage")
+            {
+                FixAnimalPage(page);
+                _lastFixedTab = tabIndex;
+            }
+            // Future tabs: SocialPage, CollectionsPage, CraftingPage, OptionsPage
+        }
+
+        /// <summary>
+        /// Fix the Animals tab. characterSlots have valid IDs and U/D neighbors
+        /// but bounds.Y is stuck at 0. Fix bounds to match visual positions so
+        /// the game's own snap navigation works and the finger cursor appears.
+        /// </summary>
+        private static void FixAnimalPage(IClickableMenu page)
+        {
+            try
+            {
+                // Cache reflection fields on first use
+                if (_characterSlotsField == null)
+                {
+                    var pageType = page.GetType();
+                    _characterSlotsField = AccessTools.Field(pageType, "characterSlots");
+                    _slotHeightField = AccessTools.Field(pageType, "slotHeight");
+                    _mainBoxField = AccessTools.Field(pageType, "mainBox");
+                    _slotPositionField = AccessTools.Field(pageType, "slotPosition");
+                }
+
+                if (_characterSlotsField == null || _slotHeightField == null || _mainBoxField == null)
+                {
+                    Monitor?.Log("[GameMenu] AnimalPage: missing reflection fields, cannot fix", LogLevel.Warn);
+                    return;
+                }
+
+                var charSlots = _characterSlotsField.GetValue(page) as IList;
+                if (charSlots == null || charSlots.Count == 0)
+                {
+                    Monitor?.Log("[GameMenu] AnimalPage: no characterSlots", LogLevel.Trace);
+                    return;
+                }
+
+                int slotHeight = (int)_slotHeightField.GetValue(page);
+                var mainBox = (Rectangle)_mainBoxField.GetValue(page);
+
+                int slotPosition = 0;
+                if (_slotPositionField != null)
+                    slotPosition = (int)_slotPositionField.GetValue(page);
+
+                // The slots render inside mainBox. The first visible slot starts at
+                // mainBox.Y + a header area. From diagnostic data: mainBox.Y=72,
+                // and the visual content starts roughly at mainBox.Y + slotHeight
+                // (the header row with column labels takes about one slotHeight).
+                // We use mainBox.Y + slotHeight as the start of slot 0's visual position.
+                int slotsYStart = mainBox.Y + slotHeight;
+
+                // How many slots fit visibly (for scrolling pages)
+                int visibleSlots = Math.Max(1, (mainBox.Height - slotHeight) / slotHeight);
+
+                bool verbose = ModEntry.Config.VerboseLogging;
+                if (verbose)
+                    Monitor?.Log($"[GameMenu] AnimalPage: {charSlots.Count} slots, slotHeight={slotHeight}, mainBox=({mainBox.X},{mainBox.Y},{mainBox.Width},{mainBox.Height}), slotsYStart={slotsYStart}, visibleSlots={visibleSlots}, slotPosition={slotPosition}", LogLevel.Info);
+
+                ClickableComponent firstSlot = null;
+
+                for (int i = 0; i < charSlots.Count; i++)
+                {
+                    var slot = charSlots[i] as ClickableComponent;
+                    if (slot == null) continue;
+
+                    // Compute visual Y position relative to scroll position
+                    int visualIndex = i - slotPosition;
+                    int newY = slotsYStart + (visualIndex * slotHeight);
+
+                    // Fix bounds Y — keep X, Width, Height from original
+                    var b = slot.bounds;
+                    slot.bounds = new Rectangle(b.X, newY, b.Width, slotHeight);
+
+                    if (i == 0)
+                        firstSlot = slot;
+
+                    if (verbose)
+                        Monitor?.Log($"[GameMenu]   slot[{i}] ID={slot.myID} bounds=({slot.bounds.X},{slot.bounds.Y},{slot.bounds.Width},{slot.bounds.Height}) U={slot.upNeighborID} D={slot.downNeighborID}", LogLevel.Info);
+                }
+
+                // Set currentlySnappedComponent and snap cursor to it
+                if (firstSlot != null)
+                {
+                    page.currentlySnappedComponent = firstSlot;
+                    page.snapCursorToCurrentSnappedComponent();
+
+                    if (verbose)
+                        Monitor?.Log($"[GameMenu] AnimalPage: snapped to slot[0] ID={firstSlot.myID} at ({firstSlot.bounds.X},{firstSlot.bounds.Y})", LogLevel.Info);
+                }
+
+                Monitor?.Log($"[GameMenu] AnimalPage: fixed {charSlots.Count} slot bounds", LogLevel.Trace);
+            }
+            catch (Exception ex)
+            {
+                Monitor?.Log($"[GameMenu] Error fixing AnimalPage: {ex.Message}\n{ex.StackTrace}", LogLevel.Error);
+            }
+        }
+
+        /// <summary>
+        /// Draw the finger cursor on tabs where Android suppresses drawMouse.
+        /// </summary>
+        private static void Draw_Postfix(GameMenu __instance, SpriteBatch b)
+        {
+            try
+            {
+                if (!ModEntry.Config.EnableGameMenuNavigation)
+                    return;
+
+                var page = __instance.pages != null && __instance.currentTab >= 0 && __instance.currentTab < __instance.pages.Count
+                    ? __instance.pages[__instance.currentTab]
+                    : null;
+                if (page == null) return;
+
+                string typeName = page.GetType().Name;
+
+                // Only draw cursor on tabs we fix
+                if (typeName != "AnimalPage")
+                    return;
+
+                var snapped = page.currentlySnappedComponent;
+                if (snapped == null || snapped.bounds.Y <= 0)
+                    return;
+
+                int cursorTile = Game1.options.snappyMenus ? 44 : Game1.mouseCursor;
+                b.Draw(
+                    Game1.mouseCursors,
+                    new Vector2(snapped.bounds.Center.X, snapped.bounds.Center.Y),
+                    Game1.getSourceRectForStandardTileSheet(Game1.mouseCursors, cursorTile, 16, 16),
+                    Color.White,
+                    0f,
+                    Vector2.Zero,
+                    4f + Game1.dialogueButtonScale / 150f,
+                    SpriteEffects.None,
+                    1f
+                );
+            }
+            catch (Exception ex)
+            {
+                Monitor?.Log($"[GameMenu] Error in Draw_Postfix: {ex.Message}", LogLevel.Error);
+            }
+        }
+
+        #region Diagnostic methods (verbose logging only)
 
         private static void DumpTabState(GameMenu menu, int tabIndex)
         {
@@ -350,5 +539,7 @@ namespace AndroidConsolizer.Patches
                 Monitor.Log($"[GameMenuDiag] Error enumerating fields: {ex.Message}", LogLevel.Error);
             }
         }
+
+        #endregion
     }
 }
