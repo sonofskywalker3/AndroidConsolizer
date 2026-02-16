@@ -28,6 +28,7 @@ namespace AndroidConsolizer.Patches
         private static FieldInfo _slotHeightField;
         private static FieldInfo _mainBoxField;
         private static FieldInfo _slotPositionField;
+        private static FieldInfo _slotsYStartField;
 
         public static void Apply(Harmony harmony, IMonitor monitor)
         {
@@ -129,6 +130,7 @@ namespace AndroidConsolizer.Patches
                     _slotHeightField = AccessTools.Field(pageType, "slotHeight");
                     _mainBoxField = AccessTools.Field(pageType, "mainBox");
                     _slotPositionField = AccessTools.Field(pageType, "slotPosition");
+                    _slotsYStartField = AccessTools.Field(pageType, "slotsYStart");
                 }
 
                 if (_characterSlotsField == null || _slotHeightField == null || _mainBoxField == null)
@@ -151,19 +153,16 @@ namespace AndroidConsolizer.Patches
                 if (_slotPositionField != null)
                     slotPosition = (int)_slotPositionField.GetValue(page);
 
-                // The slots render inside mainBox. The first visible slot starts at
-                // mainBox.Y + a header area. From diagnostic data: mainBox.Y=72,
-                // and the visual content starts roughly at mainBox.Y + slotHeight
-                // (the header row with column labels takes about one slotHeight).
-                // We use mainBox.Y + slotHeight as the start of slot 0's visual position.
-                int slotsYStart = mainBox.Y + slotHeight;
-
-                // How many slots fit visibly (for scrolling pages)
-                int visibleSlots = Math.Max(1, (mainBox.Height - slotHeight) / slotHeight);
+                // Use the actual slotsYStart field — it's relative to mainBox.Y.
+                // Diagnostic data: slotsYStart=49, mainBox.Y=72 → absolute Y=121
+                int slotsYOffset = 0;
+                if (_slotsYStartField != null)
+                    slotsYOffset = (int)_slotsYStartField.GetValue(page);
+                int slotsYStart = mainBox.Y + slotsYOffset;
 
                 bool verbose = ModEntry.Config.VerboseLogging;
                 if (verbose)
-                    Monitor?.Log($"[GameMenu] AnimalPage: {charSlots.Count} slots, slotHeight={slotHeight}, mainBox=({mainBox.X},{mainBox.Y},{mainBox.Width},{mainBox.Height}), slotsYStart={slotsYStart}, visibleSlots={visibleSlots}, slotPosition={slotPosition}", LogLevel.Info);
+                    Monitor?.Log($"[GameMenu] AnimalPage: {charSlots.Count} slots, slotHeight={slotHeight}, mainBox=({mainBox.X},{mainBox.Y},{mainBox.Width},{mainBox.Height}), slotsYStart={slotsYStart} (offset={slotsYOffset}), slotPosition={slotPosition}", LogLevel.Info);
 
                 ClickableComponent firstSlot = null;
 
@@ -207,46 +206,13 @@ namespace AndroidConsolizer.Patches
 
         /// <summary>
         /// Draw the finger cursor on tabs where Android suppresses drawMouse.
+        /// Currently no tabs need this — the game draws its own cursor on
+        /// Animals/Social tabs. Kept as a hook for future tabs that may need it.
         /// </summary>
         private static void Draw_Postfix(GameMenu __instance, SpriteBatch b)
         {
-            try
-            {
-                if (!ModEntry.Config.EnableGameMenuNavigation)
-                    return;
-
-                var page = __instance.pages != null && __instance.currentTab >= 0 && __instance.currentTab < __instance.pages.Count
-                    ? __instance.pages[__instance.currentTab]
-                    : null;
-                if (page == null) return;
-
-                string typeName = page.GetType().Name;
-
-                // Only draw cursor on tabs we fix
-                if (typeName != "AnimalPage")
-                    return;
-
-                var snapped = page.currentlySnappedComponent;
-                if (snapped == null || snapped.bounds.Y <= 0)
-                    return;
-
-                int cursorTile = Game1.options.snappyMenus ? 44 : Game1.mouseCursor;
-                b.Draw(
-                    Game1.mouseCursors,
-                    new Vector2(snapped.bounds.Center.X, snapped.bounds.Center.Y),
-                    Game1.getSourceRectForStandardTileSheet(Game1.mouseCursors, cursorTile, 16, 16),
-                    Color.White,
-                    0f,
-                    Vector2.Zero,
-                    4f + Game1.dialogueButtonScale / 150f,
-                    SpriteEffects.None,
-                    1f
-                );
-            }
-            catch (Exception ex)
-            {
-                Monitor?.Log($"[GameMenu] Error in Draw_Postfix: {ex.Message}", LogLevel.Error);
-            }
+            // No-op for now. AnimalPage does NOT need a custom cursor —
+            // the game's drawMouse works fine once bounds are correct.
         }
 
         #region Diagnostic methods (verbose logging only)
