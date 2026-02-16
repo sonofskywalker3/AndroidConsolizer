@@ -74,15 +74,11 @@ These need to be re-implemented **one at a time, one per 0.0.1 patch, each commi
 - Quantity limits respect stock, money, trade items, and stack size
 - **Implementation:** Initial press in `ModEntry.OnButtonsChanged`, auto-repeat in `ShopMenuPatches.Update_Postfix`
 
-### 5. Cutscene Skip with Controller
-- **Desired behavior:** Press Start once to show the skip button, press Start again within 3 seconds to confirm skip. Double-press-to-skip prevents accidental skips.
-- On Android touchscreen, the skip button appears on screen and you tap it. With a controller, there's no way to activate the skip button.
-- **Log evidence (v2.7.2):** User entered Town at 21:22:44, cutscene triggered. Pressed ControllerStart 4 times (21:22:50-21:22:52) — no effect. Then tapped screen (MouseLeft x2 at 21:22:53-21:22:54) to skip. Cutscene ended at 21:22:55 ("Warping to Town").
-- **Mechanism:** Touchscreen skip uses `MouseLeft` (two taps — first shows skip button, second confirms). The cutscene is an `Event` object. The skip button is likely `Event.skippable` + a clickable component. On Android, `Event.receiveLeftClick` or similar handles the skip confirmation.
-- **Known issue (v2.8.2):** Current implementation shows "press Start again to skip" text, but it renders behind the dialogue text box and is not visible.
-- **Desired fix:** Remove the text prompt entirely. Instead, first Start press should show the same skip icon/button that the touchscreen tap shows (top-right corner of screen). Second Start press confirms the skip. This matches the touch UX — same visual, just triggered by Start instead of tap.
-- **Implementation approach:** When a skippable event is active and Start is pressed, show the vanilla skip button UI (same one touch uses, positioned top-right). Second press within 3 seconds confirms the skip. Need to find the exact method — likely `Event.skipEvent()` or `Event.receiveLeftClick()` at the skip button coordinates.
-- **Next step:** Decompile or inspect `Event` class to find the skip mechanism. Look for `skippable`, `skipEvent`, `skipped` fields/methods. Also find how the touch skip icon is shown/hidden to reuse it.
+### 5. Cutscene Skip with Controller — DONE (v3.3.1)
+- Double-press Start to skip cutscenes. First press simulates touch to show skip icon, second press within 3 seconds confirms via `Event.skipEvent()` reflection.
+- Edge detection via `GameplayButtonPatches.StartPressedThisTick` in `OnUpdateTicked`. 180-tick timeout resets state.
+- **File:** `ModEntry.cs` (HandleCutsceneSkip, cutsceneSkipFirstPressTick, cutsceneSkipPending fields)
+- **Config:** `EnableCutsceneSkip` in ModConfig.cs
 
 ### 5b. Shop Inventory Tab Broken with Controller — DONE (v2.8.9-v2.8.17, shipped in v2.9.0)
 - Touch tab button blocked when controller connected (v2.8.12)
