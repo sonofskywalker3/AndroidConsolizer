@@ -812,21 +812,20 @@ namespace AndroidConsolizer.Patches
                             }
                             else if (playerSlotIndex >= 0)
                             {
-                                // Strip attachments from tools before transferring
-                                // (FishingRod: bait then tackle, Slingshot: ammo)
-                                Item playerItem = (playerSlotIndex < Game1.player.Items.Count) ? Game1.player.Items[playerSlotIndex] : null;
-                                if (playerItem != null && TryDetachAttachmentToChest(__instance, playerItem))
+                                if (remapped == Buttons.Y)
                                 {
-                                    // Attachment was stripped — set up hold-to-repeat for Y
-                                    if (remapped == Buttons.Y)
+                                    // Y strips attachments from tools one at a time before transferring
+                                    // (FishingRod: bait then tackle, Slingshot: ammo)
+                                    Item playerItem = (playerSlotIndex < Game1.player.Items.Count) ? Game1.player.Items[playerSlotIndex] : null;
+                                    if (playerItem != null && TryDetachAttachmentToChest(__instance, playerItem))
                                     {
                                         _yTransferHeld = true;
                                         _yTransferTicks = 0;
                                         _yTransferRawButton = b;
                                         _yTransferSlotIndex = playerSlotIndex;
                                         _yTransferFromChest = false;
+                                        return false;
                                     }
-                                    return false;
                                 }
 
                                 if (remapped == Buttons.A)
