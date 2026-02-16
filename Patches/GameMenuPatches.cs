@@ -41,6 +41,9 @@ namespace AndroidConsolizer.Patches
         // Track slotPosition to detect right-stick scroll changes
         private static int _lastSocialSlotPosition = -1;
 
+        // Diagnostic: track child menu on SocialPage (gift log)
+        private static bool _dumpedChildMenu = false;
+
         public static void Apply(Harmony harmony, IMonitor monitor)
         {
             Monitor = monitor;
@@ -606,13 +609,78 @@ namespace AndroidConsolizer.Patches
 
         /// <summary>
         /// Draw the finger cursor on tabs where Android suppresses drawMouse.
-        /// Currently no tabs need this — the game draws its own cursor on
-        /// Animals/Social tabs. Kept as a hook for future tabs that may need it.
+        /// Also runs diagnostics for child menus (gift log on SocialPage).
         /// </summary>
         private static void Draw_Postfix(GameMenu __instance, SpriteBatch b)
         {
-            // No-op for now. AnimalPage does NOT need a custom cursor —
-            // the game's drawMouse works fine once bounds are correct.
+            if (!ModEntry.Config.EnableGameMenuNavigation)
+                return;
+
+            try
+            {
+                // Diagnostic: detect and dump child menu on SocialPage (gift log)
+                if (__instance.pages != null && __instance.currentTab >= 0 && __instance.currentTab < __instance.pages.Count)
+                {
+                    var page = __instance.pages[__instance.currentTab];
+                    if (page != null && page.GetType().Name == "SocialPage")
+                    {
+                        // Check _childMenu via reflection
+                        var childMenuField = AccessTools.Field(page.GetType(), "_childMenu")
+                                          ?? AccessTools.Field(typeof(IClickableMenu), "_childMenu");
+                        if (childMenuField != null)
+                        {
+                            var childMenu = childMenuField.GetValue(page) as IClickableMenu;
+                            if (childMenu != null)
+                            {
+                                if (!_dumpedChildMenu)
+                                {
+                                    _dumpedChildMenu = true;
+                                    DumpChildMenu(childMenu);
+                                }
+                            }
+                            else
+                            {
+                                _dumpedChildMenu = false;
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Monitor?.Log($"[GameMenu] Error in Draw_Postfix: {ex.Message}", LogLevel.Error);
+            }
+        }
+
+        /// <summary>Dump full diagnostic info for a child menu (gift log/profile).</summary>
+        private static void DumpChildMenu(IClickableMenu childMenu)
+        {
+            Monitor?.Log($"[GameMenuDiag] === Child menu detected ===", LogLevel.Info);
+            Monitor?.Log($"[GameMenuDiag] Type: {childMenu.GetType().FullName}", LogLevel.Info);
+            Monitor?.Log($"[GameMenuDiag] Bounds: ({childMenu.xPositionOnScreen},{childMenu.yPositionOnScreen},{childMenu.width},{childMenu.height})", LogLevel.Info);
+
+            var snapped = childMenu.currentlySnappedComponent;
+            if (snapped != null)
+                Monitor?.Log($"[GameMenuDiag] currentlySnappedComponent: ID={snapped.myID} bounds=({snapped.bounds.X},{snapped.bounds.Y},{snapped.bounds.Width},{snapped.bounds.Height}) name='{snapped.name}'", LogLevel.Info);
+            else
+                Monitor?.Log($"[GameMenuDiag] currentlySnappedComponent: null", LogLevel.Info);
+
+            var allComps = childMenu.allClickableComponents;
+            if (allComps != null)
+            {
+                Monitor?.Log($"[GameMenuDiag] allClickableComponents: count={allComps.Count}", LogLevel.Info);
+                for (int i = 0; i < allComps.Count; i++)
+                {
+                    var c = allComps[i];
+                    if (c == null) continue;
+                    Monitor?.Log($"[GameMenuDiag]   [{i}] ID={c.myID} name='{c.name}' bounds=({c.bounds.X},{c.bounds.Y},{c.bounds.Width},{c.bounds.Height}) neighbors L={c.leftNeighborID} R={c.rightNeighborID} U={c.upNeighborID} D={c.downNeighborID}", LogLevel.Info);
+                }
+            }
+            else
+                Monitor?.Log($"[GameMenuDiag] allClickableComponents: null", LogLevel.Info);
+
+            // Enumerate all fields
+            DumpAllFields(childMenu, "ChildMenu");
         }
 
         #region Diagnostic methods (verbose logging only)
