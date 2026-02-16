@@ -55,6 +55,9 @@ namespace AndroidConsolizer
         /// <summary>Whether to debounce furniture Y-button interactions (prevents rapid toggle between placed and picked up).</summary>
         public bool EnableFurnitureDebounce { get; set; } = true;
 
+        /// <summary>Whether to fix controller navigation on GameMenu tabs (Social, Animals, Crafting, Collections).</summary>
+        public bool EnableGameMenuNavigation { get; set; } = true;
+
         /// <summary>
         /// Use bumpers (LB/RB) instead of triggers (LT/RT) for controls.
         /// Toolbar: D-Pad Up/Down switches rows, bumpers move within row.
