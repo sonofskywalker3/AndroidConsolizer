@@ -5,6 +5,7 @@ using System.Reflection;
 using HarmonyLib;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
+using Microsoft.Xna.Framework.Input;
 using StardewModdingAPI;
 using StardewValley;
 using StardewValley.Menus;
@@ -44,6 +45,11 @@ namespace AndroidConsolizer.Patches
                 harmony.Patch(
                     original: AccessTools.Method(typeof(GameMenu), "draw", new[] { typeof(SpriteBatch) }),
                     postfix: new HarmonyMethod(typeof(GameMenuPatches), nameof(Draw_Postfix))
+                );
+
+                harmony.Patch(
+                    original: AccessTools.Method(typeof(GameMenu), nameof(GameMenu.receiveGamePadButton)),
+                    prefix: new HarmonyMethod(typeof(GameMenuPatches), nameof(ReceiveGamePadButton_Prefix))
                 );
 
                 Monitor.Log("GameMenu patches applied.", LogLevel.Trace);
@@ -201,6 +207,122 @@ namespace AndroidConsolizer.Patches
             catch (Exception ex)
             {
                 Monitor?.Log($"[GameMenu] Error fixing AnimalPage: {ex.Message}\n{ex.StackTrace}", LogLevel.Error);
+            }
+        }
+
+        /// <summary>
+        /// Intercept D-pad and A button on tabs we manage, to prevent the
+        /// MobileScrollbox from eating D-pad input and to handle A-press clicks.
+        /// Returns false to skip original when we handle the input.
+        /// </summary>
+        private static bool ReceiveGamePadButton_Prefix(GameMenu __instance, Buttons b)
+        {
+            try
+            {
+                if (!ModEntry.Config.EnableGameMenuNavigation)
+                    return true;
+
+                if (__instance.pages == null || __instance.currentTab < 0 || __instance.currentTab >= __instance.pages.Count)
+                    return true;
+
+                var page = __instance.pages[__instance.currentTab];
+                string typeName = page.GetType().Name;
+
+                if (typeName == "AnimalPage")
+                    return HandleAnimalInput(page, b);
+
+                return true; // pass through for unhandled tabs
+            }
+            catch (Exception ex)
+            {
+                Monitor?.Log($"[GameMenu] Error in ReceiveGamePadButton_Prefix: {ex.Message}", LogLevel.Error);
+                return true;
+            }
+        }
+
+        /// <summary>
+        /// Handle input on the Animals tab. Returns false to skip original method.
+        /// </summary>
+        private static bool HandleAnimalInput(IClickableMenu page, Buttons b)
+        {
+            switch (b)
+            {
+                case Buttons.A:
+                {
+                    // Click at the currently snapped slot's center position
+                    var snapped = page.currentlySnappedComponent;
+                    if (snapped != null && snapped.bounds.Y > 0)
+                    {
+                        int cx = snapped.bounds.Center.X;
+                        int cy = snapped.bounds.Center.Y;
+                        page.receiveLeftClick(cx, cy, true);
+
+                        if (ModEntry.Config.VerboseLogging)
+                            Monitor?.Log($"[GameMenu] AnimalPage: A-press → receiveLeftClick({cx},{cy})", LogLevel.Info);
+                    }
+                    return false; // block original (prevents scrollbox interference)
+                }
+
+                case Buttons.DPadDown:
+                case Buttons.LeftThumbstickDown:
+                    NavigateAnimalSlot(page, 1);
+                    return false;
+
+                case Buttons.DPadUp:
+                case Buttons.LeftThumbstickUp:
+                    NavigateAnimalSlot(page, -1);
+                    return false;
+
+                default:
+                    return true; // pass through LB/RB for tab switching, B for close, etc.
+            }
+        }
+
+        /// <summary>
+        /// Navigate to the next (+1) or previous (-1) animal slot.
+        /// </summary>
+        private static void NavigateAnimalSlot(IClickableMenu page, int direction)
+        {
+            try
+            {
+                if (_characterSlotsField == null) return;
+
+                var charSlots = _characterSlotsField.GetValue(page) as IList;
+                if (charSlots == null || charSlots.Count == 0) return;
+
+                // Find current slot index
+                var current = page.currentlySnappedComponent;
+                int currentIndex = -1;
+                for (int i = 0; i < charSlots.Count; i++)
+                {
+                    if (charSlots[i] == current)
+                    {
+                        currentIndex = i;
+                        break;
+                    }
+                }
+
+                if (currentIndex < 0) currentIndex = 0;
+
+                int newIndex = currentIndex + direction;
+
+                // Clamp to valid range — don't wrap
+                if (newIndex < 0 || newIndex >= charSlots.Count)
+                    return; // at boundary, do nothing
+
+                var newSlot = charSlots[newIndex] as ClickableComponent;
+                if (newSlot == null) return;
+
+                page.currentlySnappedComponent = newSlot;
+                page.snapCursorToCurrentSnappedComponent();
+                Game1.playSound("shiny4");
+
+                if (ModEntry.Config.VerboseLogging)
+                    Monitor?.Log($"[GameMenu] AnimalPage: nav {(direction > 0 ? "down" : "up")} → slot[{newIndex}] ID={newSlot.myID} at ({newSlot.bounds.X},{newSlot.bounds.Y})", LogLevel.Info);
+            }
+            catch (Exception ex)
+            {
+                Monitor?.Log($"[GameMenu] Error in NavigateAnimalSlot: {ex.Message}", LogLevel.Error);
             }
         }
 
