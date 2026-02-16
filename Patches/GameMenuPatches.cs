@@ -24,12 +24,19 @@ namespace AndroidConsolizer.Patches
         // Track last fixed tab to avoid redundant fixes
         private static int _lastFixedTab = -1;
 
-        // Cached reflection fields for AnimalPage (and SocialPage — same structure)
+        // Cached reflection fields for AnimalPage
         private static FieldInfo _characterSlotsField;
         private static FieldInfo _slotHeightField;
         private static FieldInfo _mainBoxField;
         private static FieldInfo _slotPositionField;
         private static FieldInfo _slotsYStartField;
+
+        // Cached reflection fields for SocialPage (same field names, different type)
+        private static FieldInfo _socialCharacterSlotsField;
+        private static FieldInfo _socialSlotHeightField;
+        private static FieldInfo _socialMainBoxField;
+        private static FieldInfo _socialSlotPositionField;
+        private static FieldInfo _socialSlotsYStartField;
 
         public static void Apply(Harmony harmony, IMonitor monitor)
         {
@@ -116,7 +123,12 @@ namespace AndroidConsolizer.Patches
                 FixAnimalPage(page);
                 _lastFixedTab = tabIndex;
             }
-            // Future tabs: SocialPage, CollectionsPage, CraftingPage, OptionsPage
+            else if (typeName == "SocialPage")
+            {
+                FixSocialPage(page);
+                _lastFixedTab = tabIndex;
+            }
+            // Future tabs: CollectionsPage, CraftingPage, OptionsPage
         }
 
         /// <summary>
@@ -211,6 +223,92 @@ namespace AndroidConsolizer.Patches
         }
 
         /// <summary>
+        /// Fix the Social tab. Same structure as AnimalPage — characterSlots with
+        /// bounds.Y stuck at 0 — but has 37 slots with scrolling.
+        /// </summary>
+        private static void FixSocialPage(IClickableMenu page)
+        {
+            try
+            {
+                // Cache reflection fields on first use (separate from AnimalPage — different type)
+                if (_socialCharacterSlotsField == null)
+                {
+                    var pageType = page.GetType();
+                    _socialCharacterSlotsField = AccessTools.Field(pageType, "characterSlots");
+                    _socialSlotHeightField = AccessTools.Field(pageType, "slotHeight");
+                    _socialMainBoxField = AccessTools.Field(pageType, "mainBox");
+                    _socialSlotPositionField = AccessTools.Field(pageType, "slotPosition");
+                    _socialSlotsYStartField = AccessTools.Field(pageType, "slotsYStart");
+                }
+
+                if (_socialCharacterSlotsField == null || _socialSlotHeightField == null || _socialMainBoxField == null)
+                {
+                    Monitor?.Log("[GameMenu] SocialPage: missing reflection fields, cannot fix", LogLevel.Warn);
+                    return;
+                }
+
+                var charSlots = _socialCharacterSlotsField.GetValue(page) as IList;
+                if (charSlots == null || charSlots.Count == 0)
+                {
+                    Monitor?.Log("[GameMenu] SocialPage: no characterSlots", LogLevel.Trace);
+                    return;
+                }
+
+                int slotHeight = (int)_socialSlotHeightField.GetValue(page);
+                var mainBox = (Rectangle)_socialMainBoxField.GetValue(page);
+
+                int slotPosition = 0;
+                if (_socialSlotPositionField != null)
+                    slotPosition = (int)_socialSlotPositionField.GetValue(page);
+
+                int slotsYOffset = 0;
+                if (_socialSlotsYStartField != null)
+                    slotsYOffset = (int)_socialSlotsYStartField.GetValue(page);
+                int slotsYStart = mainBox.Y + slotsYOffset;
+
+                bool verbose = ModEntry.Config.VerboseLogging;
+                if (verbose)
+                    Monitor?.Log($"[GameMenu] SocialPage: {charSlots.Count} slots, slotHeight={slotHeight}, mainBox=({mainBox.X},{mainBox.Y},{mainBox.Width},{mainBox.Height}), slotsYStart={slotsYStart} (offset={slotsYOffset}), slotPosition={slotPosition}", LogLevel.Info);
+
+                ClickableComponent firstVisibleSlot = null;
+
+                for (int i = 0; i < charSlots.Count; i++)
+                {
+                    var slot = charSlots[i] as ClickableComponent;
+                    if (slot == null) continue;
+
+                    int visualIndex = i - slotPosition;
+                    int newY = slotsYStart + (visualIndex * slotHeight);
+
+                    var b = slot.bounds;
+                    slot.bounds = new Rectangle(b.X, newY, b.Width, slotHeight);
+
+                    if (i == slotPosition)
+                        firstVisibleSlot = slot;
+
+                    if (verbose)
+                        Monitor?.Log($"[GameMenu]   slot[{i}] ID={slot.myID} bounds=({slot.bounds.X},{slot.bounds.Y},{slot.bounds.Width},{slot.bounds.Height}) U={slot.upNeighborID} D={slot.downNeighborID}", LogLevel.Info);
+                }
+
+                // Snap to first visible slot (on tab entry)
+                if (firstVisibleSlot != null)
+                {
+                    page.currentlySnappedComponent = firstVisibleSlot;
+                    page.snapCursorToCurrentSnappedComponent();
+
+                    if (verbose)
+                        Monitor?.Log($"[GameMenu] SocialPage: snapped to slot[{slotPosition}] ID={firstVisibleSlot.myID} at ({firstVisibleSlot.bounds.X},{firstVisibleSlot.bounds.Y})", LogLevel.Info);
+                }
+
+                Monitor?.Log($"[GameMenu] SocialPage: fixed {charSlots.Count} slot bounds", LogLevel.Trace);
+            }
+            catch (Exception ex)
+            {
+                Monitor?.Log($"[GameMenu] Error fixing SocialPage: {ex.Message}\n{ex.StackTrace}", LogLevel.Error);
+            }
+        }
+
+        /// <summary>
         /// Intercept D-pad and A button on tabs we manage, to prevent the
         /// MobileScrollbox from eating D-pad input and to handle A-press clicks.
         /// Returns false to skip original when we handle the input.
@@ -230,6 +328,8 @@ namespace AndroidConsolizer.Patches
 
                 if (typeName == "AnimalPage")
                     return HandleAnimalInput(page, b);
+                if (typeName == "SocialPage")
+                    return HandleSocialInput(page, b);
 
                 return true; // pass through for unhandled tabs
             }
@@ -323,6 +423,116 @@ namespace AndroidConsolizer.Patches
             catch (Exception ex)
             {
                 Monitor?.Log($"[GameMenu] Error in NavigateAnimalSlot: {ex.Message}", LogLevel.Error);
+            }
+        }
+
+        /// <summary>
+        /// Handle input on the Social tab. Returns false to skip original method.
+        /// Same as Animals but routes to scroll-aware navigation.
+        /// </summary>
+        private static bool HandleSocialInput(IClickableMenu page, Buttons b)
+        {
+            switch (b)
+            {
+                case Buttons.A:
+                {
+                    var snapped = page.currentlySnappedComponent;
+                    if (snapped != null && snapped.bounds.Y > 0)
+                    {
+                        int cx = snapped.bounds.Center.X;
+                        int cy = snapped.bounds.Center.Y;
+                        page.receiveLeftClick(cx, cy, true);
+
+                        if (ModEntry.Config.VerboseLogging)
+                            Monitor?.Log($"[GameMenu] SocialPage: A-press → receiveLeftClick({cx},{cy})", LogLevel.Info);
+                    }
+                    return false;
+                }
+
+                case Buttons.DPadDown:
+                case Buttons.LeftThumbstickDown:
+                    NavigateSocialSlot(page, 1);
+                    return false;
+
+                case Buttons.DPadUp:
+                case Buttons.LeftThumbstickUp:
+                    NavigateSocialSlot(page, -1);
+                    return false;
+
+                default:
+                    return true;
+            }
+        }
+
+        /// <summary>
+        /// Navigate to the next (+1) or previous (-1) social slot.
+        /// Scroll-aware: updates slotPosition and re-fixes bounds when
+        /// navigating past the visible area.
+        /// </summary>
+        private static void NavigateSocialSlot(IClickableMenu page, int direction)
+        {
+            try
+            {
+                if (_socialCharacterSlotsField == null) return;
+
+                var charSlots = _socialCharacterSlotsField.GetValue(page) as IList;
+                if (charSlots == null || charSlots.Count == 0) return;
+
+                // Find current slot index
+                var current = page.currentlySnappedComponent;
+                int currentIndex = -1;
+                for (int i = 0; i < charSlots.Count; i++)
+                {
+                    if (charSlots[i] == current)
+                    {
+                        currentIndex = i;
+                        break;
+                    }
+                }
+
+                if (currentIndex < 0) currentIndex = 0;
+
+                int newIndex = currentIndex + direction;
+
+                // Clamp to valid range — don't wrap
+                if (newIndex < 0 || newIndex >= charSlots.Count)
+                    return;
+
+                // Check if we need to scroll
+                if (_socialSlotPositionField != null && _socialSlotHeightField != null && _socialMainBoxField != null)
+                {
+                    int slotPosition = (int)_socialSlotPositionField.GetValue(page);
+                    int slotHeight = (int)_socialSlotHeightField.GetValue(page);
+                    var mainBox = (Rectangle)_socialMainBoxField.GetValue(page);
+                    int visibleSlots = mainBox.Height / slotHeight;
+
+                    if (newIndex < slotPosition)
+                    {
+                        // Scrolling up past the top visible slot
+                        _socialSlotPositionField.SetValue(page, newIndex);
+                        FixSocialPage(page);
+                    }
+                    else if (newIndex >= slotPosition + visibleSlots)
+                    {
+                        // Scrolling down past the bottom visible slot
+                        _socialSlotPositionField.SetValue(page, newIndex - visibleSlots + 1);
+                        FixSocialPage(page);
+                    }
+                }
+
+                var newSlot = charSlots[newIndex] as ClickableComponent;
+                if (newSlot == null) return;
+
+                page.currentlySnappedComponent = newSlot;
+                page.snapCursorToCurrentSnappedComponent();
+                Game1.playSound("shiny4");
+
+                if (ModEntry.Config.VerboseLogging)
+                    Monitor?.Log($"[GameMenu] SocialPage: nav {(direction > 0 ? "down" : "up")} → slot[{newIndex}] ID={newSlot.myID} at ({newSlot.bounds.X},{newSlot.bounds.Y})", LogLevel.Info);
+            }
+            catch (Exception ex)
+            {
+                Monitor?.Log($"[GameMenu] Error in NavigateSocialSlot: {ex.Message}", LogLevel.Error);
             }
         }
 
