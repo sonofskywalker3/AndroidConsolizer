@@ -8,6 +8,7 @@ using Microsoft.Xna.Framework.Input;
 using StardewModdingAPI;
 using StardewValley;
 using StardewValley.Menus;
+using StardewValley.Tools;
 
 namespace AndroidConsolizer.Patches
 {
@@ -811,6 +812,23 @@ namespace AndroidConsolizer.Patches
                             }
                             else if (playerSlotIndex >= 0)
                             {
+                                // Strip attachments from tools before transferring
+                                // (FishingRod: bait then tackle, Slingshot: ammo)
+                                Item playerItem = (playerSlotIndex < Game1.player.Items.Count) ? Game1.player.Items[playerSlotIndex] : null;
+                                if (playerItem != null && TryDetachAttachmentToChest(__instance, playerItem))
+                                {
+                                    // Attachment was stripped — set up hold-to-repeat for Y
+                                    if (remapped == Buttons.Y)
+                                    {
+                                        _yTransferHeld = true;
+                                        _yTransferTicks = 0;
+                                        _yTransferRawButton = b;
+                                        _yTransferSlotIndex = playerSlotIndex;
+                                        _yTransferFromChest = false;
+                                    }
+                                    return false;
+                                }
+
                                 if (remapped == Buttons.A)
                                     TransferToChest(__instance, playerSlotIndex);
                                 else
@@ -917,7 +935,11 @@ namespace AndroidConsolizer.Patches
                     else
                     {
                         if (_yTransferSlotIndex < Game1.player.Items.Count && Game1.player.Items[_yTransferSlotIndex] != null)
-                            TransferOneToChest(__instance, _yTransferSlotIndex);
+                        {
+                            // Strip attachments from tools before transferring
+                            if (!TryDetachAttachmentToChest(__instance, Game1.player.Items[_yTransferSlotIndex]))
+                                TransferOneToChest(__instance, _yTransferSlotIndex);
+                        }
                         else
                             _yTransferHeld = false;
                     }
@@ -1290,6 +1312,96 @@ namespace AndroidConsolizer.Patches
                 if (ModEntry.Config.VerboseLogging)
                     Monitor.Log("[ChestTransfer] Chest full, cannot place 1 item", LogLevel.Debug);
             }
+        }
+
+        /// <summary>Check if an item is a tool with detachable attachments (FishingRod or Slingshot).
+        /// If so, detach the first non-null attachment and transfer it to the chest.
+        /// FishingRod: bait (slot 0) first, then tackle (slot 1).
+        /// Slingshot: ammo (slot 0).
+        /// Returns true if handled (attachment transferred or chest full), false if tool has no attachments.</summary>
+        private static bool TryDetachAttachmentToChest(ItemGrabMenu menu, Item item)
+        {
+            if (item is not FishingRod && item is not Slingshot)
+                return false;
+
+            var tool = (Tool)item;
+            if (tool.attachments == null || tool.attachments.Count == 0)
+                return false;
+
+            // Find first non-null attachment
+            for (int i = 0; i < tool.attachments.Count; i++)
+            {
+                if (tool.attachments[i] == null)
+                    continue;
+
+                var attachment = tool.attachments[i];
+                var chestInv = menu.ItemsToGrabMenu?.actualInventory;
+                if (chestInv == null)
+                {
+                    Game1.playSound("cancel");
+                    return true;
+                }
+
+                int originalStack = attachment.Stack;
+                string name = attachment.DisplayName;
+
+                // Try stacking onto existing matching items first
+                for (int j = 0; j < chestInv.Count && attachment.Stack > 0; j++)
+                {
+                    if (chestInv[j] != null && chestInv[j].canStackWith(attachment))
+                    {
+                        int space = chestInv[j].maximumStackSize() - chestInv[j].Stack;
+                        if (space > 0)
+                        {
+                            int toMove = Math.Min(space, attachment.Stack);
+                            chestInv[j].Stack += toMove;
+                            attachment.Stack -= toMove;
+                        }
+                    }
+                }
+
+                // Fully stacked onto existing items
+                if (attachment.Stack <= 0)
+                {
+                    tool.attachments[i] = null;
+                    Game1.playSound("stoneStep");
+                    if (ModEntry.Config.VerboseLogging)
+                        Monitor?.Log($"[ChestTransfer] Detached {originalStack}x {name} from tool to chest", LogLevel.Debug);
+                    return true;
+                }
+
+                // Try empty slot for remainder
+                for (int j = 0; j < chestInv.Count; j++)
+                {
+                    if (chestInv[j] == null)
+                    {
+                        chestInv[j] = attachment;
+                        tool.attachments[i] = null;
+                        Game1.playSound("stoneStep");
+                        if (ModEntry.Config.VerboseLogging)
+                            Monitor?.Log($"[ChestTransfer] Detached {originalStack}x {name} from tool to chest", LogLevel.Debug);
+                        return true;
+                    }
+                }
+
+                // Couldn't place remainder — check if partial success
+                if (attachment.Stack < originalStack)
+                {
+                    // Some was stacked but no empty slot for remainder — keep remainder on tool
+                    Game1.playSound("stoneStep");
+                    if (ModEntry.Config.VerboseLogging)
+                        Monitor?.Log($"[ChestTransfer] Partially detached {originalStack - attachment.Stack}x {name} from tool ({attachment.Stack} remain)", LogLevel.Debug);
+                    return true;
+                }
+
+                // Chest completely full — nothing placed
+                Game1.playSound("cancel");
+                if (ModEntry.Config.VerboseLogging)
+                    Monitor?.Log($"[ChestTransfer] Chest full, cannot detach {name} from tool", LogLevel.Debug);
+                return true;
+            }
+
+            return false; // No non-null attachments — tool is bare
         }
     }
 }
