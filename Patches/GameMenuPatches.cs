@@ -609,37 +609,14 @@ namespace AndroidConsolizer.Patches
                 case Buttons.A:
                 {
                     var snapped = page.currentlySnappedComponent;
-                    if (snapped == null) return false;
+                    if (snapped == null || snapped.bounds.Y <= 0) return false;
 
-                    // Find slot index for diagnostics
-                    var charSlots = _socialCharacterSlotsField?.GetValue(page) as IList;
-                    int slotIndex = -1;
-                    if (charSlots != null)
-                    {
-                        for (int i = 0; i < charSlots.Count; i++)
-                        {
-                            if (charSlots[i] == snapped) { slotIndex = i; break; }
-                        }
-                    }
+                    // Use receiveLeftClick at slot bounds center — same approach as AnimalPage
+                    int cx = snapped.bounds.Center.X;
+                    int cy = snapped.bounds.Center.Y;
+                    page.receiveLeftClick(cx, cy, true);
 
-                    int preCE = _socialClickedEntryField != null ? (int)_socialClickedEntryField.GetValue(page) : -999;
-                    Monitor?.Log($"[SocialDiag] A-press: slot={slotIndex}, ID={snapped.myID}, bounds={snapped.bounds}, clickedEntry(pre)={preCE}, tick={Game1.ticks}", LogLevel.Info);
-
-                    // Call _SelectSlot directly — bypasses the clickedEntry pipeline
-                    if (_socialSelectSlotMethod != null)
-                    {
-                        try
-                        {
-                            _socialSelectSlotMethod.Invoke(page, new object[] { snapped });
-                        }
-                        catch (Exception ex)
-                        {
-                            Monitor?.Log($"[SocialDiag] _SelectSlot EXCEPTION: {ex.InnerException?.Message ?? ex.Message}", LogLevel.Error);
-                        }
-                    }
-
-                    int postCE = _socialClickedEntryField != null ? (int)_socialClickedEntryField.GetValue(page) : -999;
-                    Monitor?.Log($"[SocialDiag] A-press: clickedEntry(post)={postCE}, tick={Game1.ticks}", LogLevel.Info);
+                    Monitor?.Log($"[SocialDiag] A-press: receiveLeftClick({cx},{cy}), snapped ID={snapped.myID}", LogLevel.Trace);
                     return false;
                 }
 
