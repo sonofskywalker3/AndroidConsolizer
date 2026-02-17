@@ -18,6 +18,18 @@ For completed features and their technical reference, see `DONE.md`.
 - **Part of the Main Menu Overhaul project — see #14c.**
 - **File:** `Patches/GameMenuPatches.cs`
 
+### 14. Social Tab — Right Stick Scrolling
+- Right stick still scrolls like vanilla (smooth MobileScrollBox scroll) instead of our 3-at-a-time slot navigation.
+- **Root cause (v3.3.43 logs):** Game NEVER sends `RightThumbstickDown`/`Up` button events through `receiveGamePadButton` on the social page. It reads right stick directly from `GetState()` to drive `MobileScrollBox`.
+- **Fix:** Poll right stick in `SocialUpdate_Prefix` to detect initial press ourselves (track neutral→engaged transition). Suppress right stick Y at GetState level while social page is active so vanilla scrollbox doesn't also scroll.
+- **File:** `Patches/GameMenuPatches.cs`, `Patches/GameplayButtonPatches.cs`
+
+### 14. Social Tab — Scrollbar Doesn't Track Left Stick
+- Visual scrollbar doesn't update when using left stick/D-pad to navigate the villager list.
+- We set `slotPosition` and `yOffsetForScroll` via reflection, but the scrollbar visual may be tied to a separate field or need an explicit update call.
+- **Investigation needed:** Check how `MobileScrollBox` renders its scrollbar. May need to call a scrollbar update method or set a scrollbar position field after changing `yOffsetForScroll`.
+- **File:** `Patches/GameMenuPatches.cs`
+
 ### 14a. Gift Log Improvements
 - **Visible cursor:** No visible cursor/selection indicator when viewing a villager's gift log (ProfileMenu). Need to investigate what components exist and add cursor support.
 - **Bumper-switch return position:** Using LB/RB to switch villagers inside the gift log doesn't update the saved return index. Pressing B returns to the villager you originally pressed A on, not the one you switched to. Fix: patch ProfileMenu's `ChangeCharacter` to update `_savedSocialReturnIndex`, or detect the current villager on ProfileMenu exit.
