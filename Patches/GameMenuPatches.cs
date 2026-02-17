@@ -272,26 +272,17 @@ namespace AndroidConsolizer.Patches
                     _socialSpritesField = AccessTools.Field(pageType, "sprites");
                     _socialSelectSlotMethod = pageType.GetMethod("_SelectSlot", BindingFlags.Instance | BindingFlags.NonPublic);
 
-                    // Cache yOffset field from MobileScrollbox (for coordinate diagnostics)
+                    // Cache yOffsetForScroll field from MobileScrollbox (for scroll sync)
                     if (_socialScrollAreaField != null)
                     {
                         var scrollArea = _socialScrollAreaField.GetValue(page);
                         if (scrollArea != null)
                         {
-                            _scrollboxYOffsetField = AccessTools.Field(scrollArea.GetType(), "yOffset")
-                                                  ?? AccessTools.Field(scrollArea.GetType(), "_yOffset")
-                                                  ?? AccessTools.Field(scrollArea.GetType(), "scrollY");
+                            _scrollboxYOffsetField = AccessTools.Field(scrollArea.GetType(), "yOffsetForScroll");
                             if (_scrollboxYOffsetField != null)
                                 Monitor?.Log($"[SocialDiag] Found scrollbox yOffset field: {_scrollboxYOffsetField.Name} (type={_scrollboxYOffsetField.FieldType.Name})", LogLevel.Trace);
                             else
-                            {
-                                // Try all fields to find something that looks like a Y offset
-                                foreach (var f in scrollArea.GetType().GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public))
-                                {
-                                    if (f.Name.ToLower().Contains("offset") || f.Name.ToLower().Contains("scroll"))
-                                        Monitor?.Log($"[SocialDiag] Candidate scrollbox field: {f.Name} (type={f.FieldType.Name})", LogLevel.Trace);
-                                }
-                            }
+                                Monitor?.Log($"[SocialDiag] WARNING: yOffsetForScroll field not found on MobileScrollbox", LogLevel.Warn);
                         }
                     }
                 }
@@ -674,33 +665,31 @@ namespace AndroidConsolizer.Patches
                 {
                     Monitor?.Log($"[SocialDiag] newIndex={newIndex} outside visible [{slotPosition},{slotPosition + visibleSlots}), scrolling...", LogLevel.Trace);
 
-                    // Use the game's own scroll mechanism to keep MobileScrollbox in sync
-                    int scrollDir = direction > 0 ? -1 : 1;
-                    Monitor?.Log($"[SocialDiag] calling receiveScrollWheelAction({scrollDir})", LogLevel.Trace);
-                    page.receiveScrollWheelAction(scrollDir);
-
-                    // Re-read slotPosition after game scrolled
-                    int newSlotPos = (int)_socialSlotPositionField.GetValue(page);
-                    Monitor?.Log($"[SocialDiag] after scroll: slotPosition {slotPosition}→{newSlotPos}", LogLevel.Trace);
-
-                    if (newSlotPos != slotPosition)
+                    // Directly set slotPosition — receiveScrollWheelAction has no effect on Android's MobileScrollbox
+                    int newSlotPos = slotPosition + direction;
+                    int maxSlotPos = charSlots.Count - visibleSlots;
+                    if (newSlotPos < 0 || newSlotPos > maxSlotPos)
                     {
-                        slotPosition = newSlotPos;
-                        RefixSocialBounds(page, charSlots, slotPosition, slotHeight, mainBox);
-                        _lastSocialSlotPosition = slotPosition;
-                    }
-                    else
-                    {
-                        Monitor?.Log($"[SocialDiag] scroll had no effect (boundary), aborting", LogLevel.Trace);
+                        Monitor?.Log($"[SocialDiag] newSlotPos={newSlotPos} out of range [0,{maxSlotPos}], aborting", LogLevel.Trace);
                         return;
                     }
 
-                    // Verify target is now visible after scroll
-                    if (newIndex < slotPosition || newIndex >= slotPosition + visibleSlots)
+                    _socialSlotPositionField.SetValue(page, newSlotPos);
+
+                    // Sync MobileScrollbox yOffsetForScroll to match — game uses NEGATIVE values when scrolled down
+                    // (range: 0 to -maxYOffset). Game's updateSlots() computes: Y = yOffset + mainBox.Y + slotsYStart + i*slotHeight
+                    if (_socialScrollAreaField != null && _scrollboxYOffsetField != null)
                     {
-                        Monitor?.Log($"[SocialDiag] newIndex={newIndex} still outside visible [{slotPosition},{slotPosition + visibleSlots}) after scroll, aborting", LogLevel.Trace);
-                        return;
+                        var scrollArea = _socialScrollAreaField.GetValue(page);
+                        if (scrollArea != null)
+                            _scrollboxYOffsetField.SetValue(scrollArea, -(newSlotPos * slotHeight));
                     }
+
+                    Monitor?.Log($"[SocialDiag] direct scroll: slotPosition {slotPosition}→{newSlotPos}, yOffset={-(newSlotPos * slotHeight)}", LogLevel.Trace);
+
+                    slotPosition = newSlotPos;
+                    RefixSocialBounds(page, charSlots, slotPosition, slotHeight, mainBox);
+                    _lastSocialSlotPosition = slotPosition;
                 }
 
                 var newSlot = charSlots[newIndex] as ClickableComponent;
