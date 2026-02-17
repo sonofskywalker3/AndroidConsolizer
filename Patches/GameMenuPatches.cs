@@ -40,6 +40,7 @@ namespace AndroidConsolizer.Patches
         private static FieldInfo _socialClickedEntryField;
         private static FieldInfo _socialScrollAreaField;
         private static MethodInfo _socialSelectSlotMethod;
+        private static FieldInfo _socialSpritesField;
 
         // Track slotPosition to detect right-stick scroll changes
         private static int _lastSocialSlotPosition = -1;
@@ -52,14 +53,8 @@ namespace AndroidConsolizer.Patches
         // Diagnostic: track child menu on SocialPage (gift log)
         private static bool _dumpedChildMenu = false;
 
-        // Diagnostic: one-time dump of SocialPage fields to find scrollbox
-        private static bool _dumpedSocialFields = false;
-
         // Diagnostic: cached scrollbox yOffset field for logging
         private static FieldInfo _scrollboxYOffsetField;
-
-        // Diagnostic: track last A-press tick for updateSlots correlation
-        private static int _lastSocialAPressTickDiag = -999;
 
         public static void Apply(Harmony harmony, IMonitor monitor)
         {
@@ -90,44 +85,6 @@ namespace AndroidConsolizer.Patches
                         original: socialUpdateMethod,
                         prefix: new HarmonyMethod(typeof(GameMenuPatches), nameof(SocialUpdate_Prefix))
                     );
-                }
-
-                // Diagnostic: Patch SocialPage.receiveLeftClick to log ALL calls
-                var socialClickMethod = AccessTools.Method(typeof(SocialPage), "receiveLeftClick", new[] { typeof(int), typeof(int), typeof(bool) });
-                if (socialClickMethod != null)
-                {
-                    harmony.Patch(
-                        original: socialClickMethod,
-                        prefix: new HarmonyMethod(typeof(GameMenuPatches), nameof(SocialReceiveLeftClick_Prefix)),
-                        postfix: new HarmonyMethod(typeof(GameMenuPatches), nameof(SocialReceiveLeftClick_Postfix))
-                    );
-                    Monitor.Log("SocialPage.receiveLeftClick diagnostic patch applied.", LogLevel.Trace);
-                }
-                else
-                {
-                    Monitor.Log("SocialPage.receiveLeftClick method not found!", LogLevel.Warn);
-                }
-
-                // Diagnostic: Patch SocialPage.releaseLeftClick to track release events
-                var socialReleaseMethod = AccessTools.Method(typeof(SocialPage), "releaseLeftClick", new[] { typeof(int), typeof(int) });
-                if (socialReleaseMethod != null)
-                {
-                    harmony.Patch(
-                        original: socialReleaseMethod,
-                        prefix: new HarmonyMethod(typeof(GameMenuPatches), nameof(SocialReleaseLeftClick_Prefix))
-                    );
-                    Monitor.Log("SocialPage.releaseLeftClick diagnostic patch applied.", LogLevel.Trace);
-                }
-
-                // Diagnostic: Patch SocialPage.updateSlots to track when it fires relative to clicks
-                var updateSlotsMethod = AccessTools.Method(typeof(SocialPage), "updateSlots");
-                if (updateSlotsMethod != null)
-                {
-                    harmony.Patch(
-                        original: updateSlotsMethod,
-                        prefix: new HarmonyMethod(typeof(GameMenuPatches), nameof(SocialUpdateSlots_Prefix))
-                    );
-                    Monitor.Log("SocialPage.updateSlots diagnostic patch applied.", LogLevel.Trace);
                 }
 
                 Monitor.Log("GameMenu patches applied.", LogLevel.Trace);
@@ -312,6 +269,7 @@ namespace AndroidConsolizer.Patches
                     _socialSlotsYStartField = AccessTools.Field(pageType, "slotsYStart");
                     _socialClickedEntryField = AccessTools.Field(pageType, "clickedEntry");
                     _socialScrollAreaField = AccessTools.Field(pageType, "scrollArea");
+                    _socialSpritesField = AccessTools.Field(pageType, "sprites");
                     _socialSelectSlotMethod = pageType.GetMethod("_SelectSlot", BindingFlags.Instance | BindingFlags.NonPublic);
 
                     // Cache yOffset field from MobileScrollbox (for coordinate diagnostics)
@@ -398,125 +356,12 @@ namespace AndroidConsolizer.Patches
                 }
 
                 _lastSocialSlotPosition = slotPosition;
-                Monitor?.Log($"[GameMenu] SocialPage: fixed {charSlots.Count} slot bounds", LogLevel.Trace);
 
-                // One-time: check if sprites and characterSlots share object references
-                if (!_dumpedSocialFields)
-                {
-                    var spritesField = AccessTools.Field(page.GetType(), "sprites");
-                    if (spritesField != null)
-                    {
-                        var spritesList = spritesField.GetValue(page) as IList;
-                        if (spritesList != null && charSlots != null)
-                        {
-                            bool allSame = true;
-                            int checkCount = Math.Min(spritesList.Count, charSlots.Count);
-                            for (int s = 0; s < checkCount; s++)
-                            {
-                                if (!ReferenceEquals(spritesList[s], charSlots[s]))
-                                {
-                                    allSame = false;
-                                    var sprite = spritesList[s] as ClickableComponent;
-                                    var slot = charSlots[s] as ClickableComponent;
-                                    Monitor?.Log($"[SpriteDiag] MISMATCH at [{s}]: sprites bounds=({sprite?.bounds.X},{sprite?.bounds.Y},{sprite?.bounds.Width},{sprite?.bounds.Height}) charSlots bounds=({slot?.bounds.X},{slot?.bounds.Y},{slot?.bounds.Width},{slot?.bounds.Height})", LogLevel.Info);
-                                    if (s >= 5) { Monitor?.Log("[SpriteDiag] (truncated, showing first 6 mismatches)", LogLevel.Info); break; }
-                                }
-                            }
-                            if (allSame)
-                                Monitor?.Log($"[SpriteDiag] ALL {checkCount} sprites and characterSlots are the SAME object references — fixing one fixes both", LogLevel.Info);
-                            else
-                                Monitor?.Log($"[SpriteDiag] sprites and characterSlots are DIFFERENT objects — sprites bounds are NOT being fixed!", LogLevel.Info);
-                        }
-                    }
+                // Also fix sprites bounds — receiveLeftClick hit-tests against sprites, not characterSlots
+                // Sprites are separate objects with different (smaller) bounds; sync them to match charSlots
+                SyncSpritesBounds(page, charSlots);
 
-                    _dumpedSocialFields = true;
-                    Monitor?.Log("[SocialDiag] === SocialPage field dump ===", LogLevel.Trace);
-                    var pageType = page.GetType();
-                    foreach (var field in pageType.GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public))
-                    {
-                        try
-                        {
-                            var val = field.GetValue(page);
-                            string valStr = val?.GetType().Name ?? "null";
-                            if (val is int i) valStr = i.ToString();
-                            else if (val is bool b) valStr = b.ToString();
-                            else if (val is float f) valStr = f.ToString();
-                            else if (val is Rectangle r) valStr = $"{{X:{r.X} Y:{r.Y} W:{r.Width} H:{r.Height}}}";
-                            else if (val is IList list) valStr = $"{val.GetType().Name}[{list.Count}]";
-                            Monitor?.Log($"[SocialDiag]   {field.Name}: {field.FieldType.Name} = {valStr}", LogLevel.Trace);
-                        }
-                        catch { }
-                    }
-                    // Also check base class (IClickableMenu) fields
-                    foreach (var field in typeof(IClickableMenu).GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public))
-                    {
-                        try
-                        {
-                            var val = field.GetValue(page);
-                            string valStr = val?.GetType().Name ?? "null";
-                            if (val is IList list) valStr = $"{val.GetType().Name}[{list.Count}]";
-                            Monitor?.Log($"[SocialDiag]   (base) {field.Name}: {field.FieldType.Name} = {valStr}", LogLevel.Trace);
-                        }
-                        catch { }
-                    }
-                    // Dump MobileScrollbox fields to understand scroll API
-                    if (_socialScrollAreaField != null)
-                    {
-                        var scrollArea = _socialScrollAreaField.GetValue(page);
-                        if (scrollArea != null)
-                        {
-                            Monitor?.Log("[SocialDiag] === MobileScrollbox field dump ===", LogLevel.Trace);
-                            var scrollType = scrollArea.GetType();
-                            foreach (var field in scrollType.GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public))
-                            {
-                                try
-                                {
-                                    var val = field.GetValue(scrollArea);
-                                    string valStr = val?.GetType().Name ?? "null";
-                                    if (val is int iv) valStr = iv.ToString();
-                                    else if (val is bool bv) valStr = bv.ToString();
-                                    else if (val is float fv) valStr = fv.ToString();
-                                    else if (val is double dv) valStr = dv.ToString();
-                                    else if (val is Rectangle rv) valStr = $"{{X:{rv.X} Y:{rv.Y} W:{rv.Width} H:{rv.Height}}}";
-                                    else if (val is Vector2 v2) valStr = $"({v2.X},{v2.Y})";
-                                    else if (val is IList lv) valStr = $"{val.GetType().Name}[{lv.Count}]";
-                                    Monitor?.Log($"[SocialDiag]   scroll.{field.Name}: {field.FieldType.Name} = {valStr}", LogLevel.Trace);
-                                }
-                                catch { }
-                            }
-                            // Also check base class fields
-                            var baseType = scrollType.BaseType;
-                            if (baseType != null && baseType != typeof(object))
-                            {
-                                Monitor?.Log($"[SocialDiag]   --- base: {baseType.Name} ---", LogLevel.Trace);
-                                foreach (var field in baseType.GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.DeclaredOnly))
-                                {
-                                    try
-                                    {
-                                        var val = field.GetValue(scrollArea);
-                                        string valStr = val?.GetType().Name ?? "null";
-                                        if (val is int iv) valStr = iv.ToString();
-                                        else if (val is bool bv) valStr = bv.ToString();
-                                        else if (val is float fv) valStr = fv.ToString();
-                                        else if (val is Rectangle rv) valStr = $"{{X:{rv.X} Y:{rv.Y} W:{rv.Width} H:{rv.Height}}}";
-                                        Monitor?.Log($"[SocialDiag]   scroll(base).{field.Name}: {field.FieldType.Name} = {valStr}", LogLevel.Trace);
-                                    }
-                                    catch { }
-                                }
-                            }
-                            // List methods too (for scroll API discovery)
-                            Monitor?.Log("[SocialDiag]   --- MobileScrollbox methods ---", LogLevel.Trace);
-                            foreach (var method in scrollType.GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly))
-                            {
-                                var parms = method.GetParameters();
-                                string parmStr = string.Join(", ", Array.ConvertAll(parms, p => $"{p.ParameterType.Name} {p.Name}"));
-                                Monitor?.Log($"[SocialDiag]   scroll.{method.Name}({parmStr}) → {method.ReturnType.Name}", LogLevel.Trace);
-                            }
-                            Monitor?.Log("[SocialDiag] === end MobileScrollbox dump ===", LogLevel.Trace);
-                        }
-                    }
-                    Monitor?.Log("[SocialDiag] === end field dump ===", LogLevel.Trace);
-                }
+                Monitor?.Log($"[GameMenu] SocialPage: fixed {charSlots.Count} slot bounds + sprites", LogLevel.Trace);
             }
             catch (Exception ex)
             {
@@ -608,139 +453,6 @@ namespace AndroidConsolizer.Patches
                 _scrollboxTapPhase = 0;
                 Monitor?.Log($"[SocialDiag] scrollbox tap phase 2: releaseLeftClick({_scrollboxTapX},{_scrollboxTapY})", LogLevel.Trace);
             }
-        }
-
-        /// <summary>
-        /// Diagnostic: log every call to SocialPage.receiveLeftClick with coordinates.
-        /// This tells us exactly what the touch simulation sends and whether it fires at all.
-        /// </summary>
-        private static void SocialReceiveLeftClick_Prefix(SocialPage __instance, int x, int y, bool playSound)
-        {
-            try
-            {
-                // Get yOffset from scrollbox
-                float yOffset = 0f;
-                if (_socialScrollAreaField != null && _scrollboxYOffsetField != null)
-                {
-                    var scrollArea = _socialScrollAreaField.GetValue(__instance);
-                    if (scrollArea != null)
-                    {
-                        var yOffsetVal = _scrollboxYOffsetField.GetValue(scrollArea);
-                        if (yOffsetVal is float f) yOffset = f;
-                        else if (yOffsetVal is int iv) yOffset = iv;
-                    }
-                }
-
-                // Get current snapped component
-                var snapped = __instance.currentlySnappedComponent;
-                string snappedInfo = snapped != null ? $"ID={snapped.myID} center=({snapped.bounds.Center.X},{snapped.bounds.Center.Y})" : "null";
-
-                // Compute what slot index the click Y maps to
-                int slotHeight = _socialSlotHeightField != null ? (int)_socialSlotHeightField.GetValue(__instance) : 0;
-                var mainBox = _socialMainBoxField != null ? (Rectangle)_socialMainBoxField.GetValue(__instance) : Rectangle.Empty;
-                int slotsYOffset = _socialSlotsYStartField != null ? (int)_socialSlotsYStartField.GetValue(__instance) : 0;
-                int baseY = mainBox.Y + slotsYOffset;
-                int computedSlot = slotHeight > 0 ? (int)((y - baseY + Math.Abs(yOffset)) / slotHeight) : -1;
-
-                // Get clickedEntry before this call
-                int clickedEntryBefore = _socialClickedEntryField != null ? (int)_socialClickedEntryField.GetValue(__instance) : -999;
-
-                Monitor?.Log($"[SocialClickDiag] receiveLeftClick({x},{y},playSound={playSound}) yOffset={yOffset} snapped={snappedInfo} baseY={baseY} computedSlot={computedSlot} clickedEntryBefore={clickedEntryBefore} tick={Game1.ticks}", LogLevel.Info);
-
-                // DIAGNOSTIC: Dump sprites bounds and check if same objects as characterSlots
-                var spritesField = AccessTools.Field(__instance.GetType(), "sprites");
-                if (spritesField != null)
-                {
-                    var spritesList = spritesField.GetValue(__instance) as IList;
-                    var charSlots = _socialCharacterSlotsField?.GetValue(__instance) as IList;
-                    if (spritesList != null)
-                    {
-                        int dumpCount = Math.Min(6, spritesList.Count);
-                        for (int si = 0; si < dumpCount; si++)
-                        {
-                            var sprite = spritesList[si] as ClickableComponent;
-                            var charSlot = (charSlots != null && si < charSlots.Count) ? charSlots[si] as ClickableComponent : null;
-                            bool sameRef = (sprite != null && charSlot != null && ReferenceEquals(sprite, charSlot));
-                            string spriteBounds = sprite != null ? $"({sprite.bounds.X},{sprite.bounds.Y},{sprite.bounds.Width},{sprite.bounds.Height})" : "null";
-                            string charBounds = charSlot != null ? $"({charSlot.bounds.X},{charSlot.bounds.Y},{charSlot.bounds.Width},{charSlot.bounds.Height})" : "null";
-                            bool hitTest = sprite != null && new Rectangle(sprite.bounds.X, sprite.bounds.Y, sprite.bounds.Width, sprite.bounds.Height + 4).Contains(x, y);
-                            Monitor?.Log($"[SpriteDiag] sprites[{si}] bounds={spriteBounds} charSlots[{si}] bounds={charBounds} sameRef={sameRef} wouldHit({x},{y})={hitTest}", LogLevel.Info);
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Monitor?.Log($"[SocialClickDiag] ERROR: {ex.Message}", LogLevel.Error);
-            }
-        }
-
-        /// <summary>
-        /// Diagnostic postfix: log clickedEntry AFTER receiveLeftClick completes.
-        /// </summary>
-        private static void SocialReceiveLeftClick_Postfix(SocialPage __instance, int x, int y)
-        {
-            try
-            {
-                int clickedEntryAfter = _socialClickedEntryField != null ? (int)_socialClickedEntryField.GetValue(__instance) : -999;
-                var childMenuField = AccessTools.Field(typeof(IClickableMenu), "_childMenu")
-                                  ?? AccessTools.Field(__instance.GetType(), "_childMenu");
-                bool hasChildMenu = false;
-                if (childMenuField != null)
-                {
-                    var child = childMenuField.GetValue(__instance);
-                    hasChildMenu = child != null;
-                }
-                Monitor?.Log($"[SocialClickDiag] AFTER receiveLeftClick({x},{y}): clickedEntry={clickedEntryAfter} hasChildMenu={hasChildMenu} tick={Game1.ticks}", LogLevel.Info);
-            }
-            catch (Exception ex)
-            {
-                Monitor?.Log($"[SocialClickDiag] POSTFIX ERROR: {ex.Message}", LogLevel.Error);
-            }
-        }
-
-        /// <summary>
-        /// Diagnostic: log every call to SocialPage.releaseLeftClick.
-        /// Confirms whether touch simulation generates release events.
-        /// </summary>
-        private static void SocialReleaseLeftClick_Prefix(SocialPage __instance, int x, int y)
-        {
-            try
-            {
-                int clickedEntry = _socialClickedEntryField != null ? (int)_socialClickedEntryField.GetValue(__instance) : -999;
-                var scrollingField = AccessTools.Field(__instance.GetType(), "scrolling");
-                bool scrolling = scrollingField != null && (bool)scrollingField.GetValue(__instance);
-                Monitor?.Log($"[SocialReleaseDiag] releaseLeftClick({x},{y}) clickedEntry={clickedEntry} scrolling={scrolling} tick={Game1.ticks}", LogLevel.Info);
-            }
-            catch (Exception ex)
-            {
-                Monitor?.Log($"[SocialReleaseDiag] ERROR: {ex.Message}", LogLevel.Error);
-            }
-        }
-
-        /// <summary>
-        /// Diagnostic: track when updateSlots() fires relative to click events.
-        /// Tests hypothesis that scrollArea.receiveLeftClick triggers updateSlots as side effect.
-        /// </summary>
-        private static void SocialUpdateSlots_Prefix(SocialPage __instance)
-        {
-            try
-            {
-                // Only log when near a click event (within 5 ticks of last A-press)
-                if (Math.Abs(Game1.ticks - _lastSocialAPressTickDiag) <= 5)
-                {
-                    var spritesField = AccessTools.Field(__instance.GetType(), "sprites");
-                    var spritesList = spritesField?.GetValue(__instance) as IList;
-                    string firstSpriteBounds = "?";
-                    if (spritesList != null && spritesList.Count > 0)
-                    {
-                        var s = spritesList[0] as ClickableComponent;
-                        if (s != null) firstSpriteBounds = $"({s.bounds.X},{s.bounds.Y},{s.bounds.Width},{s.bounds.Height})";
-                    }
-                    Monitor?.Log($"[UpdateSlotsDiag] updateSlots() called! tick={Game1.ticks} sprites[0].bounds={firstSpriteBounds}", LogLevel.Info);
-                }
-            }
-            catch { }
         }
 
         /// <summary>
@@ -841,10 +553,7 @@ namespace AndroidConsolizer.Patches
             {
                 case Buttons.A:
                 {
-                    _lastSocialAPressTickDiag = Game1.ticks;
-
-                    // DIAGNOSTIC v3.3.35: Block A completely. Touch sim still fires.
-                    // Log details so we can compare working vs non-working slots.
+                    // Block A from reaching scrollbox, let touch sim fire naturally.
                     var snapped = page.currentlySnappedComponent;
 
                     // Get yOffset from scrollbox
@@ -1014,6 +723,29 @@ namespace AndroidConsolizer.Patches
         }
 
         /// <summary>
+        /// Sync sprites bounds to match characterSlots bounds.
+        /// On Android, receiveLeftClick hit-tests against sprites (separate objects from characterSlots).
+        /// Without this, sprites have height=64 while charSlots have height=slotHeight, causing misses.
+        /// </summary>
+        private static void SyncSpritesBounds(IClickableMenu page, IList charSlots)
+        {
+            if (_socialSpritesField == null) return;
+
+            var sprites = _socialSpritesField.GetValue(page) as IList;
+            if (sprites == null) return;
+
+            int count = Math.Min(sprites.Count, charSlots.Count);
+            for (int i = 0; i < count; i++)
+            {
+                var sprite = sprites[i] as ClickableComponent;
+                var slot = charSlots[i] as ClickableComponent;
+                if (sprite == null || slot == null) continue;
+
+                sprite.bounds = slot.bounds;
+            }
+        }
+
+        /// <summary>
         /// Re-fix slot bounds without changing the snap target.
         /// Used after scroll position changes (right stick or receiveScrollWheelAction).
         /// </summary>
@@ -1035,6 +767,9 @@ namespace AndroidConsolizer.Patches
                 var b = slot.bounds;
                 slot.bounds = new Rectangle(b.X, newY, b.Width, slotHeight);
             }
+
+            // Also sync sprites bounds after re-fixing charSlots
+            SyncSpritesBounds(page, charSlots);
         }
 
         /// <summary>
