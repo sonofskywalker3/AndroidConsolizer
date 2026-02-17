@@ -55,6 +55,9 @@ namespace AndroidConsolizer.Patches
         // Diagnostic: one-time dump of SocialPage fields to find scrollbox
         private static bool _dumpedSocialFields = false;
 
+        // Diagnostic: cached scrollbox yOffset field for logging
+        private static FieldInfo _scrollboxYOffsetField;
+
         public static void Apply(Harmony harmony, IMonitor monitor)
         {
             Monitor = monitor;
@@ -76,7 +79,7 @@ namespace AndroidConsolizer.Patches
                     prefix: new HarmonyMethod(typeof(GameMenuPatches), nameof(ReceiveGamePadButton_Prefix))
                 );
 
-                // Patch SocialPage.update() to inject clickedEntry right before processing
+                // Patch SocialPage.update() to drive scrollbox tap gesture
                 var socialUpdateMethod = AccessTools.Method(typeof(SocialPage), "update", new[] { typeof(GameTime) });
                 if (socialUpdateMethod != null)
                 {
@@ -84,6 +87,22 @@ namespace AndroidConsolizer.Patches
                         original: socialUpdateMethod,
                         prefix: new HarmonyMethod(typeof(GameMenuPatches), nameof(SocialUpdate_Prefix))
                     );
+                }
+
+                // Diagnostic: Patch SocialPage.receiveLeftClick to log ALL calls
+                var socialClickMethod = AccessTools.Method(typeof(SocialPage), "receiveLeftClick", new[] { typeof(int), typeof(int), typeof(bool) });
+                if (socialClickMethod != null)
+                {
+                    harmony.Patch(
+                        original: socialClickMethod,
+                        prefix: new HarmonyMethod(typeof(GameMenuPatches), nameof(SocialReceiveLeftClick_Prefix)),
+                        postfix: new HarmonyMethod(typeof(GameMenuPatches), nameof(SocialReceiveLeftClick_Postfix))
+                    );
+                    Monitor.Log("SocialPage.receiveLeftClick diagnostic patch applied.", LogLevel.Trace);
+                }
+                else
+                {
+                    Monitor.Log("SocialPage.receiveLeftClick method not found!", LogLevel.Warn);
                 }
 
                 Monitor.Log("GameMenu patches applied.", LogLevel.Trace);
@@ -269,6 +288,29 @@ namespace AndroidConsolizer.Patches
                     _socialClickedEntryField = AccessTools.Field(pageType, "clickedEntry");
                     _socialScrollAreaField = AccessTools.Field(pageType, "scrollArea");
                     _socialSelectSlotMethod = pageType.GetMethod("_SelectSlot", BindingFlags.Instance | BindingFlags.NonPublic);
+
+                    // Cache yOffset field from MobileScrollbox (for coordinate diagnostics)
+                    if (_socialScrollAreaField != null)
+                    {
+                        var scrollArea = _socialScrollAreaField.GetValue(page);
+                        if (scrollArea != null)
+                        {
+                            _scrollboxYOffsetField = AccessTools.Field(scrollArea.GetType(), "yOffset")
+                                                  ?? AccessTools.Field(scrollArea.GetType(), "_yOffset")
+                                                  ?? AccessTools.Field(scrollArea.GetType(), "scrollY");
+                            if (_scrollboxYOffsetField != null)
+                                Monitor?.Log($"[SocialDiag] Found scrollbox yOffset field: {_scrollboxYOffsetField.Name} (type={_scrollboxYOffsetField.FieldType.Name})", LogLevel.Trace);
+                            else
+                            {
+                                // Try all fields to find something that looks like a Y offset
+                                foreach (var f in scrollArea.GetType().GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public))
+                                {
+                                    if (f.Name.ToLower().Contains("offset") || f.Name.ToLower().Contains("scroll"))
+                                        Monitor?.Log($"[SocialDiag] Candidate scrollbox field: {f.Name} (type={f.FieldType.Name})", LogLevel.Trace);
+                                }
+                            }
+                        }
+                    }
                 }
 
                 if (_socialCharacterSlotsField == null || _socialSlotHeightField == null || _socialMainBoxField == null)
@@ -518,6 +560,73 @@ namespace AndroidConsolizer.Patches
         }
 
         /// <summary>
+        /// Diagnostic: log every call to SocialPage.receiveLeftClick with coordinates.
+        /// This tells us exactly what the touch simulation sends and whether it fires at all.
+        /// </summary>
+        private static void SocialReceiveLeftClick_Prefix(SocialPage __instance, int x, int y, bool playSound)
+        {
+            try
+            {
+                // Get yOffset from scrollbox
+                float yOffset = 0f;
+                if (_socialScrollAreaField != null && _scrollboxYOffsetField != null)
+                {
+                    var scrollArea = _socialScrollAreaField.GetValue(__instance);
+                    if (scrollArea != null)
+                    {
+                        var yOffsetVal = _scrollboxYOffsetField.GetValue(scrollArea);
+                        if (yOffsetVal is float f) yOffset = f;
+                        else if (yOffsetVal is int iv) yOffset = iv;
+                    }
+                }
+
+                // Get current snapped component
+                var snapped = __instance.currentlySnappedComponent;
+                string snappedInfo = snapped != null ? $"ID={snapped.myID} center=({snapped.bounds.Center.X},{snapped.bounds.Center.Y})" : "null";
+
+                // Compute what slot index the click Y maps to
+                int slotHeight = _socialSlotHeightField != null ? (int)_socialSlotHeightField.GetValue(__instance) : 0;
+                var mainBox = _socialMainBoxField != null ? (Rectangle)_socialMainBoxField.GetValue(__instance) : Rectangle.Empty;
+                int slotsYOffset = _socialSlotsYStartField != null ? (int)_socialSlotsYStartField.GetValue(__instance) : 0;
+                int baseY = mainBox.Y + slotsYOffset;
+                int computedSlot = slotHeight > 0 ? (int)((y - baseY + Math.Abs(yOffset)) / slotHeight) : -1;
+
+                // Get clickedEntry before this call
+                int clickedEntryBefore = _socialClickedEntryField != null ? (int)_socialClickedEntryField.GetValue(__instance) : -999;
+
+                Monitor?.Log($"[SocialClickDiag] receiveLeftClick({x},{y},playSound={playSound}) yOffset={yOffset} snapped={snappedInfo} baseY={baseY} computedSlot={computedSlot} clickedEntryBefore={clickedEntryBefore} tick={Game1.ticks}", LogLevel.Info);
+            }
+            catch (Exception ex)
+            {
+                Monitor?.Log($"[SocialClickDiag] ERROR: {ex.Message}", LogLevel.Error);
+            }
+        }
+
+        /// <summary>
+        /// Diagnostic postfix: log clickedEntry AFTER receiveLeftClick completes.
+        /// </summary>
+        private static void SocialReceiveLeftClick_Postfix(SocialPage __instance, int x, int y)
+        {
+            try
+            {
+                int clickedEntryAfter = _socialClickedEntryField != null ? (int)_socialClickedEntryField.GetValue(__instance) : -999;
+                var childMenuField = AccessTools.Field(typeof(IClickableMenu), "_childMenu")
+                                  ?? AccessTools.Field(__instance.GetType(), "_childMenu");
+                bool hasChildMenu = false;
+                if (childMenuField != null)
+                {
+                    var child = childMenuField.GetValue(__instance);
+                    hasChildMenu = child != null;
+                }
+                Monitor?.Log($"[SocialClickDiag] AFTER receiveLeftClick({x},{y}): clickedEntry={clickedEntryAfter} hasChildMenu={hasChildMenu} tick={Game1.ticks}", LogLevel.Info);
+            }
+            catch (Exception ex)
+            {
+                Monitor?.Log($"[SocialClickDiag] POSTFIX ERROR: {ex.Message}", LogLevel.Error);
+            }
+        }
+
+        /// <summary>
         /// Handle input on the Animals tab. Returns false to skip original method.
         /// </summary>
         private static bool HandleAnimalInput(IClickableMenu page, Buttons b)
@@ -615,16 +724,43 @@ namespace AndroidConsolizer.Patches
             {
                 case Buttons.A:
                 {
-                    // Simulate a tap on the scrollbox at the snapped slot's center.
-                    // Two-frame gesture: receiveLeftClick on next update,
-                    // releaseLeftClick on the update after that.
+                    // DIAGNOSTIC v3.3.35: Block A completely. Touch sim still fires.
+                    // Log details so we can compare working vs non-working slots.
                     var snapped = page.currentlySnappedComponent;
-                    if (snapped == null) return false;
 
-                    _scrollboxTapX = snapped.bounds.Center.X;
-                    _scrollboxTapY = snapped.bounds.Center.Y;
-                    _scrollboxTapPhase = 1;
-                    return false;
+                    // Get yOffset from scrollbox
+                    float yOffset = 0f;
+                    if (_socialScrollAreaField != null && _scrollboxYOffsetField != null)
+                    {
+                        var scrollArea = _socialScrollAreaField.GetValue(page);
+                        if (scrollArea != null)
+                        {
+                            var yOffsetVal = _scrollboxYOffsetField.GetValue(scrollArea);
+                            if (yOffsetVal is float f) yOffset = f;
+                            else if (yOffsetVal is int iv) yOffset = iv;
+                        }
+                    }
+
+                    // Find slot index in characterSlots
+                    int slotIdx = -1;
+                    if (snapped != null && _socialCharacterSlotsField != null)
+                    {
+                        var charSlots = _socialCharacterSlotsField.GetValue(page) as IList;
+                        if (charSlots != null)
+                        {
+                            for (int i = 0; i < charSlots.Count; i++)
+                            {
+                                if (charSlots[i] == snapped) { slotIdx = i; break; }
+                            }
+                        }
+                    }
+
+                    // Log mouse position (what touch sim will use)
+                    var mouseState = Microsoft.Xna.Framework.Input.Mouse.GetState();
+
+                    Monitor?.Log($"[SocialADiag] A-PRESS: slotIdx={slotIdx} snappedID={snapped?.myID} bounds=({snapped?.bounds.X},{snapped?.bounds.Y},{snapped?.bounds.Width},{snapped?.bounds.Height}) center=({snapped?.bounds.Center.X},{snapped?.bounds.Center.Y}) yOffset={yOffset} mouseXY=({mouseState.X},{mouseState.Y}) tick={Game1.ticks}", LogLevel.Info);
+
+                    return false; // block A, let touch sim fire naturally
                 }
 
                 case Buttons.DPadDown:
