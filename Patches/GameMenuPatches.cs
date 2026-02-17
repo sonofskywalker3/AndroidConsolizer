@@ -45,8 +45,9 @@ namespace AndroidConsolizer.Patches
         private static int _lastSocialSlotPosition = -1;
 
         // GetMouseState override for A-press on Social tab
-        // (Android's receiveLeftClick reads GetMouseState internally, ignores x,y params)
-        private static bool _overridingSocialMouse;
+        // Touch sim reads raw mouse position — override it to the snapped slot's center
+        // so the touch sim opens the correct villager. Only active for the A-press tick.
+        private static int _socialMouseOverrideTick = -1;
         private static int _socialMouseRawX, _socialMouseRawY;
 
         // Diagnostic: track child menu on SocialPage (gift log)
@@ -501,7 +502,7 @@ namespace AndroidConsolizer.Patches
 
         private static void GetMouseState_Postfix(ref MouseState __result)
         {
-            if (!_overridingSocialMouse) return;
+            if (_socialMouseOverrideTick != Game1.ticks) return;
             __result = new MouseState(
                 _socialMouseRawX, _socialMouseRawY,
                 __result.ScrollWheelValue,
@@ -607,10 +608,18 @@ namespace AndroidConsolizer.Patches
             switch (b)
             {
                 case Buttons.A:
-                    // DIAGNOSTIC: Block A completely — do nothing at all.
-                    // If profiles still open, the touch simulation is responsible.
-                    Monitor?.Log($"[SocialDiag] A-press BLOCKED (diagnostic) — snapped ID={page.currentlySnappedComponent?.myID}", LogLevel.Info);
+                {
+                    // Touch sim fires after every A-press and reads GetMouseState()
+                    // to determine which villager to open. Override mouse position to
+                    // the snapped slot's bounds center so it hits the right villager.
+                    var snapped = page.currentlySnappedComponent;
+                    if (snapped == null) return false;
+
+                    _socialMouseRawX = snapped.bounds.Center.X;
+                    _socialMouseRawY = snapped.bounds.Center.Y;
+                    _socialMouseOverrideTick = Game1.ticks;
                     return false;
+                }
 
                 case Buttons.DPadDown:
                 case Buttons.LeftThumbstickDown:
