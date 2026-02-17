@@ -611,12 +611,35 @@ namespace AndroidConsolizer.Patches
                     var snapped = page.currentlySnappedComponent;
                     if (snapped == null) return false;
 
+                    // Find slot index for diagnostics
+                    var charSlots = _socialCharacterSlotsField?.GetValue(page) as IList;
+                    int slotIndex = -1;
+                    if (charSlots != null)
+                    {
+                        for (int i = 0; i < charSlots.Count; i++)
+                        {
+                            if (charSlots[i] == snapped) { slotIndex = i; break; }
+                        }
+                    }
+
+                    int preCE = _socialClickedEntryField != null ? (int)_socialClickedEntryField.GetValue(page) : -999;
+                    Monitor?.Log($"[SocialDiag] A-press: slot={slotIndex}, ID={snapped.myID}, bounds={snapped.bounds}, clickedEntry(pre)={preCE}, tick={Game1.ticks}", LogLevel.Info);
+
                     // Call _SelectSlot directly — bypasses the clickedEntry pipeline
-                    // which gets overwritten by Android's touch simulation on the same tick.
                     if (_socialSelectSlotMethod != null)
                     {
-                        _socialSelectSlotMethod.Invoke(page, new object[] { snapped });
+                        try
+                        {
+                            _socialSelectSlotMethod.Invoke(page, new object[] { snapped });
+                        }
+                        catch (Exception ex)
+                        {
+                            Monitor?.Log($"[SocialDiag] _SelectSlot EXCEPTION: {ex.InnerException?.Message ?? ex.Message}", LogLevel.Error);
+                        }
                     }
+
+                    int postCE = _socialClickedEntryField != null ? (int)_socialClickedEntryField.GetValue(page) : -999;
+                    Monitor?.Log($"[SocialDiag] A-press: clickedEntry(post)={postCE}, tick={Game1.ticks}", LogLevel.Info);
                     return false;
                 }
 
