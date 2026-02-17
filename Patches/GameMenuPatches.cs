@@ -70,6 +70,7 @@ namespace AndroidConsolizer.Patches
 
         // Diagnostic: track child menu on SocialPage (gift log)
         private static bool _dumpedChildMenu = false;
+        private static int _lastProfileMenuSnappedId = -999; // track snap changes in ProfileMenu
 
         // MobileScrollbox.setYOffsetForScroll() method — sets yOffset AND syncs scrollbar visual
         private static MethodInfo _scrollboxSetYOffsetMethod;
@@ -989,12 +990,26 @@ namespace AndroidConsolizer.Patches
                                 if (!_dumpedChildMenu)
                                 {
                                     _dumpedChildMenu = true;
+                                    _lastProfileMenuSnappedId = -999;
                                     DumpChildMenu(childMenu);
+                                }
+
+                                // Track snap component changes in ProfileMenu (log on change only)
+                                var snapped = childMenu.currentlySnappedComponent;
+                                int snappedId = snapped?.myID ?? -1;
+                                if (snappedId != _lastProfileMenuSnappedId)
+                                {
+                                    _lastProfileMenuSnappedId = snappedId;
+                                    if (snapped != null)
+                                        Monitor?.Log($"[ProfileDiag] Snap changed: ID={snapped.myID} name='{snapped.name}' bounds=({snapped.bounds.X},{snapped.bounds.Y},{snapped.bounds.Width},{snapped.bounds.Height}) mouse=({Game1.getMouseX()},{Game1.getMouseY()}) drawMouse={Game1.options.hardwareCursor}", LogLevel.Info);
+                                    else
+                                        Monitor?.Log($"[ProfileDiag] Snap changed: null, mouse=({Game1.getMouseX()},{Game1.getMouseY()})", LogLevel.Info);
                                 }
                             }
                             else
                             {
                                 _dumpedChildMenu = false;
+                                _lastProfileMenuSnappedId = -999;
                             }
                         }
                     }
@@ -1032,6 +1047,40 @@ namespace AndroidConsolizer.Patches
             }
             else
                 Monitor?.Log($"[GameMenuDiag] allClickableComponents: null", LogLevel.Info);
+
+            // ProfileMenu-specific diagnostics
+            if (childMenu.GetType().Name == "ProfileMenu")
+            {
+                Monitor?.Log($"[ProfileDiag] === ProfileMenu cursor diagnostic ===", LogLevel.Info);
+                Monitor?.Log($"[ProfileDiag] snappyMenus={Game1.options.snappyMenus} gamepadControls={Game1.options.gamepadControls} lastCursorMotionWasMouse={Game1.lastCursorMotionWasMouse}", LogLevel.Info);
+                Monitor?.Log($"[ProfileDiag] mouse=({Game1.getMouseX()},{Game1.getMouseY()}) hardwareCursor={Game1.options.hardwareCursor}", LogLevel.Info);
+
+                // Log clickableProfileItems
+                var profileItemsField = AccessTools.Field(childMenu.GetType(), "clickableProfileItems");
+                if (profileItemsField != null)
+                {
+                    var items = profileItemsField.GetValue(childMenu) as IList;
+                    if (items != null)
+                    {
+                        Monitor?.Log($"[ProfileDiag] clickableProfileItems: count={items.Count}", LogLevel.Info);
+                        for (int i = 0; i < Math.Min(items.Count, 20); i++)
+                        {
+                            var item = items[i] as ClickableComponent;
+                            if (item != null)
+                                Monitor?.Log($"[ProfileDiag]   item[{i}] ID={item.myID} name='{item.name}' bounds=({item.bounds.X},{item.bounds.Y},{item.bounds.Width},{item.bounds.Height}) neighbors L={item.leftNeighborID} R={item.rightNeighborID} U={item.upNeighborID} D={item.downNeighborID}", LogLevel.Info);
+                        }
+                        if (items.Count > 20)
+                            Monitor?.Log($"[ProfileDiag]   ... and {items.Count - 20} more items", LogLevel.Info);
+                    }
+                }
+                else
+                    Monitor?.Log($"[ProfileDiag] clickableProfileItems field not found", LogLevel.Warn);
+
+                // Log _currentCategory
+                var categoryField = AccessTools.Field(childMenu.GetType(), "_currentCategory");
+                if (categoryField != null)
+                    Monitor?.Log($"[ProfileDiag] _currentCategory={categoryField.GetValue(childMenu)}", LogLevel.Info);
+            }
 
             // Enumerate all fields
             DumpAllFields(childMenu, "ChildMenu");
