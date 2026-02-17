@@ -45,6 +45,9 @@ namespace AndroidConsolizer.Patches
         // Track slotPosition to detect right-stick scroll changes
         private static int _lastSocialSlotPosition = -1;
 
+        // Save selected slot index when gift log opens, restore on return (-1 = no saved position)
+        private static int _savedSocialReturnIndex = -1;
+
         // Scrollbox tap simulation: two-frame tap gesture
         // Phase 0 = idle, 1 = receiveLeftClick pending, 2 = releaseLeftClick pending
         private static int _scrollboxTapPhase = 0;
@@ -311,12 +314,41 @@ namespace AndroidConsolizer.Patches
                 if (_socialSlotsYStartField != null)
                     slotsYOffset = (int)_socialSlotsYStartField.GetValue(page);
                 int slotsYStart = mainBox.Y + slotsYOffset;
+                int visibleSlots = mainBox.Height / slotHeight;
 
                 bool verbose = ModEntry.Config.VerboseLogging;
+
+                // Restore saved position when returning from gift log.
+                // Don't clear _savedSocialReturnIndex here — FixSocialPage may be called twice
+                // (once in ChangeTab_Postfix during constructor, once in OnGameMenuOpened).
+                // Cleared on next user input in HandleSocialInput instead.
+                int snapTargetIndex = slotPosition;
+                if (_savedSocialReturnIndex >= 0 && _savedSocialReturnIndex < charSlots.Count)
+                {
+                    snapTargetIndex = _savedSocialReturnIndex;
+
+                    // Scroll so the saved slot is visible
+                    if (snapTargetIndex < slotPosition || snapTargetIndex >= slotPosition + visibleSlots)
+                    {
+                        slotPosition = Math.Max(0, Math.Min(snapTargetIndex, charSlots.Count - visibleSlots));
+                        _socialSlotPositionField?.SetValue(page, slotPosition);
+
+                        // Sync MobileScrollbox yOffset
+                        if (_socialScrollAreaField != null && _scrollboxYOffsetField != null)
+                        {
+                            var scrollArea = _socialScrollAreaField.GetValue(page);
+                            if (scrollArea != null)
+                                _scrollboxYOffsetField.SetValue(scrollArea, -(slotPosition * slotHeight));
+                        }
+                    }
+
+                    Monitor?.Log($"[GameMenu] SocialPage: restoring position to slot[{snapTargetIndex}], slotPosition={slotPosition}", LogLevel.Trace);
+                }
+
                 if (verbose)
                     Monitor?.Log($"[GameMenu] SocialPage: {charSlots.Count} slots, slotHeight={slotHeight}, mainBox=({mainBox.X},{mainBox.Y},{mainBox.Width},{mainBox.Height}), slotsYStart={slotsYStart} (offset={slotsYOffset}), slotPosition={slotPosition}", LogLevel.Info);
 
-                ClickableComponent firstVisibleSlot = null;
+                ClickableComponent snapTarget = null;
 
                 for (int i = 0; i < charSlots.Count; i++)
                 {
@@ -329,21 +361,21 @@ namespace AndroidConsolizer.Patches
                     var b = slot.bounds;
                     slot.bounds = new Rectangle(b.X, newY, b.Width, slotHeight);
 
-                    if (i == slotPosition)
-                        firstVisibleSlot = slot;
+                    if (i == snapTargetIndex)
+                        snapTarget = slot;
 
                     if (verbose)
                         Monitor?.Log($"[GameMenu]   slot[{i}] ID={slot.myID} bounds=({slot.bounds.X},{slot.bounds.Y},{slot.bounds.Width},{slot.bounds.Height}) U={slot.upNeighborID} D={slot.downNeighborID}", LogLevel.Info);
                 }
 
-                // Snap to first visible slot (on tab entry)
-                if (firstVisibleSlot != null)
+                // Snap to target slot (saved position or first visible)
+                if (snapTarget != null)
                 {
-                    page.currentlySnappedComponent = firstVisibleSlot;
+                    page.currentlySnappedComponent = snapTarget;
                     page.snapCursorToCurrentSnappedComponent();
 
                     if (verbose)
-                        Monitor?.Log($"[GameMenu] SocialPage: snapped to slot[{slotPosition}] ID={firstVisibleSlot.myID} at ({firstVisibleSlot.bounds.X},{firstVisibleSlot.bounds.Y})", LogLevel.Info);
+                        Monitor?.Log($"[GameMenu] SocialPage: snapped to slot[{snapTargetIndex}] ID={snapTarget.myID} at ({snapTarget.bounds.X},{snapTarget.bounds.Y})", LogLevel.Info);
                 }
 
                 _lastSocialSlotPosition = slotPosition;
@@ -540,13 +572,34 @@ namespace AndroidConsolizer.Patches
         {
             Monitor?.Log($"[SocialDiag] HandleSocialInput called, button={b}", LogLevel.Trace);
 
+            // Clear saved return position on any navigation input (A will set a new one)
+            if (b != Buttons.A)
+                _savedSocialReturnIndex = -1;
+
             switch (b)
             {
                 case Buttons.A:
                 {
+                    // Save current slot index so we can restore position after gift log closes.
+                    // Gift log exit creates a brand new GameMenu/SocialPage, losing all scroll state.
+                    var snapped = page.currentlySnappedComponent;
+                    if (snapped != null && _socialCharacterSlotsField != null)
+                    {
+                        var charSlots = _socialCharacterSlotsField.GetValue(page) as IList;
+                        if (charSlots != null)
+                        {
+                            for (int i = 0; i < charSlots.Count; i++)
+                            {
+                                if (charSlots[i] == snapped)
+                                {
+                                    _savedSocialReturnIndex = i;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
                     // Block A from reaching scrollbox, let Android touch sim fire naturally.
-                    // Touch sim clicks at cursor position (charSlots center), which lands within
-                    // sprites hit area because sprites Height is set large enough in SyncSpritesBounds.
                     return false;
                 }
 
