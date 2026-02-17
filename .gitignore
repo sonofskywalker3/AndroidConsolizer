@@ -22,6 +22,12 @@ packages/
 Thumbs.db
 Desktop.ini
 
+# Sync data (saves, mods, configs — large binary files, per-user)
+sync/saves/
+sync/mods/
+sync/configs/
+sync/.last_sync
+
 # Dev artifacts / agent prompts
 AGENT_PROMPT_*.md
 CARPENTER_PAN_SPEC.md
