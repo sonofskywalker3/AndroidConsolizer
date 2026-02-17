@@ -44,9 +44,10 @@ namespace AndroidConsolizer.Patches
         // Track slotPosition to detect right-stick scroll changes
         private static int _lastSocialSlotPosition = -1;
 
-        // Pending A-press: set in prefix, consumed by SocialPage.update() prefix
-        // to inject clickedEntry right before update() processes it (after touch sim)
-        private static int _pendingSocialClick = -1;
+        // Scrollbox tap simulation: two-frame tap gesture
+        // Phase 0 = idle, 1 = receiveLeftClick pending, 2 = releaseLeftClick pending
+        private static int _scrollboxTapPhase = 0;
+        private static int _scrollboxTapX, _scrollboxTapY;
 
         // Diagnostic: track child menu on SocialPage (gift log)
         private static bool _dumpedChildMenu = false;
@@ -487,19 +488,32 @@ namespace AndroidConsolizer.Patches
             }
         }
 
-        // ===== SocialPage.update() prefix — inject clickedEntry before processing =====
+        // ===== SocialPage.update() prefix — drive scrollbox tap gesture =====
 
         private static void SocialUpdate_Prefix(SocialPage __instance)
         {
-            if (_pendingSocialClick < 0) return;
+            if (_scrollboxTapPhase == 0) return;
 
-            int slotIndex = _pendingSocialClick;
-            _pendingSocialClick = -1;
+            var scrollArea = _socialScrollAreaField?.GetValue(__instance);
+            if (scrollArea == null) { _scrollboxTapPhase = 0; return; }
 
-            if (_socialClickedEntryField != null)
+            var scrollType = scrollArea.GetType();
+
+            if (_scrollboxTapPhase == 1)
             {
-                _socialClickedEntryField.SetValue(__instance, slotIndex);
-                Monitor?.Log($"[SocialDiag] update prefix: set clickedEntry={slotIndex}", LogLevel.Trace);
+                // Frame 1: touch down
+                var clickMethod = scrollType.GetMethod("receiveLeftClick", new[] { typeof(int), typeof(int) });
+                clickMethod?.Invoke(scrollArea, new object[] { _scrollboxTapX, _scrollboxTapY });
+                _scrollboxTapPhase = 2;
+                Monitor?.Log($"[SocialDiag] scrollbox tap phase 1: receiveLeftClick({_scrollboxTapX},{_scrollboxTapY})", LogLevel.Trace);
+            }
+            else if (_scrollboxTapPhase == 2)
+            {
+                // Frame 2: touch up at same position (= tap)
+                var releaseMethod = scrollType.GetMethod("releaseLeftClick", new[] { typeof(int), typeof(int) });
+                releaseMethod?.Invoke(scrollArea, new object[] { _scrollboxTapX, _scrollboxTapY });
+                _scrollboxTapPhase = 0;
+                Monitor?.Log($"[SocialDiag] scrollbox tap phase 2: releaseLeftClick({_scrollboxTapX},{_scrollboxTapY})", LogLevel.Trace);
             }
         }
 
@@ -601,23 +615,15 @@ namespace AndroidConsolizer.Patches
             {
                 case Buttons.A:
                 {
-                    // Set pending click — SocialPage.update() prefix will inject
-                    // clickedEntry right before update() processes it, after the
-                    // touch sim has already had its chance to overwrite.
+                    // Simulate a tap on the scrollbox at the snapped slot's center.
+                    // Two-frame gesture: receiveLeftClick on next update,
+                    // releaseLeftClick on the update after that.
                     var snapped = page.currentlySnappedComponent;
                     if (snapped == null) return false;
 
-                    var charSlots = _socialCharacterSlotsField?.GetValue(page) as IList;
-                    if (charSlots == null) return false;
-
-                    for (int i = 0; i < charSlots.Count; i++)
-                    {
-                        if (charSlots[i] == snapped)
-                        {
-                            _pendingSocialClick = i;
-                            break;
-                        }
-                    }
+                    _scrollboxTapX = snapped.bounds.Center.X;
+                    _scrollboxTapY = snapped.bounds.Center.Y;
+                    _scrollboxTapPhase = 1;
                     return false;
                 }
 
