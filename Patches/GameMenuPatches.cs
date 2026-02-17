@@ -39,6 +39,7 @@ namespace AndroidConsolizer.Patches
         private static FieldInfo _socialSlotsYStartField;
         private static FieldInfo _socialClickedEntryField;
         private static FieldInfo _socialScrollAreaField;
+        private static MethodInfo _socialSelectSlotMethod;
 
         // Track slotPosition to detect right-stick scroll changes
         private static int _lastSocialSlotPosition = -1;
@@ -53,15 +54,6 @@ namespace AndroidConsolizer.Patches
 
         // Diagnostic: one-time dump of SocialPage fields to find scrollbox
         private static bool _dumpedSocialFields = false;
-
-        // Diagnostic v3.3.26: track yOffset each frame to understand scrollbox behavior
-        private static int _lastLoggedYOffset = int.MinValue;
-        private static FieldInfo _scrollboxYOffsetField;
-        private static MethodInfo _scrollboxGetYOffsetMethod;
-        // Track per-frame clickedEntry to detect changes
-        private static int _lastLoggedClickedEntry = -1;
-        // Track if we're on the social tab for per-frame monitoring
-        private static bool _onSocialTab = false;
 
         public static void Apply(Harmony harmony, IMonitor monitor)
         {
@@ -285,6 +277,7 @@ namespace AndroidConsolizer.Patches
                     _socialSlotsYStartField = AccessTools.Field(pageType, "slotsYStart");
                     _socialClickedEntryField = AccessTools.Field(pageType, "clickedEntry");
                     _socialScrollAreaField = AccessTools.Field(pageType, "scrollArea");
+                    _socialSelectSlotMethod = pageType.GetMethod("_SelectSlot", BindingFlags.Instance | BindingFlags.NonPublic);
                 }
 
                 if (_socialCharacterSlotsField == null || _socialSlotHeightField == null || _socialMainBoxField == null)
@@ -347,17 +340,14 @@ namespace AndroidConsolizer.Patches
                 }
 
                 _lastSocialSlotPosition = slotPosition;
-                _onSocialTab = true;
                 Monitor?.Log($"[GameMenu] SocialPage: fixed {charSlots.Count} slot bounds", LogLevel.Trace);
 
-                // One-time dump: SocialPage fields, methods, scrollbox fields/methods — ALL at Info level
+                // One-time dump of all SocialPage fields to find scrollbox
                 if (!_dumpedSocialFields)
                 {
                     _dumpedSocialFields = true;
+                    Monitor?.Log("[SocialDiag] === SocialPage field dump ===", LogLevel.Trace);
                     var pageType = page.GetType();
-
-                    // === SocialPage FIELDS ===
-                    Monitor?.Log("[SocialDiag] === SocialPage field dump ===", LogLevel.Info);
                     foreach (var field in pageType.GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public))
                     {
                         try
@@ -369,44 +359,30 @@ namespace AndroidConsolizer.Patches
                             else if (val is float f) valStr = f.ToString();
                             else if (val is Rectangle r) valStr = $"{{X:{r.X} Y:{r.Y} W:{r.Width} H:{r.Height}}}";
                             else if (val is IList list) valStr = $"{val.GetType().Name}[{list.Count}]";
-                            Monitor?.Log($"[SocialDiag]   {field.Name}: {field.FieldType.Name} = {valStr}", LogLevel.Info);
+                            Monitor?.Log($"[SocialDiag]   {field.Name}: {field.FieldType.Name} = {valStr}", LogLevel.Trace);
                         }
                         catch { }
                     }
-
-                    // === SocialPage METHODS (declared only — what can we call?) ===
-                    Monitor?.Log("[SocialDiag] === SocialPage methods (DeclaredOnly) ===", LogLevel.Info);
-                    foreach (var method in pageType.GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly))
+                    // Also check base class (IClickableMenu) fields
+                    foreach (var field in typeof(IClickableMenu).GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public))
                     {
-                        var parms = method.GetParameters();
-                        string parmStr = string.Join(", ", Array.ConvertAll(parms, p => $"{p.ParameterType.Name} {p.Name}"));
-                        Monitor?.Log($"[SocialDiag]   {method.Name}({parmStr}) → {method.ReturnType.Name} [{(method.IsPublic ? "public" : "private")}]", LogLevel.Info);
+                        try
+                        {
+                            var val = field.GetValue(page);
+                            string valStr = val?.GetType().Name ?? "null";
+                            if (val is IList list) valStr = $"{val.GetType().Name}[{list.Count}]";
+                            Monitor?.Log($"[SocialDiag]   (base) {field.Name}: {field.FieldType.Name} = {valStr}", LogLevel.Trace);
+                        }
+                        catch { }
                     }
-
-                    // === SocialPage methods from base class IClickableMenu ===
-                    Monitor?.Log("[SocialDiag] === SocialPage overridden/inherited methods ===", LogLevel.Info);
-                    foreach (var method in pageType.GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
-                    {
-                        // Only log methods that might be relevant (skip property accessors and Object methods)
-                        if (method.DeclaringType == typeof(object)) continue;
-                        if (method.Name.StartsWith("get_") || method.Name.StartsWith("set_")) continue;
-                        if (method.DeclaringType == pageType) continue; // already logged above
-                        var parms = method.GetParameters();
-                        string parmStr = string.Join(", ", Array.ConvertAll(parms, p => $"{p.ParameterType.Name} {p.Name}"));
-                        Monitor?.Log($"[SocialDiag]   (inherited) {method.DeclaringType?.Name}.{method.Name}({parmStr}) → {method.ReturnType.Name}", LogLevel.Info);
-                    }
-
-                    // === MobileScrollbox dump ===
+                    // Dump MobileScrollbox fields to understand scroll API
                     if (_socialScrollAreaField != null)
                     {
                         var scrollArea = _socialScrollAreaField.GetValue(page);
                         if (scrollArea != null)
                         {
+                            Monitor?.Log("[SocialDiag] === MobileScrollbox field dump ===", LogLevel.Trace);
                             var scrollType = scrollArea.GetType();
-                            Monitor?.Log($"[SocialDiag] === MobileScrollbox type: {scrollType.FullName} ===", LogLevel.Info);
-
-                            // Fields (declared + base)
-                            Monitor?.Log("[SocialDiag] --- MobileScrollbox fields ---", LogLevel.Info);
                             foreach (var field in scrollType.GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public))
                             {
                                 try
@@ -420,38 +396,42 @@ namespace AndroidConsolizer.Patches
                                     else if (val is Rectangle rv) valStr = $"{{X:{rv.X} Y:{rv.Y} W:{rv.Width} H:{rv.Height}}}";
                                     else if (val is Vector2 v2) valStr = $"({v2.X},{v2.Y})";
                                     else if (val is IList lv) valStr = $"{val.GetType().Name}[{lv.Count}]";
-                                    Monitor?.Log($"[SocialDiag]   scroll.{field.Name}: {field.FieldType.Name} = {valStr} [{(field.DeclaringType == scrollType ? "own" : "base")}]", LogLevel.Info);
+                                    Monitor?.Log($"[SocialDiag]   scroll.{field.Name}: {field.FieldType.Name} = {valStr}", LogLevel.Trace);
                                 }
                                 catch { }
                             }
-
-                            // Methods (declared + base, skip Object)
-                            Monitor?.Log("[SocialDiag] --- MobileScrollbox methods ---", LogLevel.Info);
-                            foreach (var method in scrollType.GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
+                            // Also check base class fields
+                            var baseType = scrollType.BaseType;
+                            if (baseType != null && baseType != typeof(object))
                             {
-                                if (method.DeclaringType == typeof(object)) continue;
-                                if (method.Name.StartsWith("get_") || method.Name.StartsWith("set_")) continue;
+                                Monitor?.Log($"[SocialDiag]   --- base: {baseType.Name} ---", LogLevel.Trace);
+                                foreach (var field in baseType.GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.DeclaredOnly))
+                                {
+                                    try
+                                    {
+                                        var val = field.GetValue(scrollArea);
+                                        string valStr = val?.GetType().Name ?? "null";
+                                        if (val is int iv) valStr = iv.ToString();
+                                        else if (val is bool bv) valStr = bv.ToString();
+                                        else if (val is float fv) valStr = fv.ToString();
+                                        else if (val is Rectangle rv) valStr = $"{{X:{rv.X} Y:{rv.Y} W:{rv.Width} H:{rv.Height}}}";
+                                        Monitor?.Log($"[SocialDiag]   scroll(base).{field.Name}: {field.FieldType.Name} = {valStr}", LogLevel.Trace);
+                                    }
+                                    catch { }
+                                }
+                            }
+                            // List methods too (for scroll API discovery)
+                            Monitor?.Log("[SocialDiag]   --- MobileScrollbox methods ---", LogLevel.Trace);
+                            foreach (var method in scrollType.GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly))
+                            {
                                 var parms = method.GetParameters();
                                 string parmStr = string.Join(", ", Array.ConvertAll(parms, p => $"{p.ParameterType.Name} {p.Name}"));
-                                string declaredBy = method.DeclaringType == scrollType ? "own" : method.DeclaringType?.Name ?? "?";
-                                Monitor?.Log($"[SocialDiag]   scroll.{method.Name}({parmStr}) → {method.ReturnType.Name} [{declaredBy}]", LogLevel.Info);
+                                Monitor?.Log($"[SocialDiag]   scroll.{method.Name}({parmStr}) → {method.ReturnType.Name}", LogLevel.Trace);
                             }
-
-                            // Cache the yOffset getter for per-frame monitoring
-                            _scrollboxGetYOffsetMethod = scrollType.GetMethod("getYOffsetForScroll", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-                            if (_scrollboxGetYOffsetMethod == null)
-                            {
-                                // Try field access as fallback
-                                _scrollboxYOffsetField = scrollType.GetField("yOffsetForScroll", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-                                if (_scrollboxYOffsetField == null)
-                                    _scrollboxYOffsetField = scrollType.GetField("_yOffsetForScroll", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-                            }
-                            Monitor?.Log($"[SocialDiag] yOffset accessor: method={_scrollboxGetYOffsetMethod != null}, field={_scrollboxYOffsetField != null}", LogLevel.Info);
-
-                            Monitor?.Log("[SocialDiag] === end MobileScrollbox dump ===", LogLevel.Info);
+                            Monitor?.Log("[SocialDiag] === end MobileScrollbox dump ===", LogLevel.Trace);
                         }
                     }
-                    Monitor?.Log("[SocialDiag] === end field dump ===", LogLevel.Info);
+                    Monitor?.Log("[SocialDiag] === end field dump ===", LogLevel.Trace);
                 }
             }
             catch (Exception ex)
@@ -504,7 +484,7 @@ namespace AndroidConsolizer.Patches
                     return HandleAnimalInput(page, b);
                 if (typeName == "SocialPage")
                 {
-                    Monitor?.Log($"[SocialDiag] Prefix dispatching to HandleSocialInput, button={b}", LogLevel.Info);
+                    Monitor?.Log($"[SocialDiag] Prefix dispatching to HandleSocialInput, button={b}", LogLevel.Trace);
                     return HandleSocialInput(page, b);
                 }
 
@@ -622,49 +602,20 @@ namespace AndroidConsolizer.Patches
         /// </summary>
         private static bool HandleSocialInput(IClickableMenu page, Buttons b)
         {
-            Monitor?.Log($"[SocialDiag] HandleSocialInput called, button={b}", LogLevel.Info);
+            Monitor?.Log($"[SocialDiag] HandleSocialInput called, button={b}", LogLevel.Trace);
 
             switch (b)
             {
                 case Buttons.A:
                 {
                     var snapped = page.currentlySnappedComponent;
-                    int yOffset = GetScrollboxYOffset(page);
-                    int preClickedEntry = _socialClickedEntryField != null ? (int)_socialClickedEntryField.GetValue(page) : -999;
-                    Monitor?.Log($"[SocialDiag] A-press: snapped={snapped?.myID.ToString() ?? "null"}, bounds={snapped?.bounds.ToString() ?? "n/a"}, yOffset={yOffset}, clickedEntry(pre)={preClickedEntry}, tick={Game1.ticks}", LogLevel.Info);
+                    if (snapped == null) return false;
 
-                    if (snapped == null)
+                    // Call _SelectSlot directly — bypasses the clickedEntry pipeline
+                    // which gets overwritten by Android's touch simulation on the same tick.
+                    if (_socialSelectSlotMethod != null)
                     {
-                        Monitor?.Log($"[SocialDiag] A-press SKIPPED (snapped null)", LogLevel.Info);
-                        return false;
-                    }
-
-                    // Find which characterSlot index this snapped component corresponds to
-                    var charSlots = _socialCharacterSlotsField?.GetValue(page) as IList;
-                    if (charSlots == null)
-                    {
-                        Monitor?.Log($"[SocialDiag] A-press SKIPPED (charSlots null)", LogLevel.Info);
-                        return false;
-                    }
-
-                    int slotIndex = -1;
-                    for (int i = 0; i < charSlots.Count; i++)
-                    {
-                        if (charSlots[i] == snapped)
-                        {
-                            slotIndex = i;
-                            break;
-                        }
-                    }
-
-                    Monitor?.Log($"[SocialDiag] A-press: matched slotIndex={slotIndex}", LogLevel.Info);
-
-                    if (slotIndex >= 0 && _socialClickedEntryField != null)
-                    {
-                        // Set clickedEntry — the game's SocialPage.update() should process this
-                        _socialClickedEntryField.SetValue(page, slotIndex);
-                        int postClickedEntry = (int)_socialClickedEntryField.GetValue(page);
-                        Monitor?.Log($"[SocialDiag] A-press → set clickedEntry={slotIndex}, verified={postClickedEntry}", LogLevel.Info);
+                        _socialSelectSlotMethod.Invoke(page, new object[] { snapped });
                     }
                     return false;
                 }
@@ -697,14 +648,14 @@ namespace AndroidConsolizer.Patches
                 if (_socialCharacterSlotsField == null || _socialSlotPositionField == null ||
                     _socialSlotHeightField == null || _socialMainBoxField == null)
                 {
-                    Monitor?.Log($"[SocialDiag] NavigateSocialSlot: reflection fields null, aborting", LogLevel.Info);
+                    Monitor?.Log($"[SocialDiag] NavigateSocialSlot: reflection fields null, aborting", LogLevel.Trace);
                     return;
                 }
 
                 var charSlots = _socialCharacterSlotsField.GetValue(page) as IList;
                 if (charSlots == null || charSlots.Count == 0)
                 {
-                    Monitor?.Log($"[SocialDiag] NavigateSocialSlot: charSlots null/empty", LogLevel.Info);
+                    Monitor?.Log($"[SocialDiag] NavigateSocialSlot: charSlots null/empty", LogLevel.Trace);
                     return;
                 }
 
@@ -712,14 +663,13 @@ namespace AndroidConsolizer.Patches
                 int slotHeight = (int)_socialSlotHeightField.GetValue(page);
                 var mainBox = (Rectangle)_socialMainBoxField.GetValue(page);
                 int visibleSlots = mainBox.Height / slotHeight;
-                int yOffset = GetScrollboxYOffset(page);
 
-                Monitor?.Log($"[SocialDiag] Nav dir={direction}, slotPos={slotPosition}, lastSlotPos={_lastSocialSlotPosition}, visibleSlots={visibleSlots}, totalSlots={charSlots.Count}, yOffset={yOffset}", LogLevel.Info);
+                Monitor?.Log($"[SocialDiag] Nav dir={direction}, slotPos={slotPosition}, lastSlotPos={_lastSocialSlotPosition}, visibleSlots={visibleSlots}, totalSlots={charSlots.Count}", LogLevel.Trace);
 
                 // If slotPosition changed since last fix (e.g., right stick scroll), re-fix bounds
                 if (slotPosition != _lastSocialSlotPosition)
                 {
-                    Monitor?.Log($"[SocialDiag] slotPosition changed ({_lastSocialSlotPosition}→{slotPosition}), refixing bounds", LogLevel.Info);
+                    Monitor?.Log($"[SocialDiag] slotPosition changed ({_lastSocialSlotPosition}→{slotPosition}), refixing bounds", LogLevel.Trace);
                     RefixSocialBounds(page, charSlots, slotPosition, slotHeight, mainBox);
                     _lastSocialSlotPosition = slotPosition;
                 }
@@ -736,7 +686,7 @@ namespace AndroidConsolizer.Patches
                     }
                 }
 
-                Monitor?.Log($"[SocialDiag] currentSnapped ID={current?.myID.ToString() ?? "null"}, matchedIndex={currentIndex}", LogLevel.Info);
+                Monitor?.Log($"[SocialDiag] currentSnapped ID={current?.myID.ToString() ?? "null"}, matchedIndex={currentIndex}", LogLevel.Trace);
                 if (currentIndex < 0) currentIndex = slotPosition;
 
                 int newIndex = currentIndex + direction;
@@ -744,24 +694,48 @@ namespace AndroidConsolizer.Patches
                 // Clamp to total range
                 if (newIndex < 0 || newIndex >= charSlots.Count)
                 {
-                    Monitor?.Log($"[SocialDiag] newIndex={newIndex} out of range [0,{charSlots.Count}), clamped", LogLevel.Info);
+                    Monitor?.Log($"[SocialDiag] newIndex={newIndex} out of range [0,{charSlots.Count}), clamped", LogLevel.Trace);
                     return;
                 }
 
                 // Check if we need to scroll
                 if (newIndex < slotPosition || newIndex >= slotPosition + visibleSlots)
                 {
-                    Monitor?.Log($"[SocialDiag] newIndex={newIndex} outside visible [{slotPosition},{slotPosition + visibleSlots}), need to scroll but receiveScrollWheelAction is a no-op on Android. Aborting nav for now (diagnostic build).", LogLevel.Info);
-                    // NOTE: In v3.3.25, calling page.receiveScrollWheelAction() was a no-op —
-                    // slotPosition never changed. We do NOT attempt it in this diagnostic build.
-                    // Instead we log the situation and wait for log analysis.
-                    return;
+                    Monitor?.Log($"[SocialDiag] newIndex={newIndex} outside visible [{slotPosition},{slotPosition + visibleSlots}), scrolling...", LogLevel.Trace);
+
+                    // Use the game's own scroll mechanism to keep MobileScrollbox in sync
+                    int scrollDir = direction > 0 ? -1 : 1;
+                    Monitor?.Log($"[SocialDiag] calling receiveScrollWheelAction({scrollDir})", LogLevel.Trace);
+                    page.receiveScrollWheelAction(scrollDir);
+
+                    // Re-read slotPosition after game scrolled
+                    int newSlotPos = (int)_socialSlotPositionField.GetValue(page);
+                    Monitor?.Log($"[SocialDiag] after scroll: slotPosition {slotPosition}→{newSlotPos}", LogLevel.Trace);
+
+                    if (newSlotPos != slotPosition)
+                    {
+                        slotPosition = newSlotPos;
+                        RefixSocialBounds(page, charSlots, slotPosition, slotHeight, mainBox);
+                        _lastSocialSlotPosition = slotPosition;
+                    }
+                    else
+                    {
+                        Monitor?.Log($"[SocialDiag] scroll had no effect (boundary), aborting", LogLevel.Trace);
+                        return;
+                    }
+
+                    // Verify target is now visible after scroll
+                    if (newIndex < slotPosition || newIndex >= slotPosition + visibleSlots)
+                    {
+                        Monitor?.Log($"[SocialDiag] newIndex={newIndex} still outside visible [{slotPosition},{slotPosition + visibleSlots}) after scroll, aborting", LogLevel.Trace);
+                        return;
+                    }
                 }
 
                 var newSlot = charSlots[newIndex] as ClickableComponent;
                 if (newSlot == null)
                 {
-                    Monitor?.Log($"[SocialDiag] slot[{newIndex}] is null", LogLevel.Info);
+                    Monitor?.Log($"[SocialDiag] slot[{newIndex}] is null", LogLevel.Trace);
                     return;
                 }
 
@@ -769,7 +743,7 @@ namespace AndroidConsolizer.Patches
                 page.snapCursorToCurrentSnappedComponent();
                 Game1.playSound("shiny4");
 
-                Monitor?.Log($"[SocialDiag] snapped to slot[{newIndex}] ID={newSlot.myID} bounds=({newSlot.bounds.X},{newSlot.bounds.Y},{newSlot.bounds.Width},{newSlot.bounds.Height})", LogLevel.Info);
+                Monitor?.Log($"[SocialDiag] snapped to slot[{newIndex}] ID={newSlot.myID} bounds=({newSlot.bounds.X},{newSlot.bounds.Y},{newSlot.bounds.Width},{newSlot.bounds.Height})", LogLevel.Trace);
             }
             catch (Exception ex)
             {
@@ -804,7 +778,6 @@ namespace AndroidConsolizer.Patches
         /// <summary>
         /// Draw the finger cursor on tabs where Android suppresses drawMouse.
         /// Also runs diagnostics for child menus (gift log on SocialPage).
-        /// v3.3.26: Per-frame yOffset and clickedEntry monitoring.
         /// </summary>
         private static void Draw_Postfix(GameMenu __instance, SpriteBatch b)
         {
@@ -813,60 +786,30 @@ namespace AndroidConsolizer.Patches
 
             try
             {
-                if (__instance.pages == null || __instance.currentTab < 0 || __instance.currentTab >= __instance.pages.Count)
-                    return;
-
-                var page = __instance.pages[__instance.currentTab];
-                if (page == null) return;
-
-                bool isSocial = page.GetType().Name == "SocialPage";
-
-                // Track tab transitions for _onSocialTab flag
-                if (!isSocial)
+                // Diagnostic: detect and dump child menu on SocialPage (gift log)
+                if (__instance.pages != null && __instance.currentTab >= 0 && __instance.currentTab < __instance.pages.Count)
                 {
-                    _onSocialTab = false;
-                }
-
-                if (isSocial)
-                {
-                    // === Per-frame yOffset monitoring ===
-                    // Only log when value CHANGES to avoid log spam
-                    int currentYOffset = GetScrollboxYOffset(page);
-                    if (currentYOffset != _lastLoggedYOffset)
+                    var page = __instance.pages[__instance.currentTab];
+                    if (page != null && page.GetType().Name == "SocialPage")
                     {
-                        Monitor?.Log($"[SocialDiag] yOffset changed: {_lastLoggedYOffset} -> {currentYOffset} (tick={Game1.ticks})", LogLevel.Info);
-                        _lastLoggedYOffset = currentYOffset;
-                    }
-
-                    // === Per-frame clickedEntry monitoring ===
-                    if (_socialClickedEntryField != null)
-                    {
-                        int currentClickedEntry = (int)_socialClickedEntryField.GetValue(page);
-                        if (currentClickedEntry != _lastLoggedClickedEntry)
+                        // Check _childMenu via reflection
+                        var childMenuField = AccessTools.Field(page.GetType(), "_childMenu")
+                                          ?? AccessTools.Field(typeof(IClickableMenu), "_childMenu");
+                        if (childMenuField != null)
                         {
-                            Monitor?.Log($"[SocialDiag] clickedEntry changed: {_lastLoggedClickedEntry} -> {currentClickedEntry} (tick={Game1.ticks})", LogLevel.Info);
-                            _lastLoggedClickedEntry = currentClickedEntry;
-                        }
-                    }
-
-                    // === Diagnostic: detect and dump child menu (gift log/profile) ===
-                    var childMenuField = AccessTools.Field(page.GetType(), "_childMenu")
-                                      ?? AccessTools.Field(typeof(IClickableMenu), "_childMenu");
-                    if (childMenuField != null)
-                    {
-                        var childMenu = childMenuField.GetValue(page) as IClickableMenu;
-                        if (childMenu != null)
-                        {
-                            if (!_dumpedChildMenu)
+                            var childMenu = childMenuField.GetValue(page) as IClickableMenu;
+                            if (childMenu != null)
                             {
-                                _dumpedChildMenu = true;
-                                Monitor?.Log($"[SocialDiag] CHILD MENU OPENED! type={childMenu.GetType().FullName} (tick={Game1.ticks})", LogLevel.Info);
-                                DumpChildMenu(childMenu);
+                                if (!_dumpedChildMenu)
+                                {
+                                    _dumpedChildMenu = true;
+                                    DumpChildMenu(childMenu);
+                                }
                             }
-                        }
-                        else
-                        {
-                            _dumpedChildMenu = false;
+                            else
+                            {
+                                _dumpedChildMenu = false;
+                            }
                         }
                     }
                 }
@@ -875,25 +818,6 @@ namespace AndroidConsolizer.Patches
             {
                 Monitor?.Log($"[GameMenu] Error in Draw_Postfix: {ex.Message}", LogLevel.Error);
             }
-        }
-
-        /// <summary>Get the current yOffset from the MobileScrollbox, or int.MinValue if unavailable.</summary>
-        private static int GetScrollboxYOffset(IClickableMenu page)
-        {
-            try
-            {
-                if (_socialScrollAreaField == null) return int.MinValue;
-                var scrollArea = _socialScrollAreaField.GetValue(page);
-                if (scrollArea == null) return int.MinValue;
-
-                if (_scrollboxGetYOffsetMethod != null)
-                    return (int)_scrollboxGetYOffsetMethod.Invoke(scrollArea, null);
-                if (_scrollboxYOffsetField != null)
-                    return (int)_scrollboxYOffsetField.GetValue(scrollArea);
-
-                return int.MinValue;
-            }
-            catch { return int.MinValue; }
         }
 
         /// <summary>Dump full diagnostic info for a child menu (gift log/profile).</summary>
