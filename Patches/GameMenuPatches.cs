@@ -544,42 +544,10 @@ namespace AndroidConsolizer.Patches
             {
                 case Buttons.A:
                 {
-                    // Block A from reaching scrollbox, let touch sim fire naturally.
-                    var snapped = page.currentlySnappedComponent;
-
-                    // Get yOffset from scrollbox
-                    float yOffset = 0f;
-                    if (_socialScrollAreaField != null && _scrollboxYOffsetField != null)
-                    {
-                        var scrollArea = _socialScrollAreaField.GetValue(page);
-                        if (scrollArea != null)
-                        {
-                            var yOffsetVal = _scrollboxYOffsetField.GetValue(scrollArea);
-                            if (yOffsetVal is float f) yOffset = f;
-                            else if (yOffsetVal is int iv) yOffset = iv;
-                        }
-                    }
-
-                    // Find slot index in characterSlots
-                    int slotIdx = -1;
-                    if (snapped != null && _socialCharacterSlotsField != null)
-                    {
-                        var charSlots = _socialCharacterSlotsField.GetValue(page) as IList;
-                        if (charSlots != null)
-                        {
-                            for (int i = 0; i < charSlots.Count; i++)
-                            {
-                                if (charSlots[i] == snapped) { slotIdx = i; break; }
-                            }
-                        }
-                    }
-
-                    // Log mouse position (what touch sim will use)
-                    var mouseState = Microsoft.Xna.Framework.Input.Mouse.GetState();
-
-                    Monitor?.Log($"[SocialADiag] A-PRESS: slotIdx={slotIdx} snappedID={snapped?.myID} bounds=({snapped?.bounds.X},{snapped?.bounds.Y},{snapped?.bounds.Width},{snapped?.bounds.Height}) center=({snapped?.bounds.Center.X},{snapped?.bounds.Center.Y}) yOffset={yOffset} mouseXY=({mouseState.X},{mouseState.Y}) tick={Game1.ticks}", LogLevel.Info);
-
-                    return false; // block A, let touch sim fire naturally
+                    // Block A from reaching scrollbox, let Android touch sim fire naturally.
+                    // Touch sim clicks at cursor position (charSlots center), which lands within
+                    // sprites hit area because sprites Height is set large enough in SyncSpritesBounds.
+                    return false;
                 }
 
                 case Buttons.DPadDown:
@@ -712,9 +680,12 @@ namespace AndroidConsolizer.Patches
         }
 
         /// <summary>
-        /// Sync sprites bounds to match characterSlots bounds.
-        /// On Android, receiveLeftClick hit-tests against sprites (separate objects from characterSlots).
-        /// Without this, sprites have height=64 while charSlots have height=slotHeight, causing misses.
+        /// Sync sprites Y position to match characterSlots Y, and set Height for cell frame alignment.
+        /// On Android, receiveLeftClick hit-tests against sprites[i].bounds with +4 height.
+        /// The game draws cell frame partition lines at sprites[i].bounds.Y + 4 + Height.
+        /// Height=84 is the minimum that places the top partition at mainBox.Y (visible top bar)
+        /// while reducing the gap above portraits from 70px to 50px. Touch sim at charSlots
+        /// center (Y+69) lands within hit area [Y, Y+88).
         /// </summary>
         private static void SyncSpritesBounds(IClickableMenu page, IList charSlots)
         {
@@ -730,7 +701,8 @@ namespace AndroidConsolizer.Patches
                 var slot = charSlots[i] as ClickableComponent;
                 if (sprite == null || slot == null) continue;
 
-                sprite.bounds = slot.bounds;
+                // Sync Y from charSlots, preserve original X/Width, set Height=84 for cell frame alignment
+                sprite.bounds = new Rectangle(sprite.bounds.X, slot.bounds.Y, sprite.bounds.Width, 84);
             }
         }
 
