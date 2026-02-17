@@ -127,6 +127,19 @@ namespace AndroidConsolizer.Patches
                     );
                 }
 
+                // Patch ProfileMenu.draw to render gamepad cursor
+                // ProfileMenu doesn't call drawMouse() — the game's main loop only draws the cursor
+                // when no menu is active, so menus must draw their own. ShopMenu/ItemGrabMenu do this;
+                // ProfileMenu doesn't because it was designed for touch input only.
+                var profileDrawMethod = AccessTools.Method(typeof(ProfileMenu), "draw", new[] { typeof(SpriteBatch) });
+                if (profileDrawMethod != null)
+                {
+                    harmony.Patch(
+                        original: profileDrawMethod,
+                        postfix: new HarmonyMethod(typeof(GameMenuPatches), nameof(ProfileMenu_Draw_Postfix))
+                    );
+                }
+
                 Monitor.Log("GameMenu patches applied.", LogLevel.Trace);
             }
             catch (Exception ex)
@@ -160,6 +173,19 @@ namespace AndroidConsolizer.Patches
             {
                 Monitor?.Log($"[GameMenu] Error in ChangeCharacter_Postfix: {ex.Message}", LogLevel.Error);
             }
+        }
+
+        /// <summary>
+        /// Postfix on ProfileMenu.draw — draws the gamepad cursor.
+        /// ProfileMenu (gift log) doesn't call drawMouse() because the Android port
+        /// was designed for touch only. Without this, D-pad navigation works but
+        /// there's no visible cursor to show which item is selected.
+        /// </summary>
+        private static void ProfileMenu_Draw_Postfix(IClickableMenu __instance, SpriteBatch b)
+        {
+            if (!ModEntry.Config.EnableGameMenuNavigation)
+                return;
+            __instance.drawMouse(b);
         }
 
         /// <summary>Called from ModEntry.OnMenuChanged when GameMenu opens.</summary>
