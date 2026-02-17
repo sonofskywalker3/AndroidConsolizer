@@ -44,11 +44,9 @@ namespace AndroidConsolizer.Patches
         // Track slotPosition to detect right-stick scroll changes
         private static int _lastSocialSlotPosition = -1;
 
-        // GetMouseState override for A-press on Social tab
-        // Touch sim reads raw mouse position — override it to the snapped slot's center
-        // so the touch sim opens the correct villager. Only active for the A-press tick.
-        private static int _socialMouseOverrideTick = -1;
-        private static int _socialMouseRawX, _socialMouseRawY;
+        // Pending A-press: set in prefix, consumed by SocialPage.update() prefix
+        // to inject clickedEntry right before update() processes it (after touch sim)
+        private static int _pendingSocialClick = -1;
 
         // Diagnostic: track child menu on SocialPage (gift log)
         private static bool _dumpedChildMenu = false;
@@ -77,22 +75,13 @@ namespace AndroidConsolizer.Patches
                     prefix: new HarmonyMethod(typeof(GameMenuPatches), nameof(ReceiveGamePadButton_Prefix))
                 );
 
-                // GetMouseState override for A-press on Social tab
-                var inputType = Game1.input.GetType();
-                var getMouseStateMethod = AccessTools.Method(inputType, "GetMouseState");
-                if (getMouseStateMethod != null)
+                // Patch SocialPage.update() to inject clickedEntry right before processing
+                var socialUpdateMethod = AccessTools.Method(typeof(SocialPage), "update", new[] { typeof(GameTime) });
+                if (socialUpdateMethod != null)
                 {
                     harmony.Patch(
-                        original: getMouseStateMethod,
-                        postfix: new HarmonyMethod(typeof(GameMenuPatches), nameof(GetMouseState_Postfix))
-                    );
-                }
-                var mouseGetState = AccessTools.Method(typeof(Mouse), nameof(Mouse.GetState));
-                if (mouseGetState != null)
-                {
-                    harmony.Patch(
-                        original: mouseGetState,
-                        postfix: new HarmonyMethod(typeof(GameMenuPatches), nameof(GetMouseState_Postfix))
+                        original: socialUpdateMethod,
+                        prefix: new HarmonyMethod(typeof(GameMenuPatches), nameof(SocialUpdate_Prefix))
                     );
                 }
 
@@ -498,17 +487,20 @@ namespace AndroidConsolizer.Patches
             }
         }
 
-        // ===== GetMouseState postfix for Social tab A-press =====
+        // ===== SocialPage.update() prefix — inject clickedEntry before processing =====
 
-        private static void GetMouseState_Postfix(ref MouseState __result)
+        private static void SocialUpdate_Prefix(SocialPage __instance)
         {
-            if (_socialMouseOverrideTick != Game1.ticks) return;
-            __result = new MouseState(
-                _socialMouseRawX, _socialMouseRawY,
-                __result.ScrollWheelValue,
-                __result.LeftButton, __result.MiddleButton, __result.RightButton,
-                __result.XButton1, __result.XButton2
-            );
+            if (_pendingSocialClick < 0) return;
+
+            int slotIndex = _pendingSocialClick;
+            _pendingSocialClick = -1;
+
+            if (_socialClickedEntryField != null)
+            {
+                _socialClickedEntryField.SetValue(__instance, slotIndex);
+                Monitor?.Log($"[SocialDiag] update prefix: set clickedEntry={slotIndex}", LogLevel.Trace);
+            }
         }
 
         /// <summary>
@@ -609,15 +601,23 @@ namespace AndroidConsolizer.Patches
             {
                 case Buttons.A:
                 {
-                    // Touch sim fires after every A-press and reads GetMouseState()
-                    // to determine which villager to open. Override mouse position to
-                    // the snapped slot's bounds center so it hits the right villager.
+                    // Set pending click — SocialPage.update() prefix will inject
+                    // clickedEntry right before update() processes it, after the
+                    // touch sim has already had its chance to overwrite.
                     var snapped = page.currentlySnappedComponent;
                     if (snapped == null) return false;
 
-                    _socialMouseRawX = snapped.bounds.Center.X;
-                    _socialMouseRawY = snapped.bounds.Center.Y;
-                    _socialMouseOverrideTick = Game1.ticks;
+                    var charSlots = _socialCharacterSlotsField?.GetValue(page) as IList;
+                    if (charSlots == null) return false;
+
+                    for (int i = 0; i < charSlots.Count; i++)
+                    {
+                        if (charSlots[i] == snapped)
+                        {
+                            _pendingSocialClick = i;
+                            break;
+                        }
+                    }
                     return false;
                 }
 
