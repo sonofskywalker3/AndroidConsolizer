@@ -1070,13 +1070,8 @@ namespace AndroidConsolizer.Patches
                 int currentSubTab = (int)(_collectionsCurrentTabField?.GetValue(page) ?? 0);
                 _collectionsSelectedTabIndex = currentSubTab;
 
-                // Snap mouse to the currently selected item
-                var selectedArr = _currentlySelectedComponentField?.GetValue(page) as ClickableTextureComponent[];
-                if (selectedArr != null && currentSubTab < selectedArr.Length && selectedArr[currentSubTab] != null)
-                {
-                    var comp = selectedArr[currentSubTab];
-                    Game1.setMousePosition(comp.bounds.Center.X, comp.bounds.Center.Y);
-                }
+                // No need to set mouse position here — CollectionsDraw_Postfix draws the cursor
+                // at the correct position using bounds that are only valid during draw().
 
                 Monitor?.Log($"[GameMenu] CollectionsPage: fixed, currentSubTab={currentSubTab}", LogLevel.Trace);
             }
@@ -1147,7 +1142,6 @@ namespace AndroidConsolizer.Patches
                         if (_collectionsSelectedTabIndex > 0)
                         {
                             _collectionsSelectedTabIndex--;
-                            SnapToSideTab(mobSideTabs, _collectionsSelectedTabIndex);
                             Game1.playSound("shiny4");
                         }
                         return false;
@@ -1158,7 +1152,6 @@ namespace AndroidConsolizer.Patches
                         if (_collectionsSelectedTabIndex < numTabs - 1)
                         {
                             _collectionsSelectedTabIndex++;
-                            SnapToSideTab(mobSideTabs, _collectionsSelectedTabIndex);
                             Game1.playSound("shiny4");
                         }
                         return false;
@@ -1168,7 +1161,6 @@ namespace AndroidConsolizer.Patches
                     {
                         // Return to items mode
                         _collectionsInTabMode = false;
-                        SnapToCurrentItem(page, currentSubTab);
                         Game1.playSound("shiny4");
                         return false;
                     }
@@ -1183,10 +1175,8 @@ namespace AndroidConsolizer.Patches
                             var onChangeMethod = page.GetType().GetMethod("OnChangeCollectionsTab", BindingFlags.Instance | BindingFlags.NonPublic);
                             onChangeMethod?.Invoke(page, null);
                         }
-                        // Switch to items mode
+                        // Switch to items mode — draw postfix will position cursor
                         _collectionsInTabMode = false;
-                        int newTab = (int)(_collectionsCurrentTabField?.GetValue(page) ?? 0);
-                        SnapToCurrentItem(page, newTab);
                         return false;
                     }
                     case Buttons.B:
@@ -1218,10 +1208,9 @@ namespace AndroidConsolizer.Patches
                         int col = idx % numInRow;
                         if (col == 0)
                         {
-                            // Enter tab mode
+                            // Enter tab mode — draw postfix will position cursor on side tab
                             _collectionsInTabMode = true;
                             _collectionsSelectedTabIndex = currentSubTab;
-                            SnapToSideTab(mobSideTabs, _collectionsSelectedTabIndex);
                             Game1.playSound("shiny4");
                         }
                         else
@@ -1397,8 +1386,8 @@ namespace AndroidConsolizer.Patches
                     }
                 }
 
-                // Snap cursor to new item's center
-                Game1.setMousePosition(newItem.bounds.Center.X, newItem.bounds.Center.Y);
+                // Cursor position is handled by CollectionsDraw_Postfix using bounds
+                // that are only correct during draw() — don't set mouse here.
                 Game1.playSound("shiny4");
             }
             catch (Exception ex)
@@ -1407,34 +1396,18 @@ namespace AndroidConsolizer.Patches
             }
         }
 
-        /// <summary>
-        /// Snap mouse cursor to the center of a side tab rectangle.
-        /// </summary>
-        private static void SnapToSideTab(Rectangle[] mobSideTabs, int tabIndex)
-        {
-            if (tabIndex >= 0 && tabIndex < mobSideTabs.Length)
-            {
-                var tab = mobSideTabs[tabIndex];
-                Game1.setMousePosition(tab.Center.X, tab.Center.Y);
-            }
-        }
+        // SnapToSideTab / SnapToCurrentItem removed — cursor position is handled
+        // entirely in CollectionsDraw_Postfix where item bounds.Y is correct.
+        // Navigation methods just update _collectionsInTabMode / _collectionsSelectedTabIndex
+        // and the selected component; the draw postfix reads these to place the cursor.
 
         /// <summary>
-        /// Snap mouse cursor to the currently selected item in the given sub-tab.
-        /// </summary>
-        private static void SnapToCurrentItem(IClickableMenu page, int subTab)
-        {
-            var selectedArr = _currentlySelectedComponentField?.GetValue(page) as ClickableTextureComponent[];
-            if (selectedArr != null && subTab < selectedArr.Length && selectedArr[subTab] != null)
-            {
-                var comp = selectedArr[subTab];
-                Game1.setMousePosition(comp.bounds.Center.X, comp.bounds.Center.Y);
-            }
-        }
-
-        /// <summary>
-        /// Postfix on CollectionsPage.draw — draws the finger cursor.
+        /// Postfix on CollectionsPage.draw — draws the finger cursor at the correct position.
         /// GameMenu.draw line 636 deliberately skips the cursor for tab 7 (Collections).
+        ///
+        /// We draw at the tracked position (item or tab) rather than Game1.getMouseX/Y()
+        /// because collection item bounds.Y is only correct during draw() — it's set to 0
+        /// in the constructor and recalculated dynamically each frame in draw().
         /// </summary>
         private static void CollectionsDraw_Postfix(CollectionsPage __instance, SpriteBatch b)
         {
@@ -1446,16 +1419,41 @@ namespace AndroidConsolizer.Patches
             if (letterViewer != null)
                 return;
 
-            // Draw the gamepad finger cursor
-            if (Game1.options.gamepadControls && !Game1.options.hardwareCursor)
+            if (!Game1.options.gamepadControls || Game1.options.hardwareCursor)
+                return;
+
+            // Determine cursor position based on current mode
+            int cursorX, cursorY;
+
+            if (_collectionsInTabMode)
             {
-                b.Draw(Game1.mouseCursors,
-                    new Vector2(Game1.getMouseX(), Game1.getMouseY()),
-                    Game1.getSourceRectForStandardTileSheet(Game1.mouseCursors, 44, 16, 16),
-                    Color.White, 0f, Vector2.Zero,
-                    4f + Game1.dialogueButtonScale / 150f,
-                    SpriteEffects.None, 1f);
+                // Tab mode: cursor on the side tab
+                var mobSideTabs = _collectionsMobSideTabsField?.GetValue(__instance) as Rectangle[];
+                if (mobSideTabs == null || _collectionsSelectedTabIndex >= mobSideTabs.Length)
+                    return;
+                var tab = mobSideTabs[_collectionsSelectedTabIndex];
+                cursorX = tab.Center.X;
+                cursorY = tab.Center.Y;
             }
+            else
+            {
+                // Items mode: cursor on the currently selected item
+                // bounds.Y is CORRECT here because draw() just recalculated it
+                int currentSubTab = (int)(_collectionsCurrentTabField?.GetValue(__instance) ?? 0);
+                var selectedArr = _currentlySelectedComponentField?.GetValue(__instance) as ClickableTextureComponent[];
+                if (selectedArr == null || currentSubTab >= selectedArr.Length || selectedArr[currentSubTab] == null)
+                    return;
+                var comp = selectedArr[currentSubTab];
+                cursorX = comp.bounds.Center.X;
+                cursorY = comp.bounds.Center.Y;
+            }
+
+            b.Draw(Game1.mouseCursors,
+                new Vector2(cursorX, cursorY),
+                Game1.getSourceRectForStandardTileSheet(Game1.mouseCursors, 44, 16, 16),
+                Color.White, 0f, Vector2.Zero,
+                4f + Game1.dialogueButtonScale / 150f,
+                SpriteEffects.None, 1f);
         }
 
         /// <summary>
