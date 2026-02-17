@@ -607,10 +607,10 @@ namespace AndroidConsolizer.Patches
             switch (b)
             {
                 case Buttons.A:
-                    // Let the game's own SocialPage.receiveGamePadButton handle A.
-                    // We've fixed the slot bounds and set currentlySnappedComponent —
-                    // the game's handler should work with our corrected data.
-                    return true;
+                    // DIAGNOSTIC: Block A completely — do nothing at all.
+                    // If profiles still open, the touch simulation is responsible.
+                    Monitor?.Log($"[SocialDiag] A-press BLOCKED (diagnostic) — snapped ID={page.currentlySnappedComponent?.myID}", LogLevel.Info);
+                    return false;
 
                 case Buttons.DPadDown:
                 case Buttons.LeftThumbstickDown:
