@@ -68,8 +68,8 @@ namespace AndroidConsolizer.Patches
         // Diagnostic: track child menu on SocialPage (gift log)
         private static bool _dumpedChildMenu = false;
 
-        // Diagnostic: cached scrollbox yOffset field for logging
-        private static FieldInfo _scrollboxYOffsetField;
+        // MobileScrollbox.setYOffsetForScroll() method — sets yOffset AND syncs scrollbar visual
+        private static MethodInfo _scrollboxSetYOffsetMethod;
 
         /// <summary>Check if right stick Y should be suppressed for social tab navigation.
         /// Called from GameplayButtonPatches.GetState_Postfix.</summary>
@@ -298,17 +298,17 @@ namespace AndroidConsolizer.Patches
                     _socialSpritesField = AccessTools.Field(pageType, "sprites");
                     _socialSelectSlotMethod = pageType.GetMethod("_SelectSlot", BindingFlags.Instance | BindingFlags.NonPublic);
 
-                    // Cache yOffsetForScroll field from MobileScrollbox (for scroll sync)
+                    // Cache setYOffsetForScroll method from MobileScrollbox (sets yOffset AND syncs scrollbar)
                     if (_socialScrollAreaField != null)
                     {
                         var scrollArea = _socialScrollAreaField.GetValue(page);
                         if (scrollArea != null)
                         {
-                            _scrollboxYOffsetField = AccessTools.Field(scrollArea.GetType(), "yOffsetForScroll");
-                            if (_scrollboxYOffsetField != null)
-                                Monitor?.Log($"[SocialDiag] Found scrollbox yOffset field: {_scrollboxYOffsetField.Name} (type={_scrollboxYOffsetField.FieldType.Name})", LogLevel.Trace);
+                            _scrollboxSetYOffsetMethod = scrollArea.GetType().GetMethod("setYOffsetForScroll", new[] { typeof(int) });
+                            if (_scrollboxSetYOffsetMethod != null)
+                                Monitor?.Log($"[SocialDiag] Found scrollbox setYOffsetForScroll method", LogLevel.Trace);
                             else
-                                Monitor?.Log($"[SocialDiag] WARNING: yOffsetForScroll field not found on MobileScrollbox", LogLevel.Warn);
+                                Monitor?.Log($"[SocialDiag] WARNING: setYOffsetForScroll method not found on MobileScrollbox", LogLevel.Warn);
                         }
                     }
                 }
@@ -356,12 +356,12 @@ namespace AndroidConsolizer.Patches
                         slotPosition = Math.Max(0, Math.Min(snapTargetIndex, charSlots.Count - visibleSlots));
                         _socialSlotPositionField?.SetValue(page, slotPosition);
 
-                        // Sync MobileScrollbox yOffset
-                        if (_socialScrollAreaField != null && _scrollboxYOffsetField != null)
+                        // Sync MobileScrollbox yOffset + scrollbar visual
+                        if (_socialScrollAreaField != null && _scrollboxSetYOffsetMethod != null)
                         {
                             var scrollArea = _socialScrollAreaField.GetValue(page);
                             if (scrollArea != null)
-                                _scrollboxYOffsetField.SetValue(scrollArea, -(slotPosition * slotHeight));
+                                _scrollboxSetYOffsetMethod.Invoke(scrollArea, new object[] { -(slotPosition * slotHeight) });
                         }
                     }
 
@@ -786,12 +786,12 @@ namespace AndroidConsolizer.Patches
 
                     _socialSlotPositionField.SetValue(page, newSlotPos);
 
-                    // Sync MobileScrollbox yOffsetForScroll (negative when scrolled down)
-                    if (_socialScrollAreaField != null && _scrollboxYOffsetField != null)
+                    // Sync MobileScrollbox yOffsetForScroll + scrollbar visual
+                    if (_socialScrollAreaField != null && _scrollboxSetYOffsetMethod != null)
                     {
                         var scrollArea = _socialScrollAreaField.GetValue(page);
                         if (scrollArea != null)
-                            _scrollboxYOffsetField.SetValue(scrollArea, -(newSlotPos * slotHeight));
+                            _scrollboxSetYOffsetMethod.Invoke(scrollArea, new object[] { -(newSlotPos * slotHeight) });
                     }
 
                     slotPosition = newSlotPos;
