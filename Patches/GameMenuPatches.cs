@@ -55,6 +55,7 @@ namespace AndroidConsolizer.Patches
         private static int _lastAutoScrollTick = 0;
         private const int HeldScrollInitialDelay = 24; // ~400ms before acceleration starts
         private const int HeldScrollRepeatInterval = 8; // ~133ms between repeats (~2x manual speed)
+        private const float StickEngageThreshold = 0.2f; // match game's button event threshold (not 0.5)
 
         // Scrollbox tap simulation: two-frame tap gesture
         // Phase 0 = idle, 1 = receiveLeftClick pending, 2 = releaseLeftClick pending
@@ -479,12 +480,12 @@ namespace AndroidConsolizer.Patches
             // to trigger 3-slot navigation on neutral→engaged transition.
             // Right stick Y is suppressed at GetState level to block vanilla smooth scroll.
             float rawRightY = GameplayButtonPatches.RawRightStickY;
-            bool rightStickEngaged = Math.Abs(rawRightY) > 0.5f;
+            bool rightStickEngaged = Math.Abs(rawRightY) > StickEngageThreshold;
 
             if (rightStickEngaged && !_prevRightStickEngaged && _heldScrollDirection == 0)
             {
                 // Newly engaged — fire 3-slot jump
-                int dir = rawRightY < -0.5f ? 1 : -1; // Y < 0 = stick pushed down
+                int dir = rawRightY < -StickEngageThreshold ? 1 : -1; // Y < 0 = stick pushed down
                 NavigateSocialSlot(__instance, dir, 3);
                 _heldScrollDirection = dir;
                 _heldScrollStep = 3;
@@ -499,33 +500,26 @@ namespace AndroidConsolizer.Patches
             {
                 var padState = GamePad.GetState(PlayerIndex.One);
                 float rawRStickY = GameplayButtonPatches.RawRightStickY;
-                float leftY = padState.ThumbSticks.Left.Y;
 
-                // Detect current held direction from all input sources
+                // Use StickEngageThreshold (0.2) to match the game's own button event threshold.
+                // The game fires LeftThumbstickDown at ~0.2-0.4 deflection, so our held check
+                // must use the same threshold or it clears immediately on gentle pushes.
                 bool downHeld = padState.DPad.Down == ButtonState.Pressed
-                             || leftY < -0.5f
-                             || rawRStickY < -0.5f;
+                             || padState.ThumbSticks.Left.Y < -StickEngageThreshold
+                             || rawRStickY < -StickEngageThreshold;
                 bool upHeld = padState.DPad.Up == ButtonState.Pressed
-                           || leftY > 0.5f
-                           || rawRStickY > 0.5f;
+                           || padState.ThumbSticks.Left.Y > StickEngageThreshold
+                           || rawRStickY > StickEngageThreshold;
 
                 int currentDir = downHeld ? 1 : upHeld ? -1 : 0;
-                int elapsed = Game1.ticks - _heldScrollStartTick;
-
-                // Diagnostic: log every 15 ticks (~250ms) while held-scroll is active
-                if (elapsed % 15 == 0 || currentDir == 0 || currentDir != _heldScrollDirection)
-                {
-                    Monitor?.Log($"[HeldScroll] dir={_heldScrollDirection} step={_heldScrollStep} currentDir={currentDir} leftY={leftY:F3} rawRStickY={rawRStickY:F3} elapsed={elapsed} tick={Game1.ticks}", LogLevel.Trace);
-                }
 
                 if (currentDir == 0)
                 {
-                    Monitor?.Log($"[HeldScroll] CLEARED: stick neutral. leftY={leftY:F3} dpadD={padState.DPad.Down} dpadU={padState.DPad.Up}", LogLevel.Trace);
                     _heldScrollDirection = 0;
                 }
                 else if (currentDir != _heldScrollDirection)
                 {
-                    Monitor?.Log($"[HeldScroll] REVERSED: {_heldScrollDirection}->{currentDir}", LogLevel.Trace);
+                    // Direction reversed — reset timing for the new direction
                     _heldScrollDirection = currentDir;
                     _heldScrollStartTick = Game1.ticks;
                     _lastAutoScrollTick = Game1.ticks;
@@ -533,12 +527,12 @@ namespace AndroidConsolizer.Patches
                 else
                 {
                     // Same direction still held — auto-repeat
+                    int elapsed = Game1.ticks - _heldScrollStartTick;
                     if (elapsed >= HeldScrollInitialDelay)
                     {
                         int sinceLast = Game1.ticks - _lastAutoScrollTick;
                         if (sinceLast >= HeldScrollRepeatInterval)
                         {
-                            Monitor?.Log($"[HeldScroll] REPEAT: dir={_heldScrollDirection} step={_heldScrollStep} elapsed={elapsed}", LogLevel.Trace);
                             _lastAutoScrollTick = Game1.ticks;
                             NavigateSocialSlot(__instance, _heldScrollDirection, _heldScrollStep);
                         }
@@ -700,7 +694,6 @@ namespace AndroidConsolizer.Patches
                     _heldScrollStep = 1;
                     _heldScrollStartTick = Game1.ticks;
                     _lastAutoScrollTick = Game1.ticks;
-                    Monitor?.Log($"[HeldScroll] INIT: dir=1 step=1 tick={Game1.ticks}", LogLevel.Trace);
                     return false;
 
                 case Buttons.DPadUp:
@@ -710,7 +703,6 @@ namespace AndroidConsolizer.Patches
                     _heldScrollStep = 1;
                     _heldScrollStartTick = Game1.ticks;
                     _lastAutoScrollTick = Game1.ticks;
-                    Monitor?.Log($"[HeldScroll] INIT: dir=-1 step=1 tick={Game1.ticks}", LogLevel.Trace);
                     return false;
 
                 case Buttons.RightThumbstickDown:
