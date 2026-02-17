@@ -49,6 +49,7 @@ namespace AndroidConsolizer.Patches
         // Save selected villager when gift log opens, restore on return
         private static int _savedSocialReturnIndex = -1;
         private static string _savedSocialReturnName = null; // InternalName — updated by ChangeCharacter postfix
+        private static int _savedSocialSlotPosition = -1; // scroll position when gift log opened
 
         // Held-scroll acceleration: track direction, step size, and timing
         private static int _heldScrollDirection = 0; // -1=up, 0=none, 1=down
@@ -411,22 +412,35 @@ namespace AndroidConsolizer.Patches
                 {
                     snapTargetIndex = _savedSocialReturnIndex;
 
-                    // Scroll so the saved slot is visible
-                    if (snapTargetIndex < slotPosition || snapTargetIndex >= slotPosition + visibleSlots)
+                    // Prefer restoring the original scroll position (so the villager stays
+                    // at the same visual position, not snapped to top of the list).
+                    // Fall back to scrolling-to-visible if the target is out of range
+                    // (e.g. LB/RB moved to a far-away villager in the gift log).
+                    int maxSlotPos = charSlots.Count - visibleSlots;
+                    if (_savedSocialSlotPosition >= 0
+                        && snapTargetIndex >= _savedSocialSlotPosition
+                        && snapTargetIndex < _savedSocialSlotPosition + visibleSlots)
                     {
-                        slotPosition = Math.Max(0, Math.Min(snapTargetIndex, charSlots.Count - visibleSlots));
-                        _socialSlotPositionField?.SetValue(page, slotPosition);
-
-                        // Sync MobileScrollbox yOffset + scrollbar visual
-                        if (_socialScrollAreaField != null && _scrollboxSetYOffsetMethod != null)
-                        {
-                            var scrollArea = _socialScrollAreaField.GetValue(page);
-                            if (scrollArea != null)
-                                _scrollboxSetYOffsetMethod.Invoke(scrollArea, new object[] { -(slotPosition * slotHeight) });
-                        }
+                        // Target is visible at saved scroll position — restore it
+                        slotPosition = Math.Max(0, Math.Min(_savedSocialSlotPosition, maxSlotPos));
+                    }
+                    else
+                    {
+                        // Target not visible at saved position — scroll to make it visible
+                        slotPosition = Math.Max(0, Math.Min(snapTargetIndex, maxSlotPos));
                     }
 
-                    Monitor?.Log($"[GameMenu] SocialPage: restoring position to slot[{snapTargetIndex}], slotPosition={slotPosition}", LogLevel.Trace);
+                    _socialSlotPositionField?.SetValue(page, slotPosition);
+
+                    // Sync MobileScrollbox yOffset + scrollbar visual
+                    if (_socialScrollAreaField != null && _scrollboxSetYOffsetMethod != null)
+                    {
+                        var scrollArea = _socialScrollAreaField.GetValue(page);
+                        if (scrollArea != null)
+                            _scrollboxSetYOffsetMethod.Invoke(scrollArea, new object[] { -(slotPosition * slotHeight) });
+                    }
+
+                    Monitor?.Log($"[GameMenu] SocialPage: restoring position to slot[{snapTargetIndex}], slotPosition={slotPosition} (savedSlotPos={_savedSocialSlotPosition})", LogLevel.Trace);
                 }
 
                 if (verbose)
@@ -722,6 +736,7 @@ namespace AndroidConsolizer.Patches
             {
                 _savedSocialReturnIndex = -1;
                 _savedSocialReturnName = null;
+                _savedSocialSlotPosition = -1;
             }
 
             switch (b)
@@ -757,6 +772,10 @@ namespace AndroidConsolizer.Patches
                             }
                         }
                     }
+
+                    // Save scroll position so we can restore the view (not just the slot)
+                    if (_socialSlotPositionField != null)
+                        _savedSocialSlotPosition = (int)_socialSlotPositionField.GetValue(page);
 
                     // Block A from reaching scrollbox, let Android touch sim fire naturally.
                     return false;
