@@ -41,12 +41,14 @@ namespace AndroidConsolizer.Patches
         private static FieldInfo _socialScrollAreaField;
         private static MethodInfo _socialSelectSlotMethod;
         private static FieldInfo _socialSpritesField;
+        private static FieldInfo _socialEntriesField; // SocialPage.SocialEntries — for name→index mapping
 
         // Track slotPosition to detect right-stick scroll changes
         private static int _lastSocialSlotPosition = -1;
 
-        // Save selected slot index when gift log opens, restore on return (-1 = no saved position)
+        // Save selected villager when gift log opens, restore on return
         private static int _savedSocialReturnIndex = -1;
+        private static string _savedSocialReturnName = null; // InternalName — updated by ChangeCharacter postfix
 
         // Held-scroll acceleration: track direction, step size, and timing
         private static int _heldScrollDirection = 0; // -1=up, 0=none, 1=down
@@ -113,11 +115,48 @@ namespace AndroidConsolizer.Patches
                     );
                 }
 
+                // Patch ProfileMenu.ChangeCharacter to track villager switches (LB/RB in gift log)
+                var changeCharMethod = AccessTools.Method(typeof(ProfileMenu), nameof(ProfileMenu.ChangeCharacter));
+                if (changeCharMethod != null)
+                {
+                    harmony.Patch(
+                        original: changeCharMethod,
+                        postfix: new HarmonyMethod(typeof(GameMenuPatches), nameof(ChangeCharacter_Postfix))
+                    );
+                }
+
                 Monitor.Log("GameMenu patches applied.", LogLevel.Trace);
             }
             catch (Exception ex)
             {
                 Monitor.Log($"Failed to apply GameMenu patches: {ex.Message}", LogLevel.Error);
+            }
+        }
+
+        /// <summary>
+        /// Postfix on ProfileMenu.ChangeCharacter — tracks which villager the user
+        /// switched to via LB/RB so we return to the correct one on gift log exit.
+        /// </summary>
+        private static void ChangeCharacter_Postfix(object __instance)
+        {
+            try
+            {
+                // Read __instance.Current.InternalName via reflection (ProfileMenu.Current is SocialPage.SocialEntry)
+                var currentField = __instance.GetType().GetField("Current");
+                var current = currentField?.GetValue(__instance);
+                if (current != null)
+                {
+                    var name = current.GetType().GetField("InternalName")?.GetValue(current) as string;
+                    if (name != null)
+                    {
+                        _savedSocialReturnName = name;
+                        Monitor?.Log($"[GameMenu] ChangeCharacter: updated return name to '{name}'", LogLevel.Trace);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Monitor?.Log($"[GameMenu] Error in ChangeCharacter_Postfix: {ex.Message}", LogLevel.Error);
             }
         }
 
@@ -296,6 +335,7 @@ namespace AndroidConsolizer.Patches
                     _socialClickedEntryField = AccessTools.Field(pageType, "clickedEntry");
                     _socialScrollAreaField = AccessTools.Field(pageType, "scrollArea");
                     _socialSpritesField = AccessTools.Field(pageType, "sprites");
+                    _socialEntriesField = AccessTools.Field(pageType, "SocialEntries");
                     _socialSelectSlotMethod = pageType.GetMethod("_SelectSlot", BindingFlags.Instance | BindingFlags.NonPublic);
 
                     // Cache setYOffsetForScroll method from MobileScrollbox (sets yOffset AND syncs scrollbar)
@@ -342,10 +382,31 @@ namespace AndroidConsolizer.Patches
                 bool verbose = ModEntry.Config.VerboseLogging;
 
                 // Restore saved position when returning from gift log.
-                // Don't clear _savedSocialReturnIndex here — FixSocialPage may be called twice
+                // Don't clear here — FixSocialPage may be called twice
                 // (once in ChangeTab_Postfix during constructor, once in OnGameMenuOpened).
                 // Cleared on next user input in HandleSocialInput instead.
                 int snapTargetIndex = slotPosition;
+
+                // If ChangeCharacter updated the name (LB/RB in gift log), resolve name→index
+                if (_savedSocialReturnName != null && _socialEntriesField != null)
+                {
+                    var entries = _socialEntriesField.GetValue(page) as IList;
+                    if (entries != null)
+                    {
+                        for (int i = 0; i < entries.Count; i++)
+                        {
+                            var entry = entries[i];
+                            var name = entry?.GetType().GetField("InternalName")?.GetValue(entry) as string;
+                            if (name == _savedSocialReturnName)
+                            {
+                                _savedSocialReturnIndex = i;
+                                Monitor?.Log($"[GameMenu] SocialPage: resolved '{_savedSocialReturnName}' to slot[{i}]", LogLevel.Trace);
+                                break;
+                            }
+                        }
+                    }
+                }
+
                 if (_savedSocialReturnIndex >= 0 && _savedSocialReturnIndex < charSlots.Count)
                 {
                     snapTargetIndex = _savedSocialReturnIndex;
@@ -658,7 +719,10 @@ namespace AndroidConsolizer.Patches
 
             // Clear saved return position on any navigation input (A will set a new one)
             if (b != Buttons.A)
+            {
                 _savedSocialReturnIndex = -1;
+                _savedSocialReturnName = null;
+            }
 
             switch (b)
             {
@@ -677,6 +741,17 @@ namespace AndroidConsolizer.Patches
                                 if (charSlots[i] == snapped)
                                 {
                                     _savedSocialReturnIndex = i;
+                                    // Also save name so ChangeCharacter postfix can update it
+                                    if (_socialEntriesField != null)
+                                    {
+                                        var entries = _socialEntriesField.GetValue(page) as IList;
+                                        if (entries != null && i < entries.Count)
+                                        {
+                                            var entry = entries[i];
+                                            var nameProp = entry?.GetType().GetField("InternalName");
+                                            _savedSocialReturnName = nameProp?.GetValue(entry) as string;
+                                        }
+                                    }
                                     break;
                                 }
                             }
