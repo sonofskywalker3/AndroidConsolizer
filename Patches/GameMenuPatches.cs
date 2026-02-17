@@ -48,6 +48,14 @@ namespace AndroidConsolizer.Patches
         // Save selected slot index when gift log opens, restore on return (-1 = no saved position)
         private static int _savedSocialReturnIndex = -1;
 
+        // Held-scroll acceleration: track direction, step size, and timing
+        private static int _heldScrollDirection = 0; // -1=up, 0=none, 1=down
+        private static int _heldScrollStep = 1; // 1=left stick/dpad, 3=right stick
+        private static int _heldScrollStartTick = 0;
+        private static int _lastAutoScrollTick = 0;
+        private const int HeldScrollInitialDelay = 24; // ~400ms before acceleration starts
+        private const int HeldScrollRepeatInterval = 8; // ~133ms between repeats (~2x manual speed)
+
         // Scrollbox tap simulation: two-frame tap gesture
         // Phase 0 = idle, 1 = receiveLeftClick pending, 2 = releaseLeftClick pending
         private static int _scrollboxTapPhase = 0;
@@ -449,10 +457,49 @@ namespace AndroidConsolizer.Patches
             }
         }
 
-        // ===== SocialPage.update() prefix — drive scrollbox tap gesture =====
+        // ===== SocialPage.update() prefix — held-scroll acceleration + scrollbox tap gesture =====
 
         private static void SocialUpdate_Prefix(SocialPage __instance)
         {
+            // Held-scroll acceleration: check if directional input is still held
+            if (_heldScrollDirection != 0)
+            {
+                var padState = GamePad.GetState(PlayerIndex.One);
+                bool stillHeld = false;
+
+                if (_heldScrollDirection > 0) // down
+                {
+                    stillHeld = padState.DPad.Down == ButtonState.Pressed
+                             || padState.ThumbSticks.Left.Y < -0.5f
+                             || padState.ThumbSticks.Right.Y < -0.5f;
+                }
+                else // up
+                {
+                    stillHeld = padState.DPad.Up == ButtonState.Pressed
+                             || padState.ThumbSticks.Left.Y > 0.5f
+                             || padState.ThumbSticks.Right.Y > 0.5f;
+                }
+
+                if (!stillHeld)
+                {
+                    _heldScrollDirection = 0;
+                }
+                else
+                {
+                    int elapsed = Game1.ticks - _heldScrollStartTick;
+                    if (elapsed >= HeldScrollInitialDelay)
+                    {
+                        int sinceLast = Game1.ticks - _lastAutoScrollTick;
+                        if (sinceLast >= HeldScrollRepeatInterval)
+                        {
+                            _lastAutoScrollTick = Game1.ticks;
+                            NavigateSocialSlot(__instance, _heldScrollDirection, _heldScrollStep);
+                        }
+                    }
+                }
+            }
+
+            // Scrollbox tap gesture (legacy, kept for compatibility)
             if (_scrollboxTapPhase == 0) return;
 
             var scrollArea = _socialScrollAreaField?.GetValue(__instance);
@@ -462,19 +509,15 @@ namespace AndroidConsolizer.Patches
 
             if (_scrollboxTapPhase == 1)
             {
-                // Frame 1: touch down
                 var clickMethod = scrollType.GetMethod("receiveLeftClick", new[] { typeof(int), typeof(int) });
                 clickMethod?.Invoke(scrollArea, new object[] { _scrollboxTapX, _scrollboxTapY });
                 _scrollboxTapPhase = 2;
-                Monitor?.Log($"[SocialDiag] scrollbox tap phase 1: receiveLeftClick({_scrollboxTapX},{_scrollboxTapY})", LogLevel.Trace);
             }
             else if (_scrollboxTapPhase == 2)
             {
-                // Frame 2: touch up at same position (= tap)
                 var releaseMethod = scrollType.GetMethod("releaseLeftClick", new[] { typeof(int), typeof(int) });
                 releaseMethod?.Invoke(scrollArea, new object[] { _scrollboxTapX, _scrollboxTapY });
                 _scrollboxTapPhase = 0;
-                Monitor?.Log($"[SocialDiag] scrollbox tap phase 2: releaseLeftClick({_scrollboxTapX},{_scrollboxTapY})", LogLevel.Trace);
             }
         }
 
@@ -606,11 +649,35 @@ namespace AndroidConsolizer.Patches
                 case Buttons.DPadDown:
                 case Buttons.LeftThumbstickDown:
                     NavigateSocialSlot(page, 1);
+                    _heldScrollDirection = 1;
+                    _heldScrollStep = 1;
+                    _heldScrollStartTick = Game1.ticks;
+                    _lastAutoScrollTick = Game1.ticks;
                     return false;
 
                 case Buttons.DPadUp:
                 case Buttons.LeftThumbstickUp:
                     NavigateSocialSlot(page, -1);
+                    _heldScrollDirection = -1;
+                    _heldScrollStep = 1;
+                    _heldScrollStartTick = Game1.ticks;
+                    _lastAutoScrollTick = Game1.ticks;
+                    return false;
+
+                case Buttons.RightThumbstickDown:
+                    NavigateSocialSlot(page, 1, 3);
+                    _heldScrollDirection = 1;
+                    _heldScrollStep = 3;
+                    _heldScrollStartTick = Game1.ticks;
+                    _lastAutoScrollTick = Game1.ticks;
+                    return false;
+
+                case Buttons.RightThumbstickUp:
+                    NavigateSocialSlot(page, -1, 3);
+                    _heldScrollDirection = -1;
+                    _heldScrollStep = 3;
+                    _heldScrollStartTick = Game1.ticks;
+                    _lastAutoScrollTick = Game1.ticks;
                     return false;
 
                 default:
@@ -619,40 +686,31 @@ namespace AndroidConsolizer.Patches
         }
 
         /// <summary>
-        /// Navigate to the next (+1) or previous (-1) social slot.
-        /// Uses the game's own receiveScrollWheelAction to scroll when navigating
-        /// past the visible area, keeping the MobileScrollbox in sync.
-        /// Also re-fixes bounds when slotPosition changes from right-stick scroll.
+        /// Navigate social slots by step count in the given direction.
+        /// direction: +1 = down, -1 = up. step: number of slots to move (1 = left stick, 3 = right stick).
+        /// Handles scrolling when navigation moves past the visible area.
         /// </summary>
-        private static void NavigateSocialSlot(IClickableMenu page, int direction)
+        private static void NavigateSocialSlot(IClickableMenu page, int direction, int step = 1)
         {
             try
             {
                 if (_socialCharacterSlotsField == null || _socialSlotPositionField == null ||
                     _socialSlotHeightField == null || _socialMainBoxField == null)
-                {
-                    Monitor?.Log($"[SocialDiag] NavigateSocialSlot: reflection fields null, aborting", LogLevel.Trace);
                     return;
-                }
 
                 var charSlots = _socialCharacterSlotsField.GetValue(page) as IList;
                 if (charSlots == null || charSlots.Count == 0)
-                {
-                    Monitor?.Log($"[SocialDiag] NavigateSocialSlot: charSlots null/empty", LogLevel.Trace);
                     return;
-                }
 
                 int slotPosition = (int)_socialSlotPositionField.GetValue(page);
                 int slotHeight = (int)_socialSlotHeightField.GetValue(page);
                 var mainBox = (Rectangle)_socialMainBoxField.GetValue(page);
                 int visibleSlots = mainBox.Height / slotHeight;
+                int maxSlotPos = charSlots.Count - visibleSlots;
 
-                Monitor?.Log($"[SocialDiag] Nav dir={direction}, slotPos={slotPosition}, lastSlotPos={_lastSocialSlotPosition}, visibleSlots={visibleSlots}, totalSlots={charSlots.Count}", LogLevel.Trace);
-
-                // If slotPosition changed since last fix (e.g., right stick scroll), re-fix bounds
+                // If slotPosition changed externally, re-fix bounds
                 if (slotPosition != _lastSocialSlotPosition)
                 {
-                    Monitor?.Log($"[SocialDiag] slotPosition changed ({_lastSocialSlotPosition}→{slotPosition}), refixing bounds", LogLevel.Trace);
                     RefixSocialBounds(page, charSlots, slotPosition, slotHeight, mainBox);
                     _lastSocialSlotPosition = slotPosition;
                 }
@@ -668,45 +726,32 @@ namespace AndroidConsolizer.Patches
                         break;
                     }
                 }
-
-                Monitor?.Log($"[SocialDiag] currentSnapped ID={current?.myID.ToString() ?? "null"}, matchedIndex={currentIndex}", LogLevel.Trace);
                 if (currentIndex < 0) currentIndex = slotPosition;
 
-                int newIndex = currentIndex + direction;
+                // Move by step, clamping to valid range
+                int newIndex = Math.Max(0, Math.Min(currentIndex + direction * step, charSlots.Count - 1));
+                if (newIndex == currentIndex)
+                    return; // at boundary
 
-                // Clamp to total range
-                if (newIndex < 0 || newIndex >= charSlots.Count)
-                {
-                    Monitor?.Log($"[SocialDiag] newIndex={newIndex} out of range [0,{charSlots.Count}), clamped", LogLevel.Trace);
-                    return;
-                }
-
-                // Check if we need to scroll
+                // Scroll if new index is outside visible range
                 if (newIndex < slotPosition || newIndex >= slotPosition + visibleSlots)
                 {
-                    Monitor?.Log($"[SocialDiag] newIndex={newIndex} outside visible [{slotPosition},{slotPosition + visibleSlots}), scrolling...", LogLevel.Trace);
-
-                    // Directly set slotPosition — receiveScrollWheelAction has no effect on Android's MobileScrollbox
-                    int newSlotPos = slotPosition + direction;
-                    int maxSlotPos = charSlots.Count - visibleSlots;
-                    if (newSlotPos < 0 || newSlotPos > maxSlotPos)
-                    {
-                        Monitor?.Log($"[SocialDiag] newSlotPos={newSlotPos} out of range [0,{maxSlotPos}], aborting", LogLevel.Trace);
-                        return;
-                    }
+                    int newSlotPos;
+                    if (direction > 0)
+                        newSlotPos = Math.Min(newIndex - visibleSlots + 1, maxSlotPos);
+                    else
+                        newSlotPos = Math.Max(newIndex, 0);
+                    newSlotPos = Math.Max(0, Math.Min(newSlotPos, maxSlotPos));
 
                     _socialSlotPositionField.SetValue(page, newSlotPos);
 
-                    // Sync MobileScrollbox yOffsetForScroll to match — game uses NEGATIVE values when scrolled down
-                    // (range: 0 to -maxYOffset). Game's updateSlots() computes: Y = yOffset + mainBox.Y + slotsYStart + i*slotHeight
+                    // Sync MobileScrollbox yOffsetForScroll (negative when scrolled down)
                     if (_socialScrollAreaField != null && _scrollboxYOffsetField != null)
                     {
                         var scrollArea = _socialScrollAreaField.GetValue(page);
                         if (scrollArea != null)
                             _scrollboxYOffsetField.SetValue(scrollArea, -(newSlotPos * slotHeight));
                     }
-
-                    Monitor?.Log($"[SocialDiag] direct scroll: slotPosition {slotPosition}→{newSlotPos}, yOffset={-(newSlotPos * slotHeight)}", LogLevel.Trace);
 
                     slotPosition = newSlotPos;
                     RefixSocialBounds(page, charSlots, slotPosition, slotHeight, mainBox);
@@ -715,16 +760,11 @@ namespace AndroidConsolizer.Patches
 
                 var newSlot = charSlots[newIndex] as ClickableComponent;
                 if (newSlot == null)
-                {
-                    Monitor?.Log($"[SocialDiag] slot[{newIndex}] is null", LogLevel.Trace);
                     return;
-                }
 
                 page.currentlySnappedComponent = newSlot;
                 page.snapCursorToCurrentSnappedComponent();
                 Game1.playSound("shiny4");
-
-                Monitor?.Log($"[SocialDiag] snapped to slot[{newIndex}] ID={newSlot.myID} bounds=({newSlot.bounds.X},{newSlot.bounds.Y},{newSlot.bounds.Width},{newSlot.bounds.Height})", LogLevel.Trace);
             }
             catch (Exception ex)
             {
