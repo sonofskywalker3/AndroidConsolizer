@@ -607,18 +607,10 @@ namespace AndroidConsolizer.Patches
             switch (b)
             {
                 case Buttons.A:
-                {
-                    var snapped = page.currentlySnappedComponent;
-                    if (snapped == null || snapped.bounds.Y <= 0) return false;
-
-                    // Use receiveLeftClick at slot bounds center — same approach as AnimalPage
-                    int cx = snapped.bounds.Center.X;
-                    int cy = snapped.bounds.Center.Y;
-                    page.receiveLeftClick(cx, cy, true);
-
-                    Monitor?.Log($"[SocialDiag] A-press: receiveLeftClick({cx},{cy}), snapped ID={snapped.myID}", LogLevel.Trace);
-                    return false;
-                }
+                    // Let the game's own SocialPage.receiveGamePadButton handle A.
+                    // We've fixed the slot bounds and set currentlySnappedComponent —
+                    // the game's handler should work with our corrected data.
+                    return true;
 
                 case Buttons.DPadDown:
                 case Buttons.LeftThumbstickDown:
