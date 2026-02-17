@@ -87,6 +87,7 @@ namespace AndroidConsolizer.Patches
         private static FieldInfo _collectionsSliderPercentField; // float[]
         private static FieldInfo _collectionsNewScrollbarField;  // MobileScrollbar
         private static FieldInfo _collectionsLetterviewerField;  // LetterViewerMenu
+        private static FieldInfo _collectionsHighlightField;     // ClickableTextureComponent highlightTexture
 
         // CollectionsPage navigation state
         private static bool _collectionsInTabMode = false;
@@ -170,12 +171,13 @@ namespace AndroidConsolizer.Patches
                     );
                 }
 
-                // Patch CollectionsPage.draw — postfix to draw finger cursor (GameMenu.draw skips it for tab 7)
+                // Patch CollectionsPage.draw — prefix hides red highlight, postfix draws finger cursor
                 var collectionsDrawMethod = AccessTools.Method(typeof(CollectionsPage), "draw", new[] { typeof(SpriteBatch) });
                 if (collectionsDrawMethod != null)
                 {
                     harmony.Patch(
                         original: collectionsDrawMethod,
+                        prefix: new HarmonyMethod(typeof(GameMenuPatches), nameof(CollectionsDraw_Prefix)),
                         postfix: new HarmonyMethod(typeof(GameMenuPatches), nameof(CollectionsDraw_Postfix))
                     );
                 }
@@ -1063,6 +1065,7 @@ namespace AndroidConsolizer.Patches
                     _collectionsSliderPercentField = AccessTools.Field(pageType, "sliderPercent");
                     _collectionsNewScrollbarField = AccessTools.Field(pageType, "newScrollbar");
                     _collectionsLetterviewerField = AccessTools.Field(pageType, "letterviewerSubMenu");
+                    _collectionsHighlightField = AccessTools.Field(pageType, "highlightTexture");
                 }
 
                 // Reset to items mode on tab entry
@@ -1402,8 +1405,22 @@ namespace AndroidConsolizer.Patches
         // and the selected component; the draw postfix reads these to place the cursor.
 
         /// <summary>
+        /// Prefix on CollectionsPage.draw — hides the red highlight box so only the finger cursor shows.
+        /// The game draws highlightTexture around currentlySelectedComponent in draw() lines 977-992.
+        /// ClickableTextureComponent.draw() checks visible, so setting it false suppresses the draw.
+        /// </summary>
+        private static void CollectionsDraw_Prefix(CollectionsPage __instance)
+        {
+            if (!ModEntry.Config.EnableGameMenuNavigation)
+                return;
+
+            var highlight = _collectionsHighlightField?.GetValue(__instance) as ClickableTextureComponent;
+            if (highlight != null)
+                highlight.visible = false;
+        }
+
+        /// <summary>
         /// Postfix on CollectionsPage.draw — draws the finger cursor at the correct position.
-        /// GameMenu.draw line 636 deliberately skips the cursor for tab 7 (Collections).
         ///
         /// We draw at the tracked position (item or tab) rather than Game1.getMouseX/Y()
         /// because collection item bounds.Y is only correct during draw() — it's set to 0
@@ -1454,6 +1471,11 @@ namespace AndroidConsolizer.Patches
                 Color.White, 0f, Vector2.Zero,
                 4f + Game1.dialogueButtonScale / 150f,
                 SpriteEffects.None, 1f);
+
+            // Restore highlightTexture visibility (in case feature is toggled off mid-session)
+            var highlight = _collectionsHighlightField?.GetValue(__instance) as ClickableTextureComponent;
+            if (highlight != null)
+                highlight.visible = true;
         }
 
         /// <summary>
