@@ -493,31 +493,38 @@ namespace AndroidConsolizer.Patches
             }
             _prevRightStickEngaged = rightStickEngaged;
 
-            // Held-scroll acceleration: check if directional input is still held
+            // Held-scroll acceleration: detect which direction is currently held,
+            // handle direction changes gracefully (reset timing on reversal).
             if (_heldScrollDirection != 0)
             {
                 var padState = GamePad.GetState(PlayerIndex.One);
-                bool stillHeld = false;
+                float rawRStickY = GameplayButtonPatches.RawRightStickY;
 
-                if (_heldScrollDirection > 0) // down
-                {
-                    stillHeld = padState.DPad.Down == ButtonState.Pressed
+                // Detect current held direction from all input sources
+                bool downHeld = padState.DPad.Down == ButtonState.Pressed
                              || padState.ThumbSticks.Left.Y < -0.5f
-                             || GameplayButtonPatches.RawRightStickY < -0.5f;
-                }
-                else // up
-                {
-                    stillHeld = padState.DPad.Up == ButtonState.Pressed
-                             || padState.ThumbSticks.Left.Y > 0.5f
-                             || GameplayButtonPatches.RawRightStickY > 0.5f;
-                }
+                             || rawRStickY < -0.5f;
+                bool upHeld = padState.DPad.Up == ButtonState.Pressed
+                           || padState.ThumbSticks.Left.Y > 0.5f
+                           || rawRStickY > 0.5f;
 
-                if (!stillHeld)
+                int currentDir = downHeld ? 1 : upHeld ? -1 : 0;
+
+                if (currentDir == 0)
                 {
+                    // Nothing held — stop
                     _heldScrollDirection = 0;
+                }
+                else if (currentDir != _heldScrollDirection)
+                {
+                    // Direction reversed — reset timing for the new direction
+                    _heldScrollDirection = currentDir;
+                    _heldScrollStartTick = Game1.ticks;
+                    _lastAutoScrollTick = Game1.ticks;
                 }
                 else
                 {
+                    // Same direction still held — auto-repeat
                     int elapsed = Game1.ticks - _heldScrollStartTick;
                     if (elapsed >= HeldScrollInitialDelay)
                     {
