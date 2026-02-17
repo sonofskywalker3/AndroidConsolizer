@@ -72,6 +72,26 @@ namespace AndroidConsolizer.Patches
         private static bool _dumpedChildMenu = false;
         private static int _lastProfileMenuSnappedId = -999; // track snap changes in ProfileMenu
 
+        // Cached reflection fields for CollectionsPage
+        private static FieldInfo _collectionsField;       // Dictionary<int, List<List<ClickableTextureComponent>>>
+        private static FieldInfo _collectionsCurrentTabField; // int currentTab (the sub-tab index)
+        private static FieldInfo _currentlySelectedComponentField; // ClickableTextureComponent[]
+        private static FieldInfo _collectionsMobSideTabsField; // Rectangle[]
+        private static FieldInfo _collectionsNumTabsField;    // int
+        private static FieldInfo _collectionsScrollAreaField;  // MobileScrollbox
+        private static FieldInfo _collectionsNumInRowField;    // int
+        private static FieldInfo _collectionsSideTabsField;    // Dictionary<int, ClickableTextureComponent>
+        private static FieldInfo _collectionsRowField;         // int[] (row counts per tab)
+        private static FieldInfo _collectionsNumRowsField;     // int
+        private static FieldInfo _collectionsSliderVisibleField; // bool[]
+        private static FieldInfo _collectionsSliderPercentField; // float[]
+        private static FieldInfo _collectionsNewScrollbarField;  // MobileScrollbar
+        private static FieldInfo _collectionsLetterviewerField;  // LetterViewerMenu
+
+        // CollectionsPage navigation state
+        private static bool _collectionsInTabMode = false;
+        private static int _collectionsSelectedTabIndex = 0;
+
         // MobileScrollbox.setYOffsetForScroll() method — sets yOffset AND syncs scrollbar visual
         private static MethodInfo _scrollboxSetYOffsetMethod;
 
@@ -137,6 +157,26 @@ namespace AndroidConsolizer.Patches
                     harmony.Patch(
                         original: profileDrawMethod,
                         postfix: new HarmonyMethod(typeof(GameMenuPatches), nameof(ProfileMenu_Draw_Postfix))
+                    );
+                }
+
+                // Patch CollectionsPage.receiveGamePadButton — prefix to handle our own navigation
+                var collectionsReceiveGPB = AccessTools.Method(typeof(CollectionsPage), nameof(CollectionsPage.receiveGamePadButton));
+                if (collectionsReceiveGPB != null)
+                {
+                    harmony.Patch(
+                        original: collectionsReceiveGPB,
+                        prefix: new HarmonyMethod(typeof(GameMenuPatches), nameof(CollectionsReceiveGamePadButton_Prefix))
+                    );
+                }
+
+                // Patch CollectionsPage.draw — postfix to draw finger cursor (GameMenu.draw skips it for tab 7)
+                var collectionsDrawMethod = AccessTools.Method(typeof(CollectionsPage), "draw", new[] { typeof(SpriteBatch) });
+                if (collectionsDrawMethod != null)
+                {
+                    harmony.Patch(
+                        original: collectionsDrawMethod,
+                        postfix: new HarmonyMethod(typeof(GameMenuPatches), nameof(CollectionsDraw_Postfix))
                     );
                 }
 
@@ -249,7 +289,12 @@ namespace AndroidConsolizer.Patches
                 FixSocialPage(page);
                 _lastFixedTab = tabIndex;
             }
-            // Future tabs: CollectionsPage, CraftingPage, OptionsPage
+            else if (typeName == "CollectionsPage")
+            {
+                FixCollectionsPage(page);
+                _lastFixedTab = tabIndex;
+            }
+            // Future tabs: CraftingPage, OptionsPage
         }
 
         /// <summary>
@@ -564,6 +609,8 @@ namespace AndroidConsolizer.Patches
                     Monitor?.Log($"[SocialDiag] Prefix dispatching to HandleSocialInput, button={b}", LogLevel.Trace);
                     return HandleSocialInput(page, b);
                 }
+                if (typeName == "CollectionsPage")
+                    return true; // handled by CollectionsPage.receiveGamePadButton prefix
 
                 return true; // pass through for unhandled tabs
             }
@@ -986,6 +1033,429 @@ namespace AndroidConsolizer.Patches
 
             // Also sync sprites bounds after re-fixing charSlots
             SyncSpritesBounds(page, charSlots);
+        }
+
+        // ===== CollectionsPage navigation =====
+
+        /// <summary>
+        /// Fix the Collections tab on entry. Cache reflection fields, reset navigation state,
+        /// and snap cursor to first item in current sub-tab.
+        /// </summary>
+        private static void FixCollectionsPage(IClickableMenu page)
+        {
+            try
+            {
+                // Cache reflection fields on first use
+                if (_collectionsField == null)
+                {
+                    var pageType = page.GetType();
+                    _collectionsField = AccessTools.Field(pageType, "collections");
+                    _collectionsCurrentTabField = AccessTools.Field(pageType, "currentTab");
+                    _currentlySelectedComponentField = AccessTools.Field(pageType, "currentlySelectedComponent");
+                    _collectionsMobSideTabsField = AccessTools.Field(pageType, "mobSideTabs");
+                    _collectionsNumTabsField = AccessTools.Field(pageType, "numTabs");
+                    _collectionsScrollAreaField = AccessTools.Field(pageType, "scrollArea");
+                    _collectionsNumInRowField = AccessTools.Field(pageType, "numInRow");
+                    _collectionsSideTabsField = AccessTools.Field(pageType, "sideTabs");
+                    _collectionsRowField = AccessTools.Field(pageType, "row");
+                    _collectionsNumRowsField = AccessTools.Field(pageType, "numRows");
+                    _collectionsSliderVisibleField = AccessTools.Field(pageType, "sliderVisible");
+                    _collectionsSliderPercentField = AccessTools.Field(pageType, "sliderPercent");
+                    _collectionsNewScrollbarField = AccessTools.Field(pageType, "newScrollbar");
+                    _collectionsLetterviewerField = AccessTools.Field(pageType, "letterviewerSubMenu");
+                }
+
+                // Reset to items mode on tab entry
+                _collectionsInTabMode = false;
+                int currentSubTab = (int)(_collectionsCurrentTabField?.GetValue(page) ?? 0);
+                _collectionsSelectedTabIndex = currentSubTab;
+
+                // Snap mouse to the currently selected item
+                var selectedArr = _currentlySelectedComponentField?.GetValue(page) as ClickableTextureComponent[];
+                if (selectedArr != null && currentSubTab < selectedArr.Length && selectedArr[currentSubTab] != null)
+                {
+                    var comp = selectedArr[currentSubTab];
+                    Game1.setMousePosition(comp.bounds.Center.X, comp.bounds.Center.Y);
+                }
+
+                Monitor?.Log($"[GameMenu] CollectionsPage: fixed, currentSubTab={currentSubTab}", LogLevel.Trace);
+            }
+            catch (Exception ex)
+            {
+                Monitor?.Log($"[GameMenu] Error fixing CollectionsPage: {ex.Message}\n{ex.StackTrace}", LogLevel.Error);
+            }
+        }
+
+        /// <summary>
+        /// Prefix on CollectionsPage.receiveGamePadButton — replaces vanilla A-cycles-tabs with
+        /// proper grid navigation + side tab selection.
+        /// </summary>
+        private static bool CollectionsReceiveGamePadButton_Prefix(CollectionsPage __instance, Buttons b)
+        {
+            try
+            {
+                if (!ModEntry.Config.EnableGameMenuNavigation)
+                    return true;
+
+                // Let letterviewerSubMenu handle its own input
+                var letterViewer = _collectionsLetterviewerField?.GetValue(__instance) as LetterViewerMenu;
+                if (letterViewer != null)
+                {
+                    // B closes the letter viewer
+                    if (b == Buttons.B)
+                    {
+                        _collectionsLetterviewerField.SetValue(__instance, null);
+                        return false;
+                    }
+                    // Pass through to letter viewer
+                    letterViewer.receiveGamePadButton(b);
+                    return false;
+                }
+
+                return HandleCollectionsInput(__instance, b);
+            }
+            catch (Exception ex)
+            {
+                Monitor?.Log($"[GameMenu] Error in CollectionsReceiveGamePadButton_Prefix: {ex.Message}", LogLevel.Error);
+                return true;
+            }
+        }
+
+        /// <summary>
+        /// Handle input on the Collections tab. Returns false to skip original method.
+        /// Manages two modes: items grid navigation and side tab selection.
+        /// </summary>
+        private static bool HandleCollectionsInput(CollectionsPage page, Buttons b)
+        {
+            int currentSubTab = (int)(_collectionsCurrentTabField?.GetValue(page) ?? 0);
+            int numTabs = (int)(_collectionsNumTabsField?.GetValue(page) ?? 6);
+            var collections = _collectionsField?.GetValue(page) as Dictionary<int, List<List<ClickableTextureComponent>>>;
+            var mobSideTabs = _collectionsMobSideTabsField?.GetValue(page) as Rectangle[];
+            int numInRow = (int)(_collectionsNumInRowField?.GetValue(page) ?? 4);
+
+            if (collections == null || mobSideTabs == null)
+                return true;
+
+            if (_collectionsInTabMode)
+            {
+                // === TAB MODE: navigating side tabs ===
+                switch (b)
+                {
+                    case Buttons.DPadUp:
+                    case Buttons.LeftThumbstickUp:
+                    {
+                        if (_collectionsSelectedTabIndex > 0)
+                        {
+                            _collectionsSelectedTabIndex--;
+                            SnapToSideTab(mobSideTabs, _collectionsSelectedTabIndex);
+                            Game1.playSound("shiny4");
+                        }
+                        return false;
+                    }
+                    case Buttons.DPadDown:
+                    case Buttons.LeftThumbstickDown:
+                    {
+                        if (_collectionsSelectedTabIndex < numTabs - 1)
+                        {
+                            _collectionsSelectedTabIndex++;
+                            SnapToSideTab(mobSideTabs, _collectionsSelectedTabIndex);
+                            Game1.playSound("shiny4");
+                        }
+                        return false;
+                    }
+                    case Buttons.DPadRight:
+                    case Buttons.LeftThumbstickRight:
+                    {
+                        // Return to items mode
+                        _collectionsInTabMode = false;
+                        SnapToCurrentItem(page, currentSubTab);
+                        Game1.playSound("shiny4");
+                        return false;
+                    }
+                    case Buttons.A:
+                    {
+                        // Switch to the selected sub-tab
+                        if (_collectionsSelectedTabIndex != currentSubTab)
+                        {
+                            _collectionsCurrentTabField?.SetValue(page, _collectionsSelectedTabIndex);
+
+                            // Call OnChangeCollectionsTab via reflection
+                            var onChangeMethod = page.GetType().GetMethod("OnChangeCollectionsTab", BindingFlags.Instance | BindingFlags.NonPublic);
+                            onChangeMethod?.Invoke(page, null);
+                        }
+                        // Switch to items mode
+                        _collectionsInTabMode = false;
+                        int newTab = (int)(_collectionsCurrentTabField?.GetValue(page) ?? 0);
+                        SnapToCurrentItem(page, newTab);
+                        return false;
+                    }
+                    case Buttons.B:
+                        return true; // let B pass through for menu close
+                    default:
+                        return false; // block all other input in tab mode
+                }
+            }
+            else
+            {
+                // === ITEMS MODE: navigating the collection items grid ===
+                switch (b)
+                {
+                    case Buttons.DPadUp:
+                    case Buttons.LeftThumbstickUp:
+                        NavigateCollectionsItem(page, collections, currentSubTab, numInRow, 0, -1);
+                        return false;
+
+                    case Buttons.DPadDown:
+                    case Buttons.LeftThumbstickDown:
+                        NavigateCollectionsItem(page, collections, currentSubTab, numInRow, 0, 1);
+                        return false;
+
+                    case Buttons.DPadLeft:
+                    case Buttons.LeftThumbstickLeft:
+                    {
+                        // Check if at leftmost column — switch to tab mode
+                        int idx = GetSelectedItemIndex(page, collections, currentSubTab);
+                        int col = idx % numInRow;
+                        if (col == 0)
+                        {
+                            // Enter tab mode
+                            _collectionsInTabMode = true;
+                            _collectionsSelectedTabIndex = currentSubTab;
+                            SnapToSideTab(mobSideTabs, _collectionsSelectedTabIndex);
+                            Game1.playSound("shiny4");
+                        }
+                        else
+                        {
+                            NavigateCollectionsItem(page, collections, currentSubTab, numInRow, -1, 0);
+                        }
+                        return false;
+                    }
+
+                    case Buttons.DPadRight:
+                    case Buttons.LeftThumbstickRight:
+                        NavigateCollectionsItem(page, collections, currentSubTab, numInRow, 1, 0);
+                        return false;
+
+                    case Buttons.A:
+                    {
+                        // A on letter tab: open letter viewer
+                        if (currentSubTab == 6)
+                        {
+                            var selectedArr = _currentlySelectedComponentField?.GetValue(page) as ClickableTextureComponent[];
+                            if (selectedArr != null && selectedArr[currentSubTab] != null)
+                            {
+                                var comp = selectedArr[currentSubTab];
+                                var dictionary = Game1.content.Load<Dictionary<string, string>>("Data\\mail");
+                                string mailKey = comp.name.Split(' ')[0];
+                                if (dictionary.ContainsKey(mailKey))
+                                {
+                                    _collectionsLetterviewerField?.SetValue(page,
+                                        new LetterViewerMenu(dictionary[mailKey], mailKey, fromCollection: true));
+                                }
+                            }
+                        }
+                        // For other tabs, A does nothing special (item info already shows on nav)
+                        return false;
+                    }
+
+                    case Buttons.B:
+                        return true; // let B pass through for menu close
+
+                    default:
+                        return false;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Get the flat index of the currently selected item in the collections grid.
+        /// </summary>
+        private static int GetSelectedItemIndex(CollectionsPage page,
+            Dictionary<int, List<List<ClickableTextureComponent>>> collections, int subTab)
+        {
+            var selectedArr = _currentlySelectedComponentField?.GetValue(page) as ClickableTextureComponent[];
+            if (selectedArr == null || subTab >= selectedArr.Length || selectedArr[subTab] == null)
+                return 0;
+
+            var current = selectedArr[subTab];
+            if (!collections.ContainsKey(subTab))
+                return 0;
+
+            int idx = 0;
+            foreach (var row in collections[subTab])
+            {
+                foreach (var item in row)
+                {
+                    if (item == current)
+                        return idx;
+                    idx++;
+                }
+            }
+            return 0;
+        }
+
+        /// <summary>
+        /// Navigate the collections grid by dx/dy. Handles row/column math, clamping, and scrolling.
+        /// </summary>
+        private static void NavigateCollectionsItem(CollectionsPage page,
+            Dictionary<int, List<List<ClickableTextureComponent>>> collections,
+            int subTab, int numInRow, int dx, int dy)
+        {
+            try
+            {
+                if (!collections.ContainsKey(subTab) || collections[subTab].Count == 0)
+                    return;
+
+                int count = collections[subTab][0].Count; // items per row
+                int numRows = collections[subTab].Count;
+                int totalItems = (numRows - 1) * count + collections[subTab][numRows - 1].Count;
+
+                int idx = GetSelectedItemIndex(page, collections, subTab);
+
+                // Apply movement
+                if (dy != 0)
+                    idx += dy * count;
+                if (dx != 0)
+                    idx += dx;
+
+                // Clamp
+                if (idx < 0) idx = 0;
+                if (idx >= totalItems) idx = totalItems - 1;
+
+                // Convert flat index to row/col
+                int rowIdx = idx / count;
+                int colIdx = idx - rowIdx * count;
+
+                // Bounds check
+                if (rowIdx >= collections[subTab].Count)
+                    return;
+                if (colIdx >= collections[subTab][rowIdx].Count)
+                    return;
+
+                var newItem = collections[subTab][rowIdx][colIdx];
+                var selectedArr = _currentlySelectedComponentField?.GetValue(page) as ClickableTextureComponent[];
+                if (selectedArr != null && subTab < selectedArr.Length)
+                    selectedArr[subTab] = newItem;
+
+                // Update info panel via ShowSelectectItemInfo
+                var showInfoMethod = page.GetType().GetMethod("ShowSelectectItemInfo", BindingFlags.Instance | BindingFlags.NonPublic);
+                showInfoMethod?.Invoke(page, new object[] { newItem.name });
+
+                // Handle scrolling — check if new row is visible
+                var scrollArea = _collectionsScrollAreaField?.GetValue(page);
+                if (scrollArea != null)
+                {
+                    var scrollType = scrollArea.GetType();
+                    var getYOffset = scrollType.GetMethod("getYOffsetForScroll");
+                    var setYOffset = scrollType.GetMethod("setYOffsetForScroll", new[] { typeof(int) });
+                    var boundsProp = scrollType.GetProperty("Bounds");
+
+                    if (getYOffset != null && setYOffset != null)
+                    {
+                        int yOffset = (int)getYOffset.Invoke(scrollArea, null);
+                        int itemSize = 128;
+                        int visibleTopRow = (int)Math.Floor((float)(-yOffset) / itemSize);
+                        int scrollBoundsHeight = 0;
+                        if (boundsProp != null)
+                        {
+                            var scrollBounds = (Rectangle)boundsProp.GetValue(scrollArea);
+                            scrollBoundsHeight = scrollBounds.Height;
+                        }
+                        else
+                        {
+                            // Fallback: read Bounds field
+                            var boundsF = AccessTools.Field(scrollType, "Bounds");
+                            if (boundsF != null)
+                            {
+                                var scrollBounds = (Rectangle)boundsF.GetValue(scrollArea);
+                                scrollBoundsHeight = scrollBounds.Height;
+                            }
+                        }
+                        int visibleBottomRow = visibleTopRow + (int)Math.Floor((float)scrollBoundsHeight / itemSize) - 1;
+
+                        var maxYOffsetField = AccessTools.Field(scrollType, "maxYOffset");
+                        int maxYOffset = 0;
+                        if (maxYOffsetField != null)
+                            maxYOffset = (int)maxYOffsetField.GetValue(scrollArea);
+                        else
+                        {
+                            var getMaxMethod = scrollType.GetMethod("getMaxYOffset");
+                            if (getMaxMethod != null)
+                                maxYOffset = (int)getMaxMethod.Invoke(scrollArea, null);
+                        }
+
+                        if (rowIdx > visibleBottomRow)
+                        {
+                            int newYOffset = Math.Max(-maxYOffset, yOffset - itemSize);
+                            setYOffset.Invoke(scrollArea, new object[] { newYOffset });
+                        }
+                        else if (rowIdx < visibleTopRow)
+                        {
+                            int newYOffset = Math.Min(0, yOffset + itemSize);
+                            setYOffset.Invoke(scrollArea, new object[] { newYOffset });
+                        }
+                    }
+                }
+
+                // Snap cursor to new item's center
+                Game1.setMousePosition(newItem.bounds.Center.X, newItem.bounds.Center.Y);
+                Game1.playSound("shiny4");
+            }
+            catch (Exception ex)
+            {
+                Monitor?.Log($"[GameMenu] Error in NavigateCollectionsItem: {ex.Message}\n{ex.StackTrace}", LogLevel.Error);
+            }
+        }
+
+        /// <summary>
+        /// Snap mouse cursor to the center of a side tab rectangle.
+        /// </summary>
+        private static void SnapToSideTab(Rectangle[] mobSideTabs, int tabIndex)
+        {
+            if (tabIndex >= 0 && tabIndex < mobSideTabs.Length)
+            {
+                var tab = mobSideTabs[tabIndex];
+                Game1.setMousePosition(tab.Center.X, tab.Center.Y);
+            }
+        }
+
+        /// <summary>
+        /// Snap mouse cursor to the currently selected item in the given sub-tab.
+        /// </summary>
+        private static void SnapToCurrentItem(IClickableMenu page, int subTab)
+        {
+            var selectedArr = _currentlySelectedComponentField?.GetValue(page) as ClickableTextureComponent[];
+            if (selectedArr != null && subTab < selectedArr.Length && selectedArr[subTab] != null)
+            {
+                var comp = selectedArr[subTab];
+                Game1.setMousePosition(comp.bounds.Center.X, comp.bounds.Center.Y);
+            }
+        }
+
+        /// <summary>
+        /// Postfix on CollectionsPage.draw — draws the finger cursor.
+        /// GameMenu.draw line 636 deliberately skips the cursor for tab 7 (Collections).
+        /// </summary>
+        private static void CollectionsDraw_Postfix(CollectionsPage __instance, SpriteBatch b)
+        {
+            if (!ModEntry.Config.EnableGameMenuNavigation)
+                return;
+
+            // Don't draw cursor if letter viewer is open (it draws its own UI)
+            var letterViewer = _collectionsLetterviewerField?.GetValue(__instance) as LetterViewerMenu;
+            if (letterViewer != null)
+                return;
+
+            // Draw the gamepad finger cursor
+            if (Game1.options.gamepadControls && !Game1.options.hardwareCursor)
+            {
+                b.Draw(Game1.mouseCursors,
+                    new Vector2(Game1.getMouseX(), Game1.getMouseY()),
+                    Game1.getSourceRectForStandardTileSheet(Game1.mouseCursors, 44, 16, 16),
+                    Color.White, 0f, Vector2.Zero,
+                    4f + Game1.dialogueButtonScale / 150f,
+                    SpriteEffects.None, 1f);
+            }
         }
 
         /// <summary>
