@@ -61,11 +61,25 @@ namespace AndroidConsolizer.Patches
         private static int _scrollboxTapPhase = 0;
         private static int _scrollboxTapX, _scrollboxTapY;
 
+        // Right stick initial-press detection for social tab
+        private static bool _prevRightStickEngaged = false;
+
         // Diagnostic: track child menu on SocialPage (gift log)
         private static bool _dumpedChildMenu = false;
 
         // Diagnostic: cached scrollbox yOffset field for logging
         private static FieldInfo _scrollboxYOffsetField;
+
+        /// <summary>Check if right stick Y should be suppressed for social tab navigation.
+        /// Called from GameplayButtonPatches.GetState_Postfix.</summary>
+        internal static bool ShouldSuppressRightStickForSocial()
+        {
+            if (!ModEntry.Config.EnableGameMenuNavigation)
+                return false;
+            if (Game1.activeClickableMenu is GameMenu gameMenu)
+                return gameMenu.currentTab == GameMenu.socialTab;
+            return false;
+        }
 
         public static void Apply(Harmony harmony, IMonitor monitor)
         {
@@ -461,6 +475,24 @@ namespace AndroidConsolizer.Patches
 
         private static void SocialUpdate_Prefix(SocialPage __instance)
         {
+            // Right stick initial-press detection: poll RawRightStickY (pre-suppression)
+            // to trigger 3-slot navigation on neutral→engaged transition.
+            // Right stick Y is suppressed at GetState level to block vanilla smooth scroll.
+            float rawRightY = GameplayButtonPatches.RawRightStickY;
+            bool rightStickEngaged = Math.Abs(rawRightY) > 0.5f;
+
+            if (rightStickEngaged && !_prevRightStickEngaged && _heldScrollDirection == 0)
+            {
+                // Newly engaged — fire 3-slot jump
+                int dir = rawRightY < -0.5f ? 1 : -1; // Y < 0 = stick pushed down
+                NavigateSocialSlot(__instance, dir, 3);
+                _heldScrollDirection = dir;
+                _heldScrollStep = 3;
+                _heldScrollStartTick = Game1.ticks;
+                _lastAutoScrollTick = Game1.ticks;
+            }
+            _prevRightStickEngaged = rightStickEngaged;
+
             // Held-scroll acceleration: check if directional input is still held
             if (_heldScrollDirection != 0)
             {
@@ -471,13 +503,13 @@ namespace AndroidConsolizer.Patches
                 {
                     stillHeld = padState.DPad.Down == ButtonState.Pressed
                              || padState.ThumbSticks.Left.Y < -0.5f
-                             || padState.ThumbSticks.Right.Y < -0.5f;
+                             || GameplayButtonPatches.RawRightStickY < -0.5f;
                 }
                 else // up
                 {
                     stillHeld = padState.DPad.Up == ButtonState.Pressed
                              || padState.ThumbSticks.Left.Y > 0.5f
-                             || padState.ThumbSticks.Right.Y > 0.5f;
+                             || GameplayButtonPatches.RawRightStickY > 0.5f;
                 }
 
                 if (!stillHeld)

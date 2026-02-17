@@ -254,6 +254,20 @@ namespace AndroidConsolizer.Patches
                     );
                 }
 
+                // Zero out right thumbstick Y on social tab so Game1.updateActiveMenu()
+                // doesn't fire receiveScrollWheelAction (smooth scroll). Our SocialUpdate_Prefix
+                // polls RawRightStickY directly for 3-slot discrete navigation.
+                if (GameMenuPatches.ShouldSuppressRightStickForSocial() && __result.ThumbSticks.Right.Y != 0f)
+                {
+                    __result = new GamePadState(
+                        new GamePadThumbSticks(__result.ThumbSticks.Left,
+                            new Vector2(__result.ThumbSticks.Right.X, 0f)),
+                        __result.Triggers,
+                        __result.Buttons,
+                        __result.DPad
+                    );
+                }
+
                 // Zero out triggers during gameplay when our toolbar handles slot navigation.
                 // This prevents the game's own trigger-based toolbar code from also moving slots.
                 // Must zero BOTH analog values AND digital trigger buttons (Buttons.LeftTrigger/
