@@ -90,6 +90,10 @@ namespace AndroidConsolizer.Patches
         private static FieldInfo _collectionsHighlightField;     // ClickableTextureComponent highlightTexture
         private static FieldInfo _collectionsSelectedItemIndexField; // int _selectedItemIndex
 
+        // CraftingPage: save/restore selectedCraftingItem during draw to suppress red highlight
+        private static FieldInfo _craftingSelectedItemField;
+        private static ClickableTextureComponent _savedCraftingSelection;
+
         // CollectionsPage navigation state
         private static bool _collectionsInTabMode = false;
         private static int _collectionsSelectedTabIndex = 0;
@@ -159,6 +163,17 @@ namespace AndroidConsolizer.Patches
                     harmony.Patch(
                         original: profileDrawMethod,
                         postfix: new HarmonyMethod(typeof(GameMenuPatches), nameof(ProfileMenu_Draw_Postfix))
+                    );
+                }
+
+                // Patch CraftingPage.draw — prefix hides red highlight, postfix draws finger cursor
+                var craftingDrawMethod = AccessTools.Method(typeof(CraftingPage), "draw", new[] { typeof(SpriteBatch) });
+                if (craftingDrawMethod != null)
+                {
+                    harmony.Patch(
+                        original: craftingDrawMethod,
+                        prefix: new HarmonyMethod(typeof(GameMenuPatches), nameof(CraftingDraw_Prefix)),
+                        postfix: new HarmonyMethod(typeof(GameMenuPatches), nameof(CraftingDraw_Postfix))
                     );
                 }
 
@@ -1483,6 +1498,57 @@ namespace AndroidConsolizer.Patches
             var highlight = _collectionsHighlightField?.GetValue(__instance) as ClickableTextureComponent;
             if (highlight != null)
                 highlight.visible = true;
+        }
+
+        // ===== CraftingPage draw patches =====
+
+        /// <summary>
+        /// Prefix on CraftingPage.draw — temporarily null selectedCraftingItem to suppress
+        /// the red highlight box drawn by drawRecipes(). The game draws a 9-sliced border from
+        /// mobileSpriteSheet around the selected recipe; with selectedCraftingItem null, the
+        /// comparison (selectedCraftingItem == recipeImage[j,i]) is always false.
+        /// </summary>
+        private static void CraftingDraw_Prefix(CraftingPage __instance)
+        {
+            if (!ModEntry.Config.EnableGameMenuNavigation)
+                return;
+
+            if (_craftingSelectedItemField == null)
+                _craftingSelectedItemField = AccessTools.Field(__instance.GetType(), "selectedCraftingItem");
+
+            _savedCraftingSelection = _craftingSelectedItemField?.GetValue(__instance) as ClickableTextureComponent;
+            if (_savedCraftingSelection != null)
+                _craftingSelectedItemField?.SetValue(__instance, null);
+        }
+
+        /// <summary>
+        /// Postfix on CraftingPage.draw — restore selectedCraftingItem and draw the finger cursor
+        /// at the selected recipe's position. bounds.Y was recalculated during drawRecipes().
+        /// </summary>
+        private static void CraftingDraw_Postfix(CraftingPage __instance, SpriteBatch b)
+        {
+            if (!ModEntry.Config.EnableGameMenuNavigation)
+                return;
+
+            if (_savedCraftingSelection != null && _craftingSelectedItemField != null)
+            {
+                _craftingSelectedItemField.SetValue(__instance, _savedCraftingSelection);
+
+                if (Game1.options.gamepadControls && !Game1.options.hardwareCursor)
+                {
+                    int cursorX = _savedCraftingSelection.bounds.Center.X;
+                    int cursorY = _savedCraftingSelection.bounds.Center.Y;
+
+                    b.Draw(Game1.mouseCursors,
+                        new Vector2(cursorX, cursorY),
+                        Game1.getSourceRectForStandardTileSheet(Game1.mouseCursors, 44, 16, 16),
+                        Color.White, 0f, Vector2.Zero,
+                        4f + Game1.dialogueButtonScale / 150f,
+                        SpriteEffects.None, 1f);
+                }
+
+                _savedCraftingSelection = null;
+            }
         }
 
         /// <summary>
