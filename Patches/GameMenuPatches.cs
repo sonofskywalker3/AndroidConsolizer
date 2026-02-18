@@ -88,6 +88,7 @@ namespace AndroidConsolizer.Patches
         private static FieldInfo _collectionsNewScrollbarField;  // MobileScrollbar
         private static FieldInfo _collectionsLetterviewerField;  // LetterViewerMenu
         private static FieldInfo _collectionsHighlightField;     // ClickableTextureComponent highlightTexture
+        private static FieldInfo _collectionsSelectedItemIndexField; // int _selectedItemIndex
 
         // CollectionsPage navigation state
         private static bool _collectionsInTabMode = false;
@@ -1066,6 +1067,7 @@ namespace AndroidConsolizer.Patches
                     _collectionsNewScrollbarField = AccessTools.Field(pageType, "newScrollbar");
                     _collectionsLetterviewerField = AccessTools.Field(pageType, "letterviewerSubMenu");
                     _collectionsHighlightField = AccessTools.Field(pageType, "highlightTexture");
+                    _collectionsSelectedItemIndexField = AccessTools.Field(pageType, "_selectedItemIndex");
                 }
 
                 // Reset to items mode on tab entry
@@ -1328,6 +1330,11 @@ namespace AndroidConsolizer.Patches
                 var selectedArr = _currentlySelectedComponentField?.GetValue(page) as ClickableTextureComponent[];
                 if (selectedArr != null && subTab < selectedArr.Length)
                     selectedArr[subTab] = newItem;
+
+                // Sync the game's internal _selectedItemIndex so it matches our selection.
+                // The game derives currentlySelectedComponent from this index in receiveGamePadButton;
+                // keeping them in sync prevents stale state if the game reads the index elsewhere.
+                _collectionsSelectedItemIndexField?.SetValue(page, idx);
 
                 // Update info panel via ShowSelectectItemInfo
                 var showInfoMethod = page.GetType().GetMethod("ShowSelectectItemInfo", BindingFlags.Instance | BindingFlags.NonPublic);
