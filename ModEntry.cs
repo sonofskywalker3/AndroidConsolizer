@@ -95,6 +95,7 @@ namespace AndroidConsolizer
             Patches.CarpenterMenuPatches.Apply(harmony, this.Monitor);
             Patches.JunimoNoteMenuPatches.Apply(harmony, this.Monitor);
             Patches.GameMenuPatches.Apply(harmony, this.Monitor);
+            Patches.OptionsPagePatches.Apply(harmony, this.Monitor);
 
             // Register events
             helper.Events.GameLoop.GameLaunched += this.OnGameLaunched;
@@ -152,6 +153,7 @@ namespace AndroidConsolizer
                 Patches.InventoryManagementPatches.OnMenuClosed();
                 Patches.FishingRodPatches.ClearSelection();
                 Patches.SlingshotPatches.ClearSelection();
+                Patches.OptionsPagePatches.OnOptionsPageClosed();
             }
 
             // Fix snap navigation in ItemGrabMenu (chests, fishing treasure, etc.)
