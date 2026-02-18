@@ -15,8 +15,8 @@ namespace AndroidConsolizer.Patches
     ///
     /// Interaction model:
     /// - D-pad Up/Down navigates between interactive options (skips labels/spacers)
-    /// - D-pad Left/Right adjusts values via the game's native receiveKeyPress (handles
-    ///   sliders +/-10, dropdown cycling, and plus/minus buttons natively)
+    /// - D-pad Left/Right adjusts values via direct reflection (snappyMenus=false on Android
+    ///   so receiveKeyPress doesn't work): sliders +/-10, dropdown cycling, plusminus +/-1
     /// - A toggles checkboxes and activates buttons; blocks touch-sim click via same-tick guard
     /// - B closes the menu (passed to base)
     /// - Right stick scrolls the options list
@@ -37,6 +37,20 @@ namespace AndroidConsolizer.Patches
 
         // Cached reflection — OptionsButton
         private static MethodInfo _buttonReleaseLeftClick;
+
+        // Cached reflection — OptionsSlider fields
+        private static PropertyInfo _sliderValueProp;
+        private static FieldInfo _sliderValueField;
+        private static FieldInfo _sliderMinField;
+        private static FieldInfo _sliderMaxField;
+
+        // Cached reflection — OptionsDropDown fields
+        private static FieldInfo _ddSelectedOptionField;
+        private static FieldInfo _ddDropDownOptionsField;
+
+        // Cached reflection — OptionsPlusMinus fields
+        private static FieldInfo _pmMinusButtonField;
+        private static FieldInfo _pmPlusButtonField;
 
         // Constants
         private const float StickScrollThreshold = 0.2f;
@@ -76,6 +90,21 @@ namespace AndroidConsolizer.Patches
                     new[] { typeof(int), typeof(int) })
                     ?? AccessTools.Method(typeof(OptionsButton), "leftClickReleased",
                         new[] { typeof(int), typeof(int) });
+
+                // Cache OptionsSlider reflection
+                _sliderValueProp = AccessTools.Property(typeof(OptionsSlider), "value");
+                _sliderValueField = AccessTools.Field(typeof(OptionsSlider), "value")
+                                 ?? AccessTools.Field(typeof(OptionsSlider), "_value");
+                _sliderMinField = AccessTools.Field(typeof(OptionsSlider), "sliderMinValue");
+                _sliderMaxField = AccessTools.Field(typeof(OptionsSlider), "sliderMaxValue");
+
+                // Cache OptionsDropDown reflection
+                _ddSelectedOptionField = AccessTools.Field(typeof(OptionsDropDown), "selectedOption");
+                _ddDropDownOptionsField = AccessTools.Field(typeof(OptionsDropDown), "dropDownOptions");
+
+                // Cache OptionsPlusMinus reflection
+                _pmMinusButtonField = AccessTools.Field(typeof(OptionsPlusMinus), "minusButton");
+                _pmPlusButtonField = AccessTools.Field(typeof(OptionsPlusMinus), "plusButton");
 
                 // Patch receiveGamePadButton on IClickableMenu (OptionsPage doesn't override it).
                 // Prefix checks __instance is OptionsPage so it only fires for the Options tab.
@@ -311,10 +340,8 @@ namespace AndroidConsolizer.Patches
                 return false;
             }
 
-            // D-pad Left/Right — adjust value using the game's native receiveKeyPress.
-            // OptionsSlider, OptionsDropDown, and OptionsPlusMinus all have receiveKeyPress
-            // implementations that handle moveLeftButton/moveRightButton with proper logic
-            // (slider +/-10, dropdown cycle, plusminus +/-1).
+            // D-pad Left/Right — adjust value directly via reflection.
+            // Can't use receiveKeyPress because it requires snappyMenus=true (false on Android).
             if (b == Buttons.DPadLeft || b == Buttons.LeftThumbstickLeft ||
                 b == Buttons.DPadRight || b == Buttons.LeftThumbstickRight)
             {
@@ -324,10 +351,51 @@ namespace AndroidConsolizer.Patches
                 var opt = options[_focusedIndex];
                 bool isRight = (b == Buttons.DPadRight || b == Buttons.LeftThumbstickRight);
 
-                // Delegate to the option's own gamepad key handling
-                Keys key = isRight ? Keys.Right : Keys.Left;
-                opt.receiveKeyPress(key);
+                if (opt is OptionsSlider slider)
+                {
+                    int curVal = _sliderValueProp != null ? (int)_sliderValueProp.GetValue(slider)
+                               : _sliderValueField != null ? (int)_sliderValueField.GetValue(slider) : 0;
+                    int minVal = _sliderMinField != null ? (int)_sliderMinField.GetValue(slider) : 0;
+                    int maxVal = _sliderMaxField != null ? (int)_sliderMaxField.GetValue(slider) : 100;
+                    int newVal = isRight ? Math.Min(curVal + 10, maxVal) : Math.Max(curVal - 10, minVal);
+                    if (_sliderValueProp != null) _sliderValueProp.SetValue(slider, newVal);
+                    else _sliderValueField?.SetValue(slider, newVal);
+                    Game1.options.changeSliderOption(slider.whichOption, newVal);
+                    Game1.playSound("shiny4");
+                    return false;
+                }
 
+                if (opt is OptionsDropDown dropdown)
+                {
+                    if (_ddSelectedOptionField != null && _ddDropDownOptionsField != null)
+                    {
+                        var ddOptions = _ddDropDownOptionsField.GetValue(dropdown) as List<string>;
+                        if (ddOptions != null && ddOptions.Count > 0)
+                        {
+                            int sel = (int)_ddSelectedOptionField.GetValue(dropdown);
+                            sel = isRight ? (sel + 1) % ddOptions.Count
+                                         : (sel - 1 + ddOptions.Count) % ddOptions.Count;
+                            _ddSelectedOptionField.SetValue(dropdown, sel);
+                            Game1.options.changeDropDownOption(dropdown.whichOption, ddOptions[sel]);
+                        }
+                    }
+                    Game1.playSound("shiny4");
+                    return false;
+                }
+
+                if (opt is OptionsPlusMinus plusMinus)
+                {
+                    if (_pmMinusButtonField != null && _pmPlusButtonField != null)
+                    {
+                        var targetRect = isRight
+                            ? (Rectangle)_pmPlusButtonField.GetValue(plusMinus)
+                            : (Rectangle)_pmMinusButtonField.GetValue(plusMinus);
+                        plusMinus.receiveLeftClick(targetRect.Center.X, targetRect.Center.Y);
+                    }
+                    return false;
+                }
+
+                // For other types, consume the input (don't let it navigate tabs)
                 return false;
             }
 
@@ -357,12 +425,15 @@ namespace AndroidConsolizer.Patches
 
                 // Initialize focus on first frame
                 if (_focusedIndex < 0 && _interactiveIndices != null && _interactiveIndices.Count > 0)
-                {
                     _focusedIndex = _interactiveIndices[0];
-                    SnapCursorToFocused(options);
-                }
 
-                // Right stick free-scroll
+                // Re-snap cursor every frame — option bounds update via updateContentPositions()
+                // which runs before this postfix, so bounds are current. This keeps the cursor
+                // tracking the focused option through scrolling.
+                SnapCursorToFocused(options);
+
+                // Right stick free-scroll — directly adjust scroll offset for smooth scrolling
+                // (receiveScrollWheelAction caused visual tearing)
                 var state = GamePad.GetState(PlayerIndex.One);
                 float rightY = state.ThumbSticks.Right.Y;
                 if (Math.Abs(rightY) > StickScrollThreshold)
@@ -370,8 +441,18 @@ namespace AndroidConsolizer.Patches
                     var scrollArea = _scrollAreaField?.GetValue(__instance);
                     if (scrollArea != null)
                     {
-                        var receiveScroll = AccessTools.Method(scrollArea.GetType(), "receiveScrollWheelAction", new[] { typeof(int) });
-                        receiveScroll?.Invoke(scrollArea, new object[] { (int)(rightY * 30) });
+                        var scrollType = scrollArea.GetType();
+                        var getYOffset = AccessTools.Method(scrollType, "getYOffsetForScroll");
+                        var setYOffset = AccessTools.Method(scrollType, "setYOffsetForScroll", new[] { typeof(int) });
+                        var maxYOffsetField = AccessTools.Field(scrollType, "maxYOffset");
+                        if (getYOffset != null && setYOffset != null && maxYOffsetField != null)
+                        {
+                            int curOffset = (int)getYOffset.Invoke(scrollArea, null);
+                            int maxYOffset = (int)maxYOffsetField.GetValue(scrollArea);
+                            int delta = (int)(rightY * 8);
+                            int newOffset = Math.Max(-maxYOffset, Math.Min(0, curOffset + delta));
+                            setYOffset.Invoke(scrollArea, new object[] { newOffset });
+                        }
                     }
                 }
             }
