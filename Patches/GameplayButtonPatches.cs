@@ -268,6 +268,19 @@ namespace AndroidConsolizer.Patches
                     );
                 }
 
+                // Zero out left thumbstick on Options tab so the cursor doesn't free-roam.
+                // D-pad handles option-to-option navigation; left stick would just move
+                // the cursor off the options list and out of bounds.
+                if (OptionsPagePatches.ShouldSuppressLeftStick() && __result.ThumbSticks.Left != Vector2.Zero)
+                {
+                    __result = new GamePadState(
+                        new GamePadThumbSticks(Vector2.Zero, __result.ThumbSticks.Right),
+                        __result.Triggers,
+                        __result.Buttons,
+                        __result.DPad
+                    );
+                }
+
                 // Zero out triggers during gameplay when our toolbar handles slot navigation.
                 // This prevents the game's own trigger-based toolbar code from also moving slots.
                 // Must zero BOTH analog values AND digital trigger buttons (Buttons.LeftTrigger/

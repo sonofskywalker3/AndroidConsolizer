@@ -58,6 +58,21 @@ namespace AndroidConsolizer.Patches
         // Constant: right stick scroll threshold (matches social tab)
         private const float StickScrollThreshold = 0.2f;
 
+        /// <summary>Whether the left thumbstick should be suppressed at GetState level.
+        /// When true, GameplayButtonPatches.GetState_Postfix zeros the left stick so the
+        /// cursor doesn't free-roam — D-pad handles option-to-option navigation instead.</summary>
+        public static bool ShouldSuppressLeftStick()
+        {
+            if (!ModEntry.Config.EnableGameMenuNavigation || !Game1.options.gamepadControls)
+                return false;
+            if (Game1.activeClickableMenu is GameMenu gm)
+            {
+                var currentPage = gm.GetCurrentPage();
+                return currentPage is OptionsPage;
+            }
+            return false;
+        }
+
         public static void Apply(Harmony harmony, IMonitor monitor)
         {
             Monitor = monitor;
@@ -233,6 +248,15 @@ namespace AndroidConsolizer.Patches
 
         #endregion
 
+        /// <summary>Snap the mouse cursor to the focused option so the game's rendering/hit-testing works.</summary>
+        private static void SnapCursorToFocused(List<OptionsElement> options)
+        {
+            if (_focusedIndex < 0 || _focusedIndex >= options.Count)
+                return;
+            var bounds = options[_focusedIndex].bounds;
+            Game1.setMousePosition(bounds.Left + 48, bounds.Center.Y);
+        }
+
         /// <summary>Build the list of interactive option indices, skipping labels and spacers.</summary>
         private static void BuildInteractiveIndices(List<OptionsElement> options)
         {
@@ -406,6 +430,7 @@ namespace AndroidConsolizer.Patches
                     pos = _interactiveIndices.Count; // wrap
                 _focusedIndex = _interactiveIndices[pos - 1];
                 EnsureVisible(page, options, scrollArea);
+                SnapCursorToFocused(options);
                 Game1.playSound("shiny4");
                 return false;
             }
@@ -418,6 +443,7 @@ namespace AndroidConsolizer.Patches
                     pos = -1; // wrap
                 _focusedIndex = _interactiveIndices[pos + 1];
                 EnsureVisible(page, options, scrollArea);
+                SnapCursorToFocused(options);
                 Game1.playSound("shiny4");
                 return false;
             }
@@ -557,7 +583,10 @@ namespace AndroidConsolizer.Patches
 
                 // Initialize focus on first frame
                 if (_focusedIndex < 0 && _interactiveIndices != null && _interactiveIndices.Count > 0)
+                {
                     _focusedIndex = _interactiveIndices[0];
+                    SnapCursorToFocused(options);
+                }
 
                 // Right stick free-scroll
                 var state = GamePad.GetState(PlayerIndex.One);
