@@ -119,11 +119,9 @@ namespace AndroidConsolizer.Patches
                     $"sliderMin={_sliderMinField != null}, sliderMax={_sliderMaxField != null}, " +
                     $"btnRelease={_buttonReleaseLeftClick != null}", LogLevel.Trace);
 
-                // Patch receiveGamePadButton — virtual method, patch on OptionsPage even though
-                // it doesn't override (Harmony patches virtual methods on derived types)
-                var receiveGPB = AccessTools.Method(typeof(OptionsPage), nameof(OptionsPage.receiveGamePadButton));
-                if (receiveGPB == null)
-                    receiveGPB = AccessTools.Method(typeof(IClickableMenu), nameof(IClickableMenu.receiveGamePadButton));
+                // Patch receiveGamePadButton on IClickableMenu (OptionsPage doesn't override it).
+                // Prefix checks __instance is OptionsPage so it only fires for the Options tab.
+                var receiveGPB = AccessTools.Method(typeof(IClickableMenu), nameof(IClickableMenu.receiveGamePadButton));
 
                 if (receiveGPB != null)
                 {
