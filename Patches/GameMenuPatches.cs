@@ -60,6 +60,9 @@ namespace AndroidConsolizer.Patches
         private const int HeldScrollRepeatInterval = 8; // ~133ms between repeats (~2x manual speed)
         private const float StickEngageThreshold = 0.2f; // match game's button event threshold (not 0.5)
 
+        // Cached reflection for GameMenu junimoNoteIcon (Community Center tab icon)
+        private static FieldInfo _junimoNoteIconField;
+
         // Scrollbox tap simulation: two-frame tap gesture
         // Phase 0 = idle, 1 = receiveLeftClick pending, 2 = releaseLeftClick pending
         private static int _scrollboxTapPhase = 0;
@@ -604,6 +607,11 @@ namespace AndroidConsolizer.Patches
                         Game1.playSound("smallSelect");
                         __instance.changeTab(prevTab);
                     }
+                    else
+                    {
+                        // At first tab — cycle to Community Center if available
+                        ClickJunimoNoteIcon(__instance);
+                    }
                     return false;
                 }
                 if (b == Buttons.RightTrigger)
@@ -613,6 +621,11 @@ namespace AndroidConsolizer.Patches
                     {
                         Game1.playSound("smallSelect");
                         __instance.changeTab(nextTab);
+                    }
+                    else
+                    {
+                        // At last tab — cycle to Community Center if available
+                        ClickJunimoNoteIcon(__instance);
                     }
                     return false;
                 }
@@ -1051,6 +1064,31 @@ namespace AndroidConsolizer.Patches
 
             // Also sync sprites bounds after re-fixing charSlots
             SyncSpritesBounds(page, charSlots);
+        }
+
+        /// <summary>
+        /// Click the junimoNoteIcon (Community Center tab) on the GameMenu if it exists.
+        /// The icon is outside the pages list — it's a separate ClickableTextureComponent
+        /// that opens JunimoNoteMenu when clicked.
+        /// </summary>
+        private static void ClickJunimoNoteIcon(GameMenu menu)
+        {
+            try
+            {
+                if (_junimoNoteIconField == null)
+                    _junimoNoteIconField = AccessTools.Field(typeof(GameMenu), "junimoNoteIcon");
+
+                var icon = _junimoNoteIconField?.GetValue(menu) as ClickableTextureComponent;
+                if (icon != null)
+                {
+                    Game1.playSound("smallSelect");
+                    menu.receiveLeftClick(icon.bounds.X, icon.bounds.Y);
+                }
+            }
+            catch (Exception ex)
+            {
+                Monitor?.Log($"[GameMenu] Error clicking junimoNoteIcon: {ex.Message}", LogLevel.Error);
+            }
         }
 
         // ===== CollectionsPage navigation =====
