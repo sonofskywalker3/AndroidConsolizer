@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
 using Microsoft.Xna.Framework;
-using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 using StardewModdingAPI;
 using StardewValley;
@@ -13,9 +12,15 @@ namespace AndroidConsolizer.Patches
 {
     /// <summary>
     /// Harmony patches for OptionsPage — adds full controller navigation to the Options tab.
-    /// Manages its own focus index rather than using the game's allClickableComponents system,
-    /// because OptionsPage never populates clickable components and the MobileScrollbox
-    /// scissor rect doesn't manage visibility on off-screen items.
+    ///
+    /// Interaction model:
+    /// - D-pad Up/Down navigates between interactive options (skips labels/spacers)
+    /// - D-pad Left/Right adjusts values via the game's native receiveKeyPress (handles
+    ///   sliders +/-10, dropdown cycling, and plus/minus buttons natively)
+    /// - A toggles checkboxes and activates buttons; blocks touch-sim click via same-tick guard
+    /// - B closes the menu (passed to base)
+    /// - Right stick scrolls the options list
+    /// - Left thumbstick is suppressed at GetState level (no free-roaming cursor)
     /// </summary>
     internal static class OptionsPagePatches
     {
@@ -24,38 +29,16 @@ namespace AndroidConsolizer.Patches
         // State
         private static int _focusedIndex = -1;
         private static List<int> _interactiveIndices;
-        private static bool _dropdownOpen;
-        private static object _activeDropdown; // OptionsDropDown via reflection
-        private static int _dropdownOriginalSelection;
-        private static bool _lastAPressed;
+        private static int _aPressTick = -1; // Same-tick guard: blocks touch-sim receiveLeftClick
 
         // Cached reflection — OptionsPage fields
         private static FieldInfo _optionsField;
         private static FieldInfo _scrollAreaField;
-        private static FieldInfo _selectedDropdownField;
-
-        // Cached reflection — OptionsDropDown fields (Android names differ from PC DLL)
-        private static FieldInfo _ddDropDownOpenField;
-        private static FieldInfo _ddSelectedOptionField;
-        private static FieldInfo _ddDropDownOptionsField;
-        private static FieldInfo _ddWhichOptionField;
-        private static FieldInfo _ddSelectedStaticField; // OptionsDropDown.selected (static)
-
-        // Cached reflection — OptionsSlider fields
-        private static FieldInfo _sliderValueField;       // or property
-        private static PropertyInfo _sliderValueProp;
-        private static FieldInfo _sliderMinField;
-        private static FieldInfo _sliderMaxField;
-        private static FieldInfo _sliderWhichOptionField;
 
         // Cached reflection — OptionsButton
         private static MethodInfo _buttonReleaseLeftClick;
 
-        // Cached reflection — OptionsPlusMinus
-        private static FieldInfo _pmMinusButtonField;
-        private static FieldInfo _pmPlusButtonField;
-
-        // Constant: right stick scroll threshold (matches social tab)
+        // Constants
         private const float StickScrollThreshold = 0.2f;
 
         /// <summary>Whether the left thumbstick should be suppressed at GetState level.
@@ -82,27 +65,11 @@ namespace AndroidConsolizer.Patches
                 // Cache OptionsPage reflection fields
                 _optionsField = AccessTools.Field(typeof(OptionsPage), "options");
                 _scrollAreaField = AccessTools.Field(typeof(OptionsPage), "scrollArea");
-                _selectedDropdownField = AccessTools.Field(typeof(OptionsPage), "_selectedDropdown");
 
                 if (_optionsField == null)
                     Monitor.Log("OptionsPagePatches: 'options' field not found", LogLevel.Warn);
                 if (_scrollAreaField == null)
                     Monitor.Log("OptionsPagePatches: 'scrollArea' field not found", LogLevel.Warn);
-
-                // Cache OptionsDropDown reflection
-                _ddDropDownOpenField = AccessTools.Field(typeof(OptionsDropDown), "dropDownOpen");
-                _ddSelectedOptionField = AccessTools.Field(typeof(OptionsDropDown), "selectedOption");
-                _ddDropDownOptionsField = AccessTools.Field(typeof(OptionsDropDown), "dropDownOptions");
-                _ddWhichOptionField = AccessTools.Field(typeof(OptionsElement), "whichOption");
-                _ddSelectedStaticField = AccessTools.Field(typeof(OptionsDropDown), "selected");
-
-                // Cache OptionsSlider reflection — try field first, then property
-                _sliderValueProp = AccessTools.Property(typeof(OptionsSlider), "value");
-                _sliderValueField = AccessTools.Field(typeof(OptionsSlider), "value")
-                                 ?? AccessTools.Field(typeof(OptionsSlider), "_value");
-                _sliderMinField = AccessTools.Field(typeof(OptionsSlider), "sliderMinValue");
-                _sliderMaxField = AccessTools.Field(typeof(OptionsSlider), "sliderMaxValue");
-                _sliderWhichOptionField = AccessTools.Field(typeof(OptionsElement), "whichOption");
 
                 // Cache OptionsButton reflection
                 _buttonReleaseLeftClick = AccessTools.Method(typeof(OptionsButton), "releaseLeftClick",
@@ -110,24 +77,26 @@ namespace AndroidConsolizer.Patches
                     ?? AccessTools.Method(typeof(OptionsButton), "leftClickReleased",
                         new[] { typeof(int), typeof(int) });
 
-                // Cache OptionsPlusMinus reflection
-                _pmMinusButtonField = AccessTools.Field(typeof(OptionsPlusMinus), "minusButton");
-                _pmPlusButtonField = AccessTools.Field(typeof(OptionsPlusMinus), "plusButton");
-
-                Monitor.Log($"OptionsPagePatches reflection: ddOpen={_ddDropDownOpenField != null}, " +
-                    $"sliderVal={_sliderValueProp != null || _sliderValueField != null}, " +
-                    $"sliderMin={_sliderMinField != null}, sliderMax={_sliderMaxField != null}, " +
-                    $"btnRelease={_buttonReleaseLeftClick != null}", LogLevel.Trace);
-
                 // Patch receiveGamePadButton on IClickableMenu (OptionsPage doesn't override it).
                 // Prefix checks __instance is OptionsPage so it only fires for the Options tab.
                 var receiveGPB = AccessTools.Method(typeof(IClickableMenu), nameof(IClickableMenu.receiveGamePadButton));
-
                 if (receiveGPB != null)
                 {
                     harmony.Patch(
                         original: receiveGPB,
                         prefix: new HarmonyMethod(typeof(OptionsPagePatches), nameof(ReceiveGamePadButton_Prefix))
+                    );
+                }
+
+                // Patch receiveLeftClick on OptionsPage — same-tick guard blocks touch-sim
+                // clicks after our A-press handling to prevent double-firing.
+                var receiveLeftClick = AccessTools.Method(typeof(OptionsPage), nameof(OptionsPage.receiveLeftClick),
+                    new[] { typeof(int), typeof(int), typeof(bool) });
+                if (receiveLeftClick != null)
+                {
+                    harmony.Patch(
+                        original: receiveLeftClick,
+                        prefix: new HarmonyMethod(typeof(OptionsPagePatches), nameof(ReceiveLeftClick_Prefix))
                     );
                 }
 
@@ -138,16 +107,6 @@ namespace AndroidConsolizer.Patches
                     harmony.Patch(
                         original: updateMethod,
                         postfix: new HarmonyMethod(typeof(OptionsPagePatches), nameof(Update_Postfix))
-                    );
-                }
-
-                // Patch draw
-                var drawMethod = AccessTools.Method(typeof(OptionsPage), "draw", new[] { typeof(SpriteBatch) });
-                if (drawMethod != null)
-                {
-                    harmony.Patch(
-                        original: drawMethod,
-                        postfix: new HarmonyMethod(typeof(OptionsPagePatches), nameof(Draw_Postfix))
                     );
                 }
 
@@ -164,89 +123,10 @@ namespace AndroidConsolizer.Patches
         {
             _focusedIndex = -1;
             _interactiveIndices = null;
-            _dropdownOpen = false;
-            _activeDropdown = null;
-            _lastAPressed = false;
+            _aPressTick = -1;
         }
 
-        #region Reflection Helpers
-
-        private static bool GetDropDownOpen(object dropdown)
-        {
-            if (_ddDropDownOpenField == null || dropdown == null) return false;
-            return (bool)_ddDropDownOpenField.GetValue(dropdown);
-        }
-
-        private static void SetDropDownOpen(object dropdown, bool value)
-        {
-            _ddDropDownOpenField?.SetValue(dropdown, value);
-        }
-
-        private static int GetDropDownSelectedOption(object dropdown)
-        {
-            if (_ddSelectedOptionField == null || dropdown == null) return 0;
-            return (int)_ddSelectedOptionField.GetValue(dropdown);
-        }
-
-        private static void SetDropDownSelectedOption(object dropdown, int value)
-        {
-            _ddSelectedOptionField?.SetValue(dropdown, value);
-        }
-
-        private static List<string> GetDropDownOptions(object dropdown)
-        {
-            return _ddDropDownOptionsField?.GetValue(dropdown) as List<string>;
-        }
-
-        private static int GetWhichOption(OptionsElement element)
-        {
-            if (_ddWhichOptionField == null) return element.whichOption;
-            return (int)_ddWhichOptionField.GetValue(element);
-        }
-
-        private static void SetDropDownSelectedStatic(object dropdown)
-        {
-            _ddSelectedStaticField?.SetValue(null, dropdown);
-        }
-
-        private static void ClearDropDownSelectedStatic()
-        {
-            _ddSelectedStaticField?.SetValue(null, null);
-        }
-
-        private static int GetSliderValue(OptionsSlider slider)
-        {
-            if (_sliderValueProp != null) return (int)_sliderValueProp.GetValue(slider);
-            if (_sliderValueField != null) return (int)_sliderValueField.GetValue(slider);
-            return 0;
-        }
-
-        private static void SetSliderValue(OptionsSlider slider, int value)
-        {
-            if (_sliderValueProp != null) _sliderValueProp.SetValue(slider, value);
-            else _sliderValueField?.SetValue(slider, value);
-        }
-
-        private static int GetSliderMin(OptionsSlider slider)
-        {
-            if (_sliderMinField != null) return (int)_sliderMinField.GetValue(slider);
-            return 0;
-        }
-
-        private static int GetSliderMax(OptionsSlider slider)
-        {
-            if (_sliderMaxField != null) return (int)_sliderMaxField.GetValue(slider);
-            return 100;
-        }
-
-        private static void InvokeButtonRelease(OptionsButton button, int x, int y)
-        {
-            _buttonReleaseLeftClick?.Invoke(button, new object[] { x, y });
-        }
-
-        #endregion
-
-        /// <summary>Snap the mouse cursor to the focused option so the game's rendering/hit-testing works.</summary>
+        /// <summary>Snap the mouse cursor to the focused option so the game's cursor shows focus.</summary>
         private static void SnapCursorToFocused(List<OptionsElement> options)
         {
             if (_focusedIndex < 0 || _focusedIndex >= options.Count)
@@ -302,14 +182,12 @@ namespace AndroidConsolizer.Patches
 
                 if (bounds.Y < scissor.Y)
                 {
-                    // Option is above visible area — scroll up
                     int newOffset = yOffset + (scissor.Y - bounds.Y) + padding;
                     newOffset = Math.Min(0, newOffset);
                     setYOffset.Invoke(scrollArea, new object[] { newOffset });
                 }
                 else if (bounds.Y + bounds.Height > scissor.Bottom)
                 {
-                    // Option is below visible area — scroll down
                     int newOffset = yOffset - (bounds.Y + bounds.Height - scissor.Bottom) - padding;
                     newOffset = Math.Max(-maxYOffset, newOffset);
                     setYOffset.Invoke(scrollArea, new object[] { newOffset });
@@ -330,7 +208,24 @@ namespace AndroidConsolizer.Patches
         }
 
         /// <summary>
-        /// Prefix on OptionsPage.receiveGamePadButton — handles D-pad navigation,
+        /// Prefix on OptionsPage.receiveLeftClick — blocks touch-sim clicks on the same tick
+        /// as our A-press handling. Without this, pressing A would toggle a checkbox then the
+        /// touch-sim click would toggle it back (double-fire, net no change).
+        /// </summary>
+        private static bool ReceiveLeftClick_Prefix(OptionsPage __instance, int x, int y)
+        {
+            if (!ModEntry.Config.EnableGameMenuNavigation || !Game1.options.gamepadControls)
+                return true;
+            if (_aPressTick == Game1.ticks)
+            {
+                _aPressTick = -1;
+                return false; // Block touch-sim click
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// Prefix on IClickableMenu.receiveGamePadButton — handles D-pad navigation,
         /// A-button interaction, and left/right value adjustment.
         /// </summary>
         private static bool ReceiveGamePadButton_Prefix(IClickableMenu __instance, Buttons b)
@@ -357,70 +252,11 @@ namespace AndroidConsolizer.Patches
 
             var scrollArea = _scrollAreaField?.GetValue(page);
 
-            // B button: if dropdown is open, cancel it. Otherwise let base handle (close menu).
+            // B button: let base handle (close menu)
             if (b == Buttons.B)
-            {
-                if (_dropdownOpen && _activeDropdown != null)
-                {
-                    SetDropDownSelectedOption(_activeDropdown, _dropdownOriginalSelection);
-                    SetDropDownOpen(_activeDropdown, false);
-                    ClearDropDownSelectedStatic();
-                    if (_selectedDropdownField != null)
-                        _selectedDropdownField.SetValue(page, null);
-                    _dropdownOpen = false;
-                    _activeDropdown = null;
-                    Game1.playSound("bigDeSelect");
-                    return false;
-                }
-                return true; // Let base handle B = close
-            }
+                return true;
 
-            // While dropdown is open, only up/down navigate within it
-            if (_dropdownOpen && _activeDropdown != null)
-            {
-                var ddOptions = GetDropDownOptions(_activeDropdown);
-                int ddSelected = GetDropDownSelectedOption(_activeDropdown);
-
-                if (b == Buttons.DPadUp || b == Buttons.LeftThumbstickUp)
-                {
-                    if (ddSelected > 0)
-                    {
-                        SetDropDownSelectedOption(_activeDropdown, ddSelected - 1);
-                        Game1.playSound("shiny4");
-                    }
-                    return false;
-                }
-                if (b == Buttons.DPadDown || b == Buttons.LeftThumbstickDown)
-                {
-                    if (ddOptions != null && ddSelected < ddOptions.Count - 1)
-                    {
-                        SetDropDownSelectedOption(_activeDropdown, ddSelected + 1);
-                        Game1.playSound("shiny4");
-                    }
-                    return false;
-                }
-                if (b == Buttons.A)
-                {
-                    // Confirm dropdown selection
-                    if (ddOptions != null && _activeDropdown is OptionsElement ddElem)
-                    {
-                        int sel = GetDropDownSelectedOption(_activeDropdown);
-                        Game1.options.changeDropDownOption(ddElem.whichOption, ddOptions[sel]);
-                    }
-                    SetDropDownOpen(_activeDropdown, false);
-                    ClearDropDownSelectedStatic();
-                    if (_selectedDropdownField != null)
-                        _selectedDropdownField.SetValue(page, null);
-                    _dropdownOpen = false;
-                    _activeDropdown = null;
-                    Game1.playSound("bigSelect");
-                    return false;
-                }
-                // Consume all other buttons while dropdown is open
-                return false;
-            }
-
-            // D-pad Up / LeftThumbstickUp — navigate to previous interactive option
+            // D-pad Up — navigate to previous interactive option
             if (b == Buttons.DPadUp || b == Buttons.LeftThumbstickUp)
             {
                 int pos = FindCurrentPosition();
@@ -433,7 +269,7 @@ namespace AndroidConsolizer.Patches
                 return false;
             }
 
-            // D-pad Down / LeftThumbstickDown — navigate to next interactive option
+            // D-pad Down — navigate to next interactive option
             if (b == Buttons.DPadDown || b == Buttons.LeftThumbstickDown)
             {
                 int pos = FindCurrentPosition();
@@ -454,39 +290,31 @@ namespace AndroidConsolizer.Patches
 
                 var opt = options[_focusedIndex];
 
+                // Set same-tick guard to block the touch-sim click that follows
+                _aPressTick = Game1.ticks;
+
                 if (opt is OptionsCheckbox)
                 {
+                    // OptionsCheckbox.receiveLeftClick has no hit-testing — any coords toggle it
                     opt.receiveLeftClick(opt.bounds.Center.X, opt.bounds.Center.Y);
-                    Game1.playSound("drumkit6");
-                    return false;
-                }
-
-                if (opt is OptionsDropDown dropdown)
-                {
-                    // Open the dropdown for browsing
-                    _dropdownOriginalSelection = GetDropDownSelectedOption(dropdown);
-                    SetDropDownOpen(dropdown, true);
-                    SetDropDownSelectedStatic(dropdown);
-                    if (_selectedDropdownField != null)
-                        _selectedDropdownField.SetValue(page, dropdown);
-                    _dropdownOpen = true;
-                    _activeDropdown = dropdown;
-                    Game1.playSound("shwip");
                     return false;
                 }
 
                 if (opt is OptionsButton button)
                 {
                     button.receiveLeftClick(button.bounds.Center.X, button.bounds.Center.Y);
-                    InvokeButtonRelease(button, button.bounds.Center.X, button.bounds.Center.Y);
+                    _buttonReleaseLeftClick?.Invoke(button, new object[] { button.bounds.Center.X, button.bounds.Center.Y });
                     return false;
                 }
 
-                // OptionsPlusMinus and OptionsSlider: A does nothing, left/right adjusts
+                // Sliders, dropdowns, plus/minus: A does nothing (use Left/Right to adjust)
                 return false;
             }
 
-            // Left/Right — adjust value on focused option
+            // D-pad Left/Right — adjust value using the game's native receiveKeyPress.
+            // OptionsSlider, OptionsDropDown, and OptionsPlusMinus all have receiveKeyPress
+            // implementations that handle moveLeftButton/moveRightButton with proper logic
+            // (slider +/-10, dropdown cycle, plusminus +/-1).
             if (b == Buttons.DPadLeft || b == Buttons.LeftThumbstickLeft ||
                 b == Buttons.DPadRight || b == Buttons.LeftThumbstickRight)
             {
@@ -496,62 +324,10 @@ namespace AndroidConsolizer.Patches
                 var opt = options[_focusedIndex];
                 bool isRight = (b == Buttons.DPadRight || b == Buttons.LeftThumbstickRight);
 
-                if (opt is OptionsSlider slider)
-                {
-                    // Directly adjust slider value via reflection
-                    int step = 10;
-                    int curVal = GetSliderValue(slider);
-                    int minVal = GetSliderMin(slider);
-                    int maxVal = GetSliderMax(slider);
-                    int newVal = isRight
-                        ? Math.Min(curVal + step, maxVal)
-                        : Math.Max(curVal - step, minVal);
-                    SetSliderValue(slider, newVal);
-                    Game1.options.changeSliderOption(slider.whichOption, newVal);
-                    Game1.playSound("shiny4");
-                    return false;
-                }
+                // Delegate to the option's own gamepad key handling
+                Keys key = isRight ? Keys.Right : Keys.Left;
+                opt.receiveKeyPress(key);
 
-                if (opt is OptionsDropDown dropdown)
-                {
-                    // Cycle dropdown value directly via reflection
-                    var ddOptions = GetDropDownOptions(dropdown);
-                    if (ddOptions != null && ddOptions.Count > 0)
-                    {
-                        int sel = GetDropDownSelectedOption(dropdown);
-                        if (isRight)
-                        {
-                            sel++;
-                            if (sel >= ddOptions.Count) sel = 0;
-                        }
-                        else
-                        {
-                            sel--;
-                            if (sel < 0) sel = ddOptions.Count - 1;
-                        }
-                        SetDropDownSelectedOption(dropdown, sel);
-                        Game1.options.changeDropDownOption(dropdown.whichOption, ddOptions[sel]);
-                    }
-                    Game1.playSound("shiny4");
-                    return false;
-                }
-
-                if (opt is OptionsPlusMinus plusMinus)
-                {
-                    // Simulate click on plus/minus button via reflection
-                    if (_pmMinusButtonField != null && _pmPlusButtonField != null)
-                    {
-                        var minusRect = (Rectangle)_pmMinusButtonField.GetValue(plusMinus);
-                        var plusRect = (Rectangle)_pmPlusButtonField.GetValue(plusMinus);
-                        if (isRight)
-                            plusMinus.receiveLeftClick(plusRect.Center.X, plusRect.Center.Y);
-                        else
-                            plusMinus.receiveLeftClick(minusRect.Center.X, minusRect.Center.Y);
-                    }
-                    return false;
-                }
-
-                // For other types, consume the input (don't let it navigate tabs)
                 return false;
             }
 
@@ -595,66 +371,13 @@ namespace AndroidConsolizer.Patches
                     if (scrollArea != null)
                     {
                         var receiveScroll = AccessTools.Method(scrollArea.GetType(), "receiveScrollWheelAction", new[] { typeof(int) });
-                        receiveScroll?.Invoke(scrollArea, new object[] { (int)(rightY * 120) });
+                        receiveScroll?.Invoke(scrollArea, new object[] { (int)(rightY * 30) });
                     }
                 }
-
-                _lastAPressed = state.IsButtonDown(Buttons.A);
             }
             catch (Exception ex)
             {
                 Monitor?.Log($"[OptionsPage] Update_Postfix error: {ex.Message}", LogLevel.Error);
-            }
-        }
-
-        /// <summary>
-        /// Postfix on OptionsPage.draw — draws the finger cursor at the focused option.
-        /// Runs AFTER finishScrollBoxDrawing restores the scissor rect, so we manually
-        /// check if the option is in the visible scroll area.
-        /// </summary>
-        private static void Draw_Postfix(OptionsPage __instance, SpriteBatch b)
-        {
-            if (!ModEntry.Config.EnableGameMenuNavigation)
-                return;
-            if (!Game1.options.gamepadControls || Game1.options.hardwareCursor)
-                return;
-
-            try
-            {
-                var options = _optionsField?.GetValue(__instance) as List<OptionsElement>;
-                if (options == null || _focusedIndex < 0 || _focusedIndex >= options.Count)
-                    return;
-
-                var opt = options[_focusedIndex];
-                var scrollArea = _scrollAreaField?.GetValue(__instance);
-
-                // Visibility check: only draw cursor if option is within the scroll viewport
-                if (scrollArea != null)
-                {
-                    var scissorField = AccessTools.Field(scrollArea.GetType(), "scissorRectangle");
-                    if (scissorField != null)
-                    {
-                        var scissor = (Rectangle)scissorField.GetValue(scrollArea);
-                        if (opt.bounds.Y + opt.bounds.Height < scissor.Y || opt.bounds.Y > scissor.Bottom)
-                            return; // Off-screen, don't draw cursor
-                    }
-                }
-
-                // Draw finger cursor to the left of the option, vertically centered
-                // Cursor sprite is tile 44, 16x16 at 4x scale = 64x64
-                int cursorX = opt.bounds.X - 68;
-                int cursorY = opt.bounds.Center.Y - 32;
-
-                b.Draw(Game1.mouseCursors,
-                    new Vector2(cursorX, cursorY),
-                    Game1.getSourceRectForStandardTileSheet(Game1.mouseCursors, 44, 16, 16),
-                    Color.White, 0f, Vector2.Zero,
-                    4f + Game1.dialogueButtonScale / 150f,
-                    SpriteEffects.None, 1f);
-            }
-            catch (Exception ex)
-            {
-                Monitor?.Log($"[OptionsPage] Draw_Postfix error: {ex.Message}", LogLevel.Error);
             }
         }
     }
