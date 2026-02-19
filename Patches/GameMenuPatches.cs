@@ -1655,36 +1655,14 @@ namespace AndroidConsolizer.Patches
         }
 
         /// <summary>
-        /// Postfix on PowersTab.draw — draws the finger cursor at currentlySnappedComponent's
-        /// position and restores highlightTexture visibility.
+        /// Postfix on PowersTab.draw — restores highlightTexture visibility so it works
+        /// if the feature is toggled off mid-session. No cursor drawn — the game's own cursor works.
         /// </summary>
         private static void PowersDraw_Postfix(IClickableMenu __instance, SpriteBatch b)
         {
-            if (!ModEntry.Config.EnableGameMenuNavigation)
-                return;
-
-            if (!Game1.options.gamepadControls || Game1.options.hardwareCursor)
-                goto restore;
-
-            // Draw finger cursor at the snap navigation component (synced with D-pad movement)
-            if (__instance.currentlySnappedComponent != null)
-            {
-                int cursorX = __instance.currentlySnappedComponent.bounds.Center.X;
-                int cursorY = __instance.currentlySnappedComponent.bounds.Center.Y;
-
-                b.Draw(Game1.mouseCursors,
-                    new Vector2(cursorX, cursorY),
-                    Game1.getSourceRectForStandardTileSheet(Game1.mouseCursors, 44, 16, 16),
-                    Color.White, 0f, Vector2.Zero,
-                    4f + Game1.dialogueButtonScale / 150f,
-                    SpriteEffects.None, 1f);
-            }
-
-            restore:
-            // Restore visibility (in case feature is toggled off mid-session)
-            var highlightRestore = _powersHighlightField?.GetValue(__instance) as ClickableTextureComponent;
-            if (highlightRestore != null)
-                highlightRestore.visible = true;
+            var highlight = _powersHighlightField?.GetValue(__instance) as ClickableTextureComponent;
+            if (highlight != null)
+                highlight.visible = true;
         }
 
         /// <summary>
