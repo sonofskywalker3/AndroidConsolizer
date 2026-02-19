@@ -133,6 +133,7 @@ namespace AndroidConsolizer.Patches
         private static FieldInfo _skillsWidthModField;        // float widthMod
         private static FieldInfo _skillsHeightModField;       // float heightMod
         private static bool _skillsFieldsCached;
+        private static int _skillsLastSnappedId = -999;       // track snap changes for tooltip updates
 
         // MobileScrollbox.setYOffsetForScroll() method — sets yOffset AND syncs scrollbar visual
         private static MethodInfo _scrollboxSetYOffsetMethod;
@@ -420,6 +421,7 @@ namespace AndroidConsolizer.Patches
             else if (typeName == "SkillsPage")
             {
                 FixSkillsPage(page);
+                _skillsLastSnappedId = -999;
                 _lastFixedTab = tabIndex;
             }
         }
@@ -2039,7 +2041,7 @@ namespace AndroidConsolizer.Patches
                     }
                 }
 
-                // Wire skillAreas: fix rightNeighborID to point to first available bar in that row
+                // Wire skillAreas: fix rightNeighborID and block upward escape to tab bar
                 for (int k = 0; k < skillAreas.Count; k++)
                 {
                     var area = skillAreas[k] as ClickableComponent;
@@ -2049,7 +2051,25 @@ namespace AndroidConsolizer.Patches
                         area.rightNeighborID = barsByRow[k][0].myID; // tier 1 bar
                     else
                         area.rightNeighborID = -1;
+
+                    // Block upward escape from top row to tab bar — use LB/RB/LT/RT to switch tabs
+                    if (k == 0)
+                        area.upNeighborID = -1;
                 }
+
+                // Collect sorted list of rows that have bars, per tier
+                var rowsWithTier = new Dictionary<int, List<int>>(); // tier -> sorted row list
+                foreach (var kv in barsByRow)
+                {
+                    for (int tier = 0; tier < kv.Value.Count && tier < 2; tier++)
+                    {
+                        if (!rowsWithTier.ContainsKey(tier))
+                            rowsWithTier[tier] = new List<int>();
+                        rowsWithTier[tier].Add(kv.Key);
+                    }
+                }
+                foreach (var kv in rowsWithTier)
+                    kv.Value.Sort();
 
                 // Wire skillBars neighbors
                 foreach (var kv in barsByRow)
@@ -2073,23 +2093,19 @@ namespace AndroidConsolizer.Patches
                         else
                             bar.rightNeighborID = -1;
 
-                        // Up neighbor: same tier in row above, or tab bar
-                        int upRow = row - 1;
-                        if (upRow >= 0 && barsByRow.ContainsKey(upRow) && barsByRow[upRow].Count > tier)
-                            bar.upNeighborID = barsByRow[upRow][tier].myID;
-                        else if (upRow >= 0)
-                            bar.upNeighborID = upRow; // fall back to skillArea above
+                        // Up/Down: navigate to nearest bar in SAME TIER (skip empty rows)
+                        var tierRows = rowsWithTier.ContainsKey(tier) ? rowsWithTier[tier] : null;
+                        if (tierRows != null)
+                        {
+                            int idx = tierRows.IndexOf(row);
+                            bar.upNeighborID = (idx > 0) ? (tier == 0 ? 100 : 200) + tierRows[idx - 1] : -1;
+                            bar.downNeighborID = (idx < tierRows.Count - 1) ? (tier == 0 ? 100 : 200) + tierRows[idx + 1] : -1;
+                        }
                         else
-                            bar.upNeighborID = 12341; // tab bar
-
-                        // Down neighbor: same tier in row below, or specialItems, or -1
-                        int downRow = row + 1;
-                        if (downRow < skillAreas.Count && barsByRow.ContainsKey(downRow) && barsByRow[downRow].Count > tier)
-                            bar.downNeighborID = barsByRow[downRow][tier].myID;
-                        else if (downRow < skillAreas.Count)
-                            bar.downNeighborID = downRow; // fall back to skillArea below
-                        else
+                        {
+                            bar.upNeighborID = -1;
                             bar.downNeighborID = -1;
+                        }
                     }
                 }
 
@@ -2128,9 +2144,11 @@ namespace AndroidConsolizer.Patches
         }
 
         /// <summary>
-        /// Prefix on SkillsPage.receiveGamePadButton — replaces vanilla's broken left/right-only
-        /// handler with proper grid navigation using snap nav (moveCursorInDirection).
-        /// Shows tooltip for the newly snapped component after each navigation.
+        /// Prefix on SkillsPage.receiveGamePadButton — blocks vanilla's broken left/right-only
+        /// handler for directional input. The game's key-based path (receiveKeyPress →
+        /// applyMovementKey → moveCursorInDirection) already handles snap navigation using
+        /// our fixed wiring — we just need to prevent the vanilla handler from interfering.
+        /// Tooltip display is handled in SkillsDraw_Prefix every frame.
         /// </summary>
         private static bool SkillsReceiveGamePadButton_Prefix(SkillsPage __instance, Buttons b)
         {
@@ -2139,37 +2157,22 @@ namespace AndroidConsolizer.Patches
 
             try
             {
-                int direction = -1;
                 switch (b)
                 {
                     case Buttons.DPadUp:
                     case Buttons.LeftThumbstickUp:
-                        direction = 0; // up
-                        break;
                     case Buttons.DPadRight:
                     case Buttons.LeftThumbstickRight:
-                        direction = 1; // right
-                        break;
                     case Buttons.DPadDown:
                     case Buttons.LeftThumbstickDown:
-                        direction = 2; // down
-                        break;
                     case Buttons.DPadLeft:
                     case Buttons.LeftThumbstickLeft:
-                        direction = 3; // left
-                        break;
+                        // Block vanilla's broken flat left/right cycling.
+                        // Navigation is handled by the key-based snap nav path.
+                        return false;
                 }
 
-                if (direction >= 0)
-                {
-                    // Use the game's own snap navigation with our fixed wiring
-                    __instance.moveCursorInDirection(direction);
-                    ShowSkillsTooltipForSnapped(__instance);
-                    return false; // skip vanilla
-                }
-
-                // Let other buttons (A, B, etc.) pass through to vanilla
-                // B is handled by GameMenu.receiveGamePadButton before it reaches here
+                // Let other buttons (A, B, etc.) pass through
                 return true;
             }
             catch (Exception ex)
@@ -2223,8 +2226,8 @@ namespace AndroidConsolizer.Patches
         }
 
         /// <summary>
-        /// Prefix on SkillsPage.draw — reposition tooltip hoverBox to be near the selected component
-        /// instead of hardcoded portrait area. Top-left of tooltip at bottom-right of component.
+        /// Prefix on SkillsPage.draw — shows tooltip for snapped component when it changes,
+        /// and repositions hoverBox near the component instead of the portrait area.
         /// </summary>
         private static void SkillsDraw_Prefix(SkillsPage __instance)
         {
@@ -2235,7 +2238,19 @@ namespace AndroidConsolizer.Patches
             {
                 CacheSkillsFields(__instance);
                 var snapped = __instance.currentlySnappedComponent;
-                if (snapped == null || _skillsHoverBoxField == null)
+                if (snapped == null)
+                    return;
+
+                // Show tooltip when snapped component changes (driven by key-based snap nav)
+                int snappedId = snapped.myID;
+                if (snappedId != _skillsLastSnappedId)
+                {
+                    _skillsLastSnappedId = snappedId;
+                    ShowSkillsTooltipForSnapped(__instance);
+                }
+
+                // Reposition tooltip near the component
+                if (_skillsHoverBoxField == null)
                     return;
 
                 var hoverBox = (Rectangle)_skillsHoverBoxField.GetValue(__instance);
