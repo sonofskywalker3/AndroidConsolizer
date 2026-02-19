@@ -183,6 +183,62 @@ namespace AndroidConsolizer
             {
                 Patches.GameMenuPatches.OnGameMenuOpened(newGameMenu);
             }
+
+            // GMCM diagnostic: log structure of non-GameMenu menus opened from OptionsPage
+            if (e.NewMenu != null && !(e.NewMenu is GameMenu) && e.OldMenu is GameMenu)
+            {
+                var menuType = e.NewMenu.GetType();
+                Monitor.Log($"[GMCM-Diag] Menu opened: {menuType.FullName} (assembly: {menuType.Assembly.GetName().Name})", LogLevel.Info);
+                Monitor.Log($"[GMCM-Diag] allClickableComponents: {e.NewMenu.allClickableComponents?.Count ?? -1}", LogLevel.Info);
+                // Dump all fields
+                var fields = menuType.GetFields(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public);
+                foreach (var f in fields)
+                {
+                    try
+                    {
+                        var val = f.GetValue(e.NewMenu);
+                        string valStr;
+                        if (val is System.Collections.IList list)
+                            valStr = $"[list] count={list.Count}";
+                        else if (val is System.Collections.ICollection col)
+                            valStr = $"[collection] count={col.Count}";
+                        else
+                            valStr = val?.ToString() ?? "null";
+                        // Log first 20 fields, then just log option-related ones
+                        if (f.Name.Contains("option", StringComparison.OrdinalIgnoreCase)
+                            || f.Name.Contains("scroll", StringComparison.OrdinalIgnoreCase)
+                            || f.Name.Contains("element", StringComparison.OrdinalIgnoreCase)
+                            || f.Name.Contains("table", StringComparison.OrdinalIgnoreCase)
+                            || f.Name.Contains("row", StringComparison.OrdinalIgnoreCase)
+                            || val is System.Collections.IList)
+                        {
+                            Monitor.Log($"[GMCM-Diag]   {f.Name} : {f.FieldType.Name} = {valStr}", LogLevel.Info);
+                        }
+                    }
+                    catch { }
+                }
+                // Also dump the list contents if there's an "options" or similar list
+                foreach (var f in fields)
+                {
+                    try
+                    {
+                        if (f.GetValue(e.NewMenu) is System.Collections.IList list && list.Count > 0 && list.Count <= 50)
+                        {
+                            for (int i = 0; i < Math.Min(list.Count, 20); i++)
+                            {
+                                var item = list[i];
+                                if (item is OptionsElement opt)
+                                    Monitor.Log($"[GMCM-Diag]   {f.Name}[{i}]: {item.GetType().Name} label='{opt.label}' whichOption={opt.whichOption}", LogLevel.Info);
+                                else
+                                    Monitor.Log($"[GMCM-Diag]   {f.Name}[{i}]: {item?.GetType().Name ?? "null"}", LogLevel.Info);
+                            }
+                            if (list.Count > 20)
+                                Monitor.Log($"[GMCM-Diag]   ... {list.Count - 20} more items in {f.Name}", LogLevel.Info);
+                        }
+                    }
+                    catch { }
+                }
+            }
         }
 
         /// <summary>Raised at start of each tick, BEFORE Game.Update(). Enforces our trigger
