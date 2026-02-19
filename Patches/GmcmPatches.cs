@@ -62,6 +62,9 @@ namespace AndroidConsolizer.Patches
         private static PropertyInfo _labelString;       // Label.String (string)
         private static PropertyInfo _labelCallback;     // Label.Callback (Action)
 
+        // GMCM SpecificModConfigMenu back navigation
+        private static FieldInfo _returnToListField;    // SpecificModConfigMenu.ReturnToList (Action)
+
         // Navigation state
         private static int _focusedRow = -1;
         private static bool _isActive = false;
@@ -208,6 +211,12 @@ namespace AndroidConsolizer.Patches
                     }
                 }
 
+                // SpecificModConfigMenu back navigation
+                if (_specificModConfigMenuType != null)
+                {
+                    _returnToListField = AccessTools.Field(_specificModConfigMenuType, "ReturnToList");
+                }
+
                 Monitor.Log($"GMCM patches initialized. Table type: {tableType?.FullName}", LogLevel.Trace);
             }
             catch (Exception ex)
@@ -273,7 +282,11 @@ namespace AndroidConsolizer.Patches
                 || (_specificModConfigMenuType != null && menuType == _specificModConfigMenuType);
         }
 
-        /// <summary>Find the active GMCM menu (as _childMenu of GameMenu, or as activeClickableMenu on title).</summary>
+        /// <summary>
+        /// Find the deepest active GMCM menu by walking the _childMenu chain.
+        /// Chain can be: GameMenu -> ModConfigMenu -> SpecificModConfigMenu
+        /// We want the deepest GMCM menu (that's the one receiving input).
+        /// </summary>
         private static IClickableMenu FindGmcmMenu()
         {
             if (_modConfigMenuType == null && _specificModConfigMenuType == null)
@@ -283,25 +296,21 @@ namespace AndroidConsolizer.Patches
             if (active == null)
                 return null;
 
-            // In-game: GMCM as _childMenu of GameMenu
-            if (active is GameMenu gm)
+            // Walk the _childMenu chain to find the deepest GMCM menu
+            IClickableMenu deepestGmcm = null;
+            var current = active;
+            // Check each level (active itself, then children)
+            for (int depth = 0; depth < 5; depth++) // safety limit
             {
-                var child = gm.GetChildMenu();
-                if (child != null && IsGmcmMenu(child))
-                    return child;
-                return null;
+                if (IsGmcmMenu(current))
+                    deepestGmcm = current;
+
+                var child = current.GetChildMenu();
+                if (child == null) break;
+                current = child;
             }
 
-            // Title screen: GMCM as direct activeClickableMenu or its child
-            if (IsGmcmMenu(active))
-                return active;
-
-            // Could also be a child of TitleMenu
-            var titleChild = active.GetChildMenu();
-            if (titleChild != null && IsGmcmMenu(titleChild))
-                return titleChild;
-
-            return null;
+            return deepestGmcm;
         }
 
         private static void Activate(object gmcmMenu)
@@ -314,7 +323,40 @@ namespace AndroidConsolizer.Patches
 
             // Log activation details
             var rows = GetRows(gmcmMenu);
-            Monitor?.Log($"[GMCM] Activated on {gmcmMenu.GetType().Name}. Rows: {rows?.Count ?? -1}, Table: {GetTable(gmcmMenu)?.GetType().FullName ?? "null"}", LogLevel.Info);
+            var table = GetTable(gmcmMenu);
+            var tableBounds = GetElementBounds(table);
+            int rowHeight = 0;
+            if (_tableRowHeightField != null && table != null)
+            {
+                try { rowHeight = (int)_tableRowHeightField.GetValue(table); } catch { }
+            }
+
+            // Also dump Table's Size for layout understanding
+            string sizeStr = "?";
+            if (_tableSizeField != null && table != null)
+            {
+                try { sizeStr = _tableSizeField.GetValue(table)?.ToString(); } catch { }
+            }
+
+            Monitor?.Log($"[GMCM] Activated on {gmcmMenu.GetType().Name}. Rows: {rows?.Count ?? -1}, RowHeight: {rowHeight}, Table.Bounds: ({tableBounds.X},{tableBounds.Y},{tableBounds.Width}x{tableBounds.Height}), Table.Size: {sizeStr}", LogLevel.Info);
+
+            // Log scrollbar state
+            if (table != null && _tableScrollbarProp != null)
+            {
+                try
+                {
+                    var sb = GetScrollbar(table);
+                    if (sb != null)
+                    {
+                        int topRow = _scrollbarTopRow != null ? (int)_scrollbarTopRow.GetValue(sb) : -1;
+                        int frameSize = _scrollbarFrameSize != null ? (int)_scrollbarFrameSize.GetValue(sb) : -1;
+                        int totalRows = _scrollbarRows != null ? (int)_scrollbarRows.GetValue(sb) : -1;
+                        Monitor?.Log($"[GMCM] Scrollbar: TopRow={topRow}, FrameSize={frameSize}, TotalRows={totalRows}", LogLevel.Info);
+                    }
+                }
+                catch { }
+            }
+
             if (rows != null && rows.Count > 0)
             {
                 // Log first few rows with element bounds for debugging
@@ -481,10 +523,42 @@ namespace AndroidConsolizer.Patches
             var target = interactive ?? (row.Length > 0 ? row[0] : null);
             if (target == null) return;
 
-            var bounds = GetElementBounds(target);
-            if (bounds != Rectangle.Empty)
+            // Element.Bounds Y values are table-local (all rows report the same Y).
+            // Compute screen Y from: tableBounds.Y + (rowIndex - topRow) * rowHeight + rowHeight/2
+            var table = GetTable(gmcmMenu);
+            if (table == null) return;
+
+            var tableBounds = GetElementBounds(table);
+            int rowHeight = 0;
+            if (_tableRowHeightField != null)
             {
-                Game1.setMousePosition(bounds.Center.X, bounds.Center.Y);
+                try { rowHeight = (int)_tableRowHeightField.GetValue(table); } catch { }
+            }
+
+            int topRow = 0;
+            var scrollbar = GetScrollbar(table);
+            if (scrollbar != null && _scrollbarTopRow != null)
+            {
+                try { topRow = (int)_scrollbarTopRow.GetValue(scrollbar); } catch { }
+            }
+
+            if (rowHeight > 0)
+            {
+                // Compute screen position from table layout
+                int screenY = tableBounds.Y + (_focusedRow - topRow) * rowHeight + rowHeight / 2;
+                // For X, use element bounds X (seems correct) or table center
+                var elemBounds = GetElementBounds(target);
+                int screenX = elemBounds.Width > 0
+                    ? tableBounds.X + elemBounds.X + elemBounds.Width / 2
+                    : tableBounds.X + tableBounds.Width / 2;
+                Game1.setMousePosition(screenX, screenY);
+            }
+            else
+            {
+                // Fallback to raw element bounds
+                var bounds = GetElementBounds(target);
+                if (bounds != Rectangle.Empty)
+                    Game1.setMousePosition(bounds.Center.X, bounds.Center.Y);
             }
         }
 
@@ -596,6 +670,43 @@ namespace AndroidConsolizer.Patches
                 // The touch-sim from Game1.updateActiveMenu will fire receiveLeftClick
                 // after this receiveGamePadButton returns, which will hit the element
             }
+        }
+
+        /// <summary>Handle B-button press — go back or close GMCM.</summary>
+        private static void HandleBPress(object gmcmMenu)
+        {
+            // SpecificModConfigMenu: use ReturnToList callback to go back to mod list
+            if (_specificModConfigMenuType != null && _specificModConfigMenuType.IsInstanceOfType(gmcmMenu))
+            {
+                if (_returnToListField != null)
+                {
+                    var returnToList = _returnToListField.GetValue(gmcmMenu) as Action;
+                    if (returnToList != null)
+                    {
+                        returnToList.Invoke();
+                        Game1.playSound("bigDeSelect");
+                        Deactivate();
+                        return;
+                    }
+                }
+            }
+
+            // ModConfigMenu (mod list): close the GMCM overlay entirely
+            // Simulate clicking the upper-right close button
+            var menu = gmcmMenu as IClickableMenu;
+            if (menu?.upperRightCloseButton != null)
+            {
+                menu.receiveLeftClick(
+                    menu.upperRightCloseButton.bounds.Center.X,
+                    menu.upperRightCloseButton.bounds.Center.Y,
+                    true);
+                Deactivate();
+                return;
+            }
+
+            // Fallback: call exitThisMenu
+            menu?.exitThisMenu(true);
+            Deactivate();
         }
 
         /// <summary>Handle left/right — toggle checkboxes, or navigate mod list.</summary>
@@ -756,11 +867,11 @@ namespace AndroidConsolizer.Patches
 
             var gmcmMenu = __instance;
 
-            // B button: close GMCM (go back)
+            // B button: close/go back
             if (b == Buttons.B)
             {
-                // Let the base handle B (which closes the menu via upperRightCloseButton)
-                return true;
+                HandleBPress(gmcmMenu);
+                return false;
             }
 
             // D-pad Up/Down
