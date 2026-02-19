@@ -147,7 +147,14 @@ namespace AndroidConsolizer.Patches
                 _tableRowHeightField = AccessTools.Field(tableType, "rowHeight");
 
                 if (_tableRowsField == null)
-                    Monitor.Log("GMCM Table.rows field not found.", LogLevel.Warn);
+                {
+                    // Dump all fields/properties on Table to find the right name
+                    Monitor.Log($"GMCM Table.rows not found. Dumping Table type ({tableType.FullName}):", LogLevel.Warn);
+                    foreach (var f in tableType.GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public))
+                        Monitor.Log($"  Field: {f.Name} : {f.FieldType.Name}", LogLevel.Warn);
+                    foreach (var p in tableType.GetProperties(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public))
+                        Monitor.Log($"  Prop: {p.Name} : {p.PropertyType.Name}", LogLevel.Warn);
+                }
 
                 // SpaceShared.UI.Element (base type)
                 var elementType = AccessTools.TypeByName("SpaceShared.UI.Element");
@@ -193,41 +200,28 @@ namespace AndroidConsolizer.Patches
         /// <summary>Apply Harmony patches for GMCM input interception.</summary>
         public static void Apply(Harmony harmony, IMonitor monitor)
         {
-            // We don't patch GMCM methods directly — instead we handle input in the
-            // existing IClickableMenu.receiveGamePadButton prefix (OptionsPagePatches)
-            // and in our Update() tick handler. No new Harmony patches needed.
-            //
-            // The receiveGamePadButton prefix in OptionsPagePatches only handles
-            // OptionsPage instances. We add GMCM handling via HandleGamePadButton()
-            // which is called from our own prefix on IClickableMenu.receiveGamePadButton.
-
             if (_modConfigMenuType == null)
                 return;
 
             try
             {
-                // Patch receiveGamePadButton on GMCM's type to intercept D-pad/A/B
-                var receiveGPB = AccessTools.Method(_modConfigMenuType, "receiveGamePadButton",
-                    new[] { typeof(Buttons) });
+                // GMCM doesn't override receiveGamePadButton — patch the base
+                // IClickableMenu.receiveGamePadButton. This is already patched by
+                // OptionsPagePatches, but Harmony allows multiple prefixes.
+                // Our prefix checks IsGmcmMenu() so it only fires for GMCM instances.
+                var receiveGPB = AccessTools.Method(typeof(IClickableMenu),
+                    nameof(IClickableMenu.receiveGamePadButton), new[] { typeof(Buttons) });
                 if (receiveGPB != null)
                 {
                     harmony.Patch(
                         original: receiveGPB,
                         prefix: new HarmonyMethod(typeof(GmcmPatches), nameof(ReceiveGamePadButton_Prefix))
                     );
-                    Monitor.Log("GMCM receiveGamePadButton patch applied.", LogLevel.Trace);
-                }
-                else
-                {
-                    // GMCM doesn't override receiveGamePadButton, so we need to catch it
-                    // at the IClickableMenu base level. We'll rely on the fact that
-                    // Game1.updateActiveMenu calls receiveGamePadButton on the deepest child.
-                    // The base IClickableMenu.receiveGamePadButton is already patched by
-                    // OptionsPagePatches — we need to add our check there.
-                    Monitor.Log("GMCM doesn't override receiveGamePadButton — using base IClickableMenu patch.", LogLevel.Trace);
+                    Monitor.Log("GMCM receiveGamePadButton prefix applied (on IClickableMenu base).", LogLevel.Trace);
                 }
 
-                // Patch receiveLeftClick to block touch-sim after A-press
+                // Similarly, GMCM likely overrides receiveLeftClick — try patching it.
+                // If GMCM doesn't override it, patch the base.
                 var receiveLeftClick = AccessTools.Method(_modConfigMenuType, "receiveLeftClick",
                     new[] { typeof(int), typeof(int), typeof(bool) });
                 if (receiveLeftClick != null)
@@ -236,6 +230,7 @@ namespace AndroidConsolizer.Patches
                         original: receiveLeftClick,
                         prefix: new HarmonyMethod(typeof(GmcmPatches), nameof(ReceiveLeftClick_Prefix))
                     );
+                    Monitor.Log("GMCM receiveLeftClick prefix applied.", LogLevel.Trace);
                 }
 
                 Monitor.Log("GMCM Harmony patches applied.", LogLevel.Trace);
