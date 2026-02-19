@@ -103,6 +103,7 @@ namespace AndroidConsolizer.Patches
         private static FieldInfo _powersSelectedIndexField;  // int selectedIndex
         private static FieldInfo _powersPowersField;         // List<List<ClickableTextureComponent>> powers
         private static FieldInfo _powersCurrentPageField;    // int currentPage
+        private static MethodInfo _powersDoSelectMethod;     // void doSelect(int index)
 
         // CollectionsPage navigation state
         private static bool _collectionsInTabMode = false;
@@ -217,6 +218,7 @@ namespace AndroidConsolizer.Patches
                     _powersSelectedIndexField = AccessTools.Field(_powersTabType, "selectedIndex");
                     _powersPowersField = AccessTools.Field(_powersTabType, "powers");
                     _powersCurrentPageField = AccessTools.Field(_powersTabType, "currentPage");
+                    _powersDoSelectMethod = AccessTools.Method(_powersTabType, "doSelect", new[] { typeof(int) });
 
                     var powersDrawMethod = AccessTools.Method(_powersTabType, "draw", new[] { typeof(SpriteBatch) });
                     if (powersDrawMethod != null)
@@ -1625,9 +1627,10 @@ namespace AndroidConsolizer.Patches
         // ===== PowersTab draw patches =====
 
         /// <summary>
-        /// Prefix on PowersTab.draw — hides the glow highlight texture so only the finger cursor shows.
-        /// PowersTab draws highlightTexture around powers[currentPage][selectedIndex].
-        /// ClickableTextureComponent.draw() checks visible, so setting it false suppresses the draw.
+        /// Prefix on PowersTab.draw — hides the glow highlight texture and syncs selectedIndex
+        /// with currentlySnappedComponent. The game's snap navigation moves currentlySnappedComponent
+        /// via D-pad, but selectedIndex (which controls the info panel text) is only updated by
+        /// doSelect() which is touch-only. We call doSelect() here to keep them in sync.
         /// </summary>
         private static void PowersDraw_Prefix(IClickableMenu __instance)
         {
@@ -1637,11 +1640,23 @@ namespace AndroidConsolizer.Patches
             var highlight = _powersHighlightField?.GetValue(__instance) as ClickableTextureComponent;
             if (highlight != null)
                 highlight.visible = false;
+
+            // Sync selectedIndex with currentlySnappedComponent so the info panel updates
+            if (Game1.options.gamepadControls && __instance.currentlySnappedComponent != null && _powersDoSelectMethod != null)
+            {
+                int snappedId = __instance.currentlySnappedComponent.myID;
+                int selectedIndex = _powersSelectedIndexField != null ? (int)_powersSelectedIndexField.GetValue(__instance) : -1;
+                if (snappedId != selectedIndex && snappedId >= 0)
+                {
+                    try { _powersDoSelectMethod.Invoke(__instance, new object[] { snappedId }); }
+                    catch { }
+                }
+            }
         }
 
         /// <summary>
-        /// Postfix on PowersTab.draw — draws the finger cursor at the selected power's position
-        /// and restores highlightTexture visibility.
+        /// Postfix on PowersTab.draw — draws the finger cursor at currentlySnappedComponent's
+        /// position and restores highlightTexture visibility.
         /// </summary>
         private static void PowersDraw_Postfix(IClickableMenu __instance, SpriteBatch b)
         {
@@ -1651,30 +1666,18 @@ namespace AndroidConsolizer.Patches
             if (!Game1.options.gamepadControls || Game1.options.hardwareCursor)
                 goto restore;
 
-            // Read selectedIndex and powers list via reflection
-            int selectedIndex = _powersSelectedIndexField != null ? (int)_powersSelectedIndexField.GetValue(__instance) : -1;
-            int currentPage = _powersCurrentPageField != null ? (int)_powersCurrentPageField.GetValue(__instance) : 0;
-            var powers = _powersPowersField?.GetValue(__instance) as IList;
-
-            if (selectedIndex >= 0 && powers != null && currentPage < powers.Count)
+            // Draw finger cursor at the snap navigation component (synced with D-pad movement)
+            if (__instance.currentlySnappedComponent != null)
             {
-                var page = powers[currentPage] as IList;
-                if (page != null && selectedIndex < page.Count)
-                {
-                    var comp = page[selectedIndex] as ClickableTextureComponent;
-                    if (comp != null)
-                    {
-                        int cursorX = comp.bounds.Center.X;
-                        int cursorY = comp.bounds.Center.Y;
+                int cursorX = __instance.currentlySnappedComponent.bounds.Center.X;
+                int cursorY = __instance.currentlySnappedComponent.bounds.Center.Y;
 
-                        b.Draw(Game1.mouseCursors,
-                            new Vector2(cursorX, cursorY),
-                            Game1.getSourceRectForStandardTileSheet(Game1.mouseCursors, 44, 16, 16),
-                            Color.White, 0f, Vector2.Zero,
-                            4f + Game1.dialogueButtonScale / 150f,
-                            SpriteEffects.None, 1f);
-                    }
-                }
+                b.Draw(Game1.mouseCursors,
+                    new Vector2(cursorX, cursorY),
+                    Game1.getSourceRectForStandardTileSheet(Game1.mouseCursors, 44, 16, 16),
+                    Color.White, 0f, Vector2.Zero,
+                    4f + Game1.dialogueButtonScale / 150f,
+                    SpriteEffects.None, 1f);
             }
 
             restore:
