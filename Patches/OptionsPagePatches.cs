@@ -78,6 +78,8 @@ namespace AndroidConsolizer.Patches
         {
             if (!ModEntry.Config.EnableGameMenuNavigation || !Game1.options.gamepadControls)
                 return false;
+            if (ModEntry.Config.FreeCursorOnSettings)
+                return false;
             if (Game1.activeClickableMenu is GameMenu gm)
             {
                 var currentPage = gm.GetCurrentPage();
@@ -363,7 +365,7 @@ namespace AndroidConsolizer.Patches
         /// </summary>
         private static bool ReceiveLeftClick_Prefix(OptionsPage __instance, int x, int y)
         {
-            if (!ModEntry.Config.EnableGameMenuNavigation || !Game1.options.gamepadControls)
+            if (!ModEntry.Config.EnableGameMenuNavigation || !Game1.options.gamepadControls || ModEntry.Config.FreeCursorOnSettings)
                 return true;
             if (_aPressTick == Game1.ticks)
             {
@@ -382,6 +384,8 @@ namespace AndroidConsolizer.Patches
             if (!(__instance is OptionsPage page))
                 return true;
             if (!ModEntry.Config.EnableGameMenuNavigation)
+                return true;
+            if (ModEntry.Config.FreeCursorOnSettings)
                 return true;
             if (!Game1.options.gamepadControls)
                 return true;
@@ -595,6 +599,8 @@ namespace AndroidConsolizer.Patches
         private static void Update_Postfix(OptionsPage __instance, GameTime time)
         {
             if (!ModEntry.Config.EnableGameMenuNavigation)
+                return;
+            if (ModEntry.Config.FreeCursorOnSettings)
                 return;
             if (!Game1.options.gamepadControls)
                 return;

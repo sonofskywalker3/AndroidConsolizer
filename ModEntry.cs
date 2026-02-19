@@ -1032,9 +1032,17 @@ namespace AndroidConsolizer
             configMenu.AddBoolOption(
                 mod: this.ModManifest,
                 name: () => "Console Menus",
-                tooltip: () => "Fix controller navigation on GameMenu tabs that lack it (Social, Animals, Crafting, Collections).",
+                tooltip: () => "Fix controller navigation on GameMenu tabs that lack it (Social, Animals, Crafting, Collections, Options, Mod Config).",
                 getValue: () => Config.EnableGameMenuNavigation,
                 setValue: value => Config.EnableGameMenuNavigation = value
+            );
+
+            configMenu.AddBoolOption(
+                mod: this.ModManifest,
+                name: () => "Free Cursor on Settings",
+                tooltip: () => "Use the vanilla free-roaming cursor instead of snap navigation on the Options page and Mod Config page. Requires Console Menus to be enabled.",
+                getValue: () => Config.FreeCursorOnSettings,
+                setValue: value => Config.FreeCursorOnSettings = value
             );
 
             configMenu.AddBoolOption(
