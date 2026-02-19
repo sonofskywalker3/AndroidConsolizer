@@ -546,10 +546,11 @@ namespace AndroidConsolizer.Patches
             {
                 // Compute screen position from table layout
                 int screenY = tableBounds.Y + (_focusedRow - topRow) * rowHeight + rowHeight / 2;
-                // For X, use element bounds X (seems correct) or table center
+                // Element.Bounds.X is already an absolute screen coordinate (same as Table.Bounds.X)
+                // Don't add tableBounds.X again — just use elemBounds.X directly
                 var elemBounds = GetElementBounds(target);
                 int screenX = elemBounds.Width > 0
-                    ? tableBounds.X + elemBounds.X + elemBounds.Width / 2
+                    ? elemBounds.X + elemBounds.Width / 2
                     : tableBounds.X + tableBounds.Width / 2;
                 Game1.setMousePosition(screenX, screenY);
             }
