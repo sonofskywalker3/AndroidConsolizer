@@ -487,7 +487,7 @@ namespace AndroidConsolizer.Patches
                 if (sprite == null) return;
 
                 sprite.bounds = new Rectangle(sprite.bounds.X, sprite.bounds.Y + SocialContentYOffset,
-                    sprite.bounds.Width, sprite.bounds.Height);
+                    sprite.bounds.Width, sprite.bounds.Height - SocialContentYOffset);
             }
             catch { }
         }
@@ -503,7 +503,7 @@ namespace AndroidConsolizer.Patches
                 if (sprite == null) return;
 
                 sprite.bounds = new Rectangle(sprite.bounds.X, sprite.bounds.Y - SocialContentYOffset,
-                    sprite.bounds.Width, sprite.bounds.Height);
+                    sprite.bounds.Width, sprite.bounds.Height + SocialContentYOffset);
             }
             catch { }
         }
