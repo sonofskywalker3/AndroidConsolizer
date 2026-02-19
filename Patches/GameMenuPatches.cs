@@ -97,6 +97,13 @@ namespace AndroidConsolizer.Patches
         private static FieldInfo _craftingSelectedItemField;
         private static ClickableTextureComponent _savedCraftingSelection;
 
+        // PowersTab: reflection fields (Android-only type, not in PC DLL)
+        private static Type _powersTabType;
+        private static FieldInfo _powersHighlightField;     // ClickableTextureComponent highlightTexture
+        private static FieldInfo _powersSelectedIndexField;  // int selectedIndex
+        private static FieldInfo _powersPowersField;         // List<List<ClickableTextureComponent>> powers
+        private static FieldInfo _powersCurrentPageField;    // int currentPage
+
         // CollectionsPage navigation state
         private static bool _collectionsInTabMode = false;
         private static int _collectionsSelectedTabIndex = 0;
@@ -199,6 +206,32 @@ namespace AndroidConsolizer.Patches
                         prefix: new HarmonyMethod(typeof(GameMenuPatches), nameof(CollectionsDraw_Prefix)),
                         postfix: new HarmonyMethod(typeof(GameMenuPatches), nameof(CollectionsDraw_Postfix))
                     );
+                }
+
+                // Patch PowersTab.draw — prefix hides glow highlight, postfix draws finger cursor
+                // PowersTab is Android-only (not in PC DLL), so use reflection
+                _powersTabType = AccessTools.TypeByName("StardewValley.Menus.PowersTab");
+                if (_powersTabType != null)
+                {
+                    _powersHighlightField = AccessTools.Field(_powersTabType, "highlightTexture");
+                    _powersSelectedIndexField = AccessTools.Field(_powersTabType, "selectedIndex");
+                    _powersPowersField = AccessTools.Field(_powersTabType, "powers");
+                    _powersCurrentPageField = AccessTools.Field(_powersTabType, "currentPage");
+
+                    var powersDrawMethod = AccessTools.Method(_powersTabType, "draw", new[] { typeof(SpriteBatch) });
+                    if (powersDrawMethod != null)
+                    {
+                        harmony.Patch(
+                            original: powersDrawMethod,
+                            prefix: new HarmonyMethod(typeof(GameMenuPatches), nameof(PowersDraw_Prefix)),
+                            postfix: new HarmonyMethod(typeof(GameMenuPatches), nameof(PowersDraw_Postfix))
+                        );
+                        Monitor.Log("PowersTab draw patches applied.", LogLevel.Trace);
+                    }
+                }
+                else
+                {
+                    Monitor.Log("PowersTab type not found — skipping draw patches (PC build?).", LogLevel.Trace);
                 }
 
                 Monitor.Log("GameMenu patches applied.", LogLevel.Trace);
@@ -1587,6 +1620,68 @@ namespace AndroidConsolizer.Patches
 
                 _savedCraftingSelection = null;
             }
+        }
+
+        // ===== PowersTab draw patches =====
+
+        /// <summary>
+        /// Prefix on PowersTab.draw — hides the glow highlight texture so only the finger cursor shows.
+        /// PowersTab draws highlightTexture around powers[currentPage][selectedIndex].
+        /// ClickableTextureComponent.draw() checks visible, so setting it false suppresses the draw.
+        /// </summary>
+        private static void PowersDraw_Prefix(IClickableMenu __instance)
+        {
+            if (!ModEntry.Config.EnableGameMenuNavigation)
+                return;
+
+            var highlight = _powersHighlightField?.GetValue(__instance) as ClickableTextureComponent;
+            if (highlight != null)
+                highlight.visible = false;
+        }
+
+        /// <summary>
+        /// Postfix on PowersTab.draw — draws the finger cursor at the selected power's position
+        /// and restores highlightTexture visibility.
+        /// </summary>
+        private static void PowersDraw_Postfix(IClickableMenu __instance, SpriteBatch b)
+        {
+            if (!ModEntry.Config.EnableGameMenuNavigation)
+                return;
+
+            if (!Game1.options.gamepadControls || Game1.options.hardwareCursor)
+                goto restore;
+
+            // Read selectedIndex and powers list via reflection
+            int selectedIndex = _powersSelectedIndexField != null ? (int)_powersSelectedIndexField.GetValue(__instance) : -1;
+            int currentPage = _powersCurrentPageField != null ? (int)_powersCurrentPageField.GetValue(__instance) : 0;
+            var powers = _powersPowersField?.GetValue(__instance) as IList;
+
+            if (selectedIndex >= 0 && powers != null && currentPage < powers.Count)
+            {
+                var page = powers[currentPage] as IList;
+                if (page != null && selectedIndex < page.Count)
+                {
+                    var comp = page[selectedIndex] as ClickableTextureComponent;
+                    if (comp != null)
+                    {
+                        int cursorX = comp.bounds.Center.X;
+                        int cursorY = comp.bounds.Center.Y;
+
+                        b.Draw(Game1.mouseCursors,
+                            new Vector2(cursorX, cursorY),
+                            Game1.getSourceRectForStandardTileSheet(Game1.mouseCursors, 44, 16, 16),
+                            Color.White, 0f, Vector2.Zero,
+                            4f + Game1.dialogueButtonScale / 150f,
+                            SpriteEffects.None, 1f);
+                    }
+                }
+            }
+
+            restore:
+            // Restore visibility (in case feature is toggled off mid-session)
+            var highlightRestore = _powersHighlightField?.GetValue(__instance) as ClickableTextureComponent;
+            if (highlightRestore != null)
+                highlightRestore.visible = true;
         }
 
         /// <summary>
