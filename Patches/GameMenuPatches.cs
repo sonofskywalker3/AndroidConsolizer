@@ -59,7 +59,7 @@ namespace AndroidConsolizer.Patches
         private const int HeldScrollInitialDelay = 24; // ~400ms before acceleration starts
         private const int HeldScrollRepeatInterval = 8; // ~133ms between repeats (~2x manual speed)
         private const float StickEngageThreshold = 0.2f; // match game's button event threshold (not 0.5)
-        private const int SocialContentYOffset = 16; // px to shift cell content down from separator lines
+        private const int SocialRelStatusLift = 20; // px to move relationship status text up (shrinks bounds.Bottom)
 
         // Cached reflection for GameMenu junimoNoteIcon (Community Center tab icon)
         private static FieldInfo _junimoNoteIconField;
@@ -470,11 +470,11 @@ namespace AndroidConsolizer.Patches
         // ===== SocialPage.drawNPCSlot / drawFarmerSlot — shift content down within cells =====
 
         /// <summary>
-        /// Prefix on drawNPCSlot and drawFarmerSlot: temporarily shift sprites[i].bounds.Y
-        /// down by SocialContentYOffset so cell content draws lower, creating more space
-        /// between the separator line (top of cell) and the portrait/name/hearts.
-        /// The postfix restores the original Y so the separator line (drawn in the
-        /// SocialPage.draw loop after each slot method returns) stays in its original position.
+        /// Prefix on drawNPCSlot and drawFarmerSlot: temporarily shrink sprites[i].bounds.Height
+        /// so bounds.Bottom moves up, pulling the relationship status text closer to the name.
+        /// Y is unchanged so portrait/name/hearts stay in their original position.
+        /// The postfix restores Height so the separator line (drawn in the SocialPage.draw
+        /// loop after each slot method returns) stays in its original position.
         /// </summary>
         private static void DrawSlot_Prefix(object __instance, int i)
         {
@@ -486,8 +486,8 @@ namespace AndroidConsolizer.Patches
                 var sprite = sprites[i] as ClickableComponent;
                 if (sprite == null) return;
 
-                sprite.bounds = new Rectangle(sprite.bounds.X, sprite.bounds.Y + SocialContentYOffset,
-                    sprite.bounds.Width, sprite.bounds.Height - SocialContentYOffset);
+                sprite.bounds = new Rectangle(sprite.bounds.X, sprite.bounds.Y,
+                    sprite.bounds.Width, sprite.bounds.Height - SocialRelStatusLift);
             }
             catch { }
         }
@@ -502,8 +502,8 @@ namespace AndroidConsolizer.Patches
                 var sprite = sprites[i] as ClickableComponent;
                 if (sprite == null) return;
 
-                sprite.bounds = new Rectangle(sprite.bounds.X, sprite.bounds.Y - SocialContentYOffset,
-                    sprite.bounds.Width, sprite.bounds.Height + SocialContentYOffset);
+                sprite.bounds = new Rectangle(sprite.bounds.X, sprite.bounds.Y,
+                    sprite.bounds.Width, sprite.bounds.Height + SocialRelStatusLift);
             }
             catch { }
         }
