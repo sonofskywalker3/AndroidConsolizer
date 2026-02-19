@@ -101,6 +101,8 @@ namespace AndroidConsolizer
             Patches.JunimoNoteMenuPatches.Apply(harmony, this.Monitor);
             Patches.GameMenuPatches.Apply(harmony, this.Monitor);
             Patches.OptionsPagePatches.Apply(harmony, this.Monitor);
+            Patches.GmcmPatches.Initialize(this.Monitor);
+            Patches.GmcmPatches.Apply(harmony, this.Monitor);
 
             // Register events
             helper.Events.GameLoop.GameLaunched += this.OnGameLaunched;
@@ -301,6 +303,10 @@ namespace AndroidConsolizer
             {
                 Patches.InventoryManagementPatches.OnUpdateTicked();
             }
+
+            // Update GMCM snap navigation
+            if (Config.EnableGameMenuNavigation)
+                Patches.GmcmPatches.Update();
 
             // GMCM page diagnostic: poll pages[8] to detect when GMCM replaces OptionsPage
             if (Game1.activeClickableMenu is GameMenu gmDiag && gmDiag.pages.Count > 8)
