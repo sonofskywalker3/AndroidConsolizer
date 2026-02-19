@@ -121,6 +121,19 @@ namespace AndroidConsolizer.Patches
         private static bool _collectionsInTabMode = false;
         private static int _collectionsSelectedTabIndex = 0;
 
+        // SkillsPage: cached reflection fields and methods
+        private static FieldInfo _skillsSkillBarsField;      // List<ClickableTextureComponent> skillBars
+        private static FieldInfo _skillsSkillAreasField;      // List<ClickableTextureComponent> skillAreas
+        private static FieldInfo _skillsSpecialItemsField;    // List<ClickableTextureComponent> specialItems
+        private static MethodInfo _skillsSetSkillBarTooltipMethod;
+        private static MethodInfo _skillsSetSkillAreaTooltipMethod;
+        private static MethodInfo _skillsSetSpecialItemTooltipMethod;
+        private static MethodInfo _skillsHideTooltipMethod;
+        private static FieldInfo _skillsHoverBoxField;        // Rectangle hoverBox
+        private static FieldInfo _skillsWidthModField;        // float widthMod
+        private static FieldInfo _skillsHeightModField;       // float heightMod
+        private static bool _skillsFieldsCached;
+
         // MobileScrollbox.setYOffsetForScroll() method — sets yOffset AND syncs scrollbar visual
         private static MethodInfo _scrollboxSetYOffsetMethod;
 
@@ -269,6 +282,28 @@ namespace AndroidConsolizer.Patches
                     Monitor.Log("PowersTab type not found — skipping draw patches (PC build?).", LogLevel.Trace);
                 }
 
+                // Patch SkillsPage.receiveGamePadButton — replace vanilla's broken left/right-only handler
+                var skillsPageType = typeof(SkillsPage);
+                var skillsReceiveGPB = AccessTools.Method(skillsPageType, nameof(SkillsPage.receiveGamePadButton));
+                if (skillsReceiveGPB != null)
+                {
+                    harmony.Patch(
+                        original: skillsReceiveGPB,
+                        prefix: new HarmonyMethod(typeof(GameMenuPatches), nameof(SkillsReceiveGamePadButton_Prefix))
+                    );
+                }
+
+                // Patch SkillsPage.draw — postfix draws finger cursor + repositions tooltip
+                var skillsDrawMethod = AccessTools.Method(skillsPageType, "draw", new[] { typeof(SpriteBatch) });
+                if (skillsDrawMethod != null)
+                {
+                    harmony.Patch(
+                        original: skillsDrawMethod,
+                        prefix: new HarmonyMethod(typeof(GameMenuPatches), nameof(SkillsDraw_Prefix)),
+                        postfix: new HarmonyMethod(typeof(GameMenuPatches), nameof(SkillsDraw_Postfix))
+                    );
+                }
+
                 Monitor.Log("GameMenu patches applied.", LogLevel.Trace);
             }
             catch (Exception ex)
@@ -383,7 +418,11 @@ namespace AndroidConsolizer.Patches
                 FixCollectionsPage(page);
                 _lastFixedTab = tabIndex;
             }
-            // Future tabs: CraftingPage, OptionsPage
+            else if (typeName == "SkillsPage")
+            {
+                FixSkillsPage(page);
+                _lastFixedTab = tabIndex;
+            }
         }
 
         /// <summary>
@@ -1901,6 +1940,358 @@ namespace AndroidConsolizer.Patches
                 }
 
                 _savedCraftingSelection = null;
+            }
+        }
+
+        // ===== SkillsPage navigation + cursor =====
+
+        /// <summary>Cache reflection fields for SkillsPage on first use.</summary>
+        private static void CacheSkillsFields(IClickableMenu page)
+        {
+            if (_skillsFieldsCached) return;
+            var t = page.GetType();
+            _skillsSkillBarsField = AccessTools.Field(t, "skillBars");
+            _skillsSkillAreasField = AccessTools.Field(t, "skillAreas");
+            _skillsSpecialItemsField = AccessTools.Field(t, "specialItems");
+            _skillsSetSkillBarTooltipMethod = AccessTools.Method(t, "SetSkillBarTooltip", new[] { typeof(ClickableTextureComponent) });
+            _skillsSetSkillAreaTooltipMethod = AccessTools.Method(t, "SetSkillAreaTooltip", new[] { typeof(ClickableTextureComponent) });
+            _skillsSetSpecialItemTooltipMethod = AccessTools.Method(t, "SetSpecialItemTooltip", new[] { typeof(ClickableTextureComponent) });
+            _skillsHideTooltipMethod = AccessTools.Method(t, "HideTooltip");
+            _skillsHoverBoxField = AccessTools.Field(t, "hoverBox");
+            _skillsWidthModField = AccessTools.Field(t, "widthMod");
+            _skillsHeightModField = AccessTools.Field(t, "heightMod");
+            _skillsFieldsCached = true;
+        }
+
+        /// <summary>
+        /// Fix SkillsPage component wiring when the Skills tab is opened.
+        /// skillBars (profession stars) have no myID or neighbors — we assign IDs and wire them
+        /// into a grid with skillAreas so snap navigation can reach them.
+        /// </summary>
+        private static void FixSkillsPage(IClickableMenu page)
+        {
+            try
+            {
+                CacheSkillsFields(page);
+
+                var skillBars = _skillsSkillBarsField?.GetValue(page) as IList;
+                var skillAreas = _skillsSkillAreasField?.GetValue(page) as IList;
+                var specialItems = _skillsSpecialItemsField?.GetValue(page) as IList;
+
+                if (skillAreas == null)
+                {
+                    Monitor?.Log("[SkillsPage] No skillAreas found", LogLevel.Warn);
+                    return;
+                }
+
+                float heightMod = _skillsHeightModField != null ? (float)_skillsHeightModField.GetValue(page) : 1f;
+
+                // Build a map of which skillBars exist at which grid position.
+                // skillBars are ordered: tier1-row0, tier1-row1, ..., tier1-row4, tier2-row0, ...
+                // But only earned professions have bars. Identify by Y position matching skillArea Y.
+                // From decompiled source: skillBar Y = num9 + j * heightMod * 60
+                //   where num9 = yPositionOnScreen + 90 * heightMod - 4
+                // skillArea Y = same formula: num9 + k * heightMod * 60
+                // Tier 1 bars (i=4) have X = num10 + 140 (approx), Tier 2 bars (i=9) have X = num10 + 344 (approx)
+
+                // Strategy: match skillBars to rows by Y, then determine tier by X order within a row
+                var barsByRow = new Dictionary<int, List<ClickableTextureComponent>>(); // row -> bars sorted by X
+
+                if (skillBars != null)
+                {
+                    foreach (ClickableTextureComponent bar in skillBars)
+                    {
+                        // Find which row this bar belongs to by matching Y to skillAreas
+                        int bestRow = -1;
+                        int bestDist = int.MaxValue;
+                        for (int r = 0; r < skillAreas.Count; r++)
+                        {
+                            var area = skillAreas[r] as ClickableComponent;
+                            if (area == null) continue;
+                            int dist = Math.Abs(bar.bounds.Y - area.bounds.Y);
+                            if (dist < bestDist)
+                            {
+                                bestDist = dist;
+                                bestRow = r;
+                            }
+                        }
+                        if (bestRow >= 0 && bestDist < (int)(heightMod * 30)) // within half a row height
+                        {
+                            if (!barsByRow.ContainsKey(bestRow))
+                                barsByRow[bestRow] = new List<ClickableTextureComponent>();
+                            barsByRow[bestRow].Add(bar);
+                        }
+                    }
+
+                    // Sort each row's bars by X to determine tier (leftmost = tier1, rightmost = tier2)
+                    foreach (var kv in barsByRow)
+                        kv.Value.Sort((a, b2) => a.bounds.X.CompareTo(b2.bounds.X));
+                }
+
+                // Assign IDs: tier1 = 100+row, tier2 = 200+row
+                foreach (var kv in barsByRow)
+                {
+                    int row = kv.Key;
+                    var bars = kv.Value;
+                    for (int tier = 0; tier < bars.Count && tier < 2; tier++)
+                    {
+                        int baseId = (tier == 0) ? 100 : 200;
+                        bars[tier].myID = baseId + row;
+                    }
+                }
+
+                // Wire skillAreas: fix rightNeighborID to point to first available bar in that row
+                for (int k = 0; k < skillAreas.Count; k++)
+                {
+                    var area = skillAreas[k] as ClickableComponent;
+                    if (area == null) continue;
+
+                    if (barsByRow.ContainsKey(k) && barsByRow[k].Count > 0)
+                        area.rightNeighborID = barsByRow[k][0].myID; // tier 1 bar
+                    else
+                        area.rightNeighborID = -1;
+                }
+
+                // Wire skillBars neighbors
+                foreach (var kv in barsByRow)
+                {
+                    int row = kv.Key;
+                    var bars = kv.Value;
+
+                    for (int tier = 0; tier < bars.Count && tier < 2; tier++)
+                    {
+                        var bar = bars[tier];
+
+                        // Left neighbor: previous tier in same row, or skillArea
+                        if (tier == 0)
+                            bar.leftNeighborID = row; // skillArea myID = row index
+                        else if (tier == 1 && bars.Count > 1)
+                            bar.leftNeighborID = bars[0].myID; // tier 1 in same row
+
+                        // Right neighbor: next tier in same row, or -1
+                        if (tier == 0 && bars.Count > 1)
+                            bar.rightNeighborID = bars[1].myID;
+                        else
+                            bar.rightNeighborID = -1;
+
+                        // Up neighbor: same tier in row above, or tab bar
+                        int upRow = row - 1;
+                        if (upRow >= 0 && barsByRow.ContainsKey(upRow) && barsByRow[upRow].Count > tier)
+                            bar.upNeighborID = barsByRow[upRow][tier].myID;
+                        else if (upRow >= 0)
+                            bar.upNeighborID = upRow; // fall back to skillArea above
+                        else
+                            bar.upNeighborID = 12341; // tab bar
+
+                        // Down neighbor: same tier in row below, or specialItems, or -1
+                        int downRow = row + 1;
+                        if (downRow < skillAreas.Count && barsByRow.ContainsKey(downRow) && barsByRow[downRow].Count > tier)
+                            bar.downNeighborID = barsByRow[downRow][tier].myID;
+                        else if (downRow < skillAreas.Count)
+                            bar.downNeighborID = downRow; // fall back to skillArea below
+                        else
+                            bar.downNeighborID = -1;
+                    }
+                }
+
+                // Ensure skillBars are in allClickableComponents so moveCursorInDirection can find them
+                var allComps = page.allClickableComponents;
+                if (allComps != null && skillBars != null)
+                {
+                    foreach (ClickableTextureComponent bar in skillBars)
+                    {
+                        if (bar.myID >= 100 && !allComps.Contains(bar))
+                            allComps.Add(bar);
+                    }
+                }
+
+                bool verbose = ModEntry.Config.VerboseLogging;
+                if (verbose)
+                {
+                    Monitor?.Log($"[SkillsPage] Fixed wiring: {skillBars?.Count ?? 0} skillBars, {skillAreas.Count} skillAreas, {specialItems?.Count ?? 0} specialItems", LogLevel.Info);
+                    foreach (var kv in barsByRow)
+                    {
+                        foreach (var bar in kv.Value)
+                            Monitor?.Log($"[SkillsPage]   Bar row={kv.Key} ID={bar.myID} bounds=({bar.bounds.X},{bar.bounds.Y},{bar.bounds.Width},{bar.bounds.Height}) L={bar.leftNeighborID} R={bar.rightNeighborID} U={bar.upNeighborID} D={bar.downNeighborID}", LogLevel.Info);
+                    }
+                    for (int k = 0; k < skillAreas.Count; k++)
+                    {
+                        var area = skillAreas[k] as ClickableComponent;
+                        if (area != null)
+                            Monitor?.Log($"[SkillsPage]   Area row={k} ID={area.myID} R={area.rightNeighborID} U={area.upNeighborID} D={area.downNeighborID}", LogLevel.Info);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Monitor?.Log($"[SkillsPage] Error in FixSkillsPage: {ex.Message}", LogLevel.Error);
+            }
+        }
+
+        /// <summary>
+        /// Prefix on SkillsPage.receiveGamePadButton — replaces vanilla's broken left/right-only
+        /// handler with proper grid navigation using snap nav (moveCursorInDirection).
+        /// Shows tooltip for the newly snapped component after each navigation.
+        /// </summary>
+        private static bool SkillsReceiveGamePadButton_Prefix(SkillsPage __instance, Buttons b)
+        {
+            if (!ModEntry.Config.EnableGameMenuNavigation)
+                return true;
+
+            try
+            {
+                int direction = -1;
+                switch (b)
+                {
+                    case Buttons.DPadUp:
+                    case Buttons.LeftThumbstickUp:
+                        direction = 0; // up
+                        break;
+                    case Buttons.DPadRight:
+                    case Buttons.LeftThumbstickRight:
+                        direction = 1; // right
+                        break;
+                    case Buttons.DPadDown:
+                    case Buttons.LeftThumbstickDown:
+                        direction = 2; // down
+                        break;
+                    case Buttons.DPadLeft:
+                    case Buttons.LeftThumbstickLeft:
+                        direction = 3; // left
+                        break;
+                }
+
+                if (direction >= 0)
+                {
+                    // Use the game's own snap navigation with our fixed wiring
+                    __instance.moveCursorInDirection(direction);
+                    ShowSkillsTooltipForSnapped(__instance);
+                    return false; // skip vanilla
+                }
+
+                // Let other buttons (A, B, etc.) pass through to vanilla
+                // B is handled by GameMenu.receiveGamePadButton before it reaches here
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Monitor?.Log($"[SkillsPage] Error in receiveGamePadButton prefix: {ex.Message}", LogLevel.Error);
+                return true;
+            }
+        }
+
+        /// <summary>Show the appropriate tooltip for the currently snapped component on SkillsPage.</summary>
+        private static void ShowSkillsTooltipForSnapped(SkillsPage page)
+        {
+            try
+            {
+                CacheSkillsFields(page);
+                var snapped = page.currentlySnappedComponent;
+                if (snapped == null)
+                {
+                    _skillsHideTooltipMethod?.Invoke(page, null);
+                    return;
+                }
+
+                _skillsHideTooltipMethod?.Invoke(page, null);
+
+                int id = snapped.myID;
+
+                // skillBars: IDs 100-104 (tier 1) or 200-204 (tier 2)
+                if (id >= 100 && id < 300 && snapped is ClickableTextureComponent barComp)
+                {
+                    _skillsSetSkillBarTooltipMethod?.Invoke(page, new object[] { barComp });
+                }
+                // skillAreas: IDs 0-4
+                else if (id >= 0 && id <= 4 && snapped is ClickableTextureComponent areaComp)
+                {
+                    _skillsSetSkillAreaTooltipMethod?.Invoke(page, new object[] { areaComp });
+                }
+                // specialItems would be 10201+ (from downNeighborID on last skillArea)
+                else if (snapped is ClickableTextureComponent specialComp)
+                {
+                    var specialItems = _skillsSpecialItemsField?.GetValue(page) as IList;
+                    if (specialItems != null && specialItems.Contains(specialComp))
+                    {
+                        _skillsSetSpecialItemTooltipMethod?.Invoke(page, new object[] { specialComp });
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Monitor?.Log($"[SkillsPage] Error showing tooltip: {ex.Message}", LogLevel.Error);
+            }
+        }
+
+        /// <summary>
+        /// Prefix on SkillsPage.draw — reposition tooltip hoverBox to be near the selected component
+        /// instead of hardcoded portrait area. Top-left of tooltip at bottom-right of component.
+        /// </summary>
+        private static void SkillsDraw_Prefix(SkillsPage __instance)
+        {
+            if (!ModEntry.Config.EnableGameMenuNavigation || !Game1.options.gamepadControls)
+                return;
+
+            try
+            {
+                CacheSkillsFields(__instance);
+                var snapped = __instance.currentlySnappedComponent;
+                if (snapped == null || _skillsHoverBoxField == null)
+                    return;
+
+                var hoverBox = (Rectangle)_skillsHoverBoxField.GetValue(__instance);
+
+                // Only reposition if a tooltip is actually showing (hoverBox has size)
+                if (hoverBox.Width <= 0 || hoverBox.Height <= 0)
+                    return;
+
+                // Position: top-left of tooltip at bottom-right of cursor/component
+                int newX = snapped.bounds.Right + 16;
+                int newY = snapped.bounds.Bottom;
+
+                // Keep tooltip on screen
+                if (newX + hoverBox.Width > __instance.xPositionOnScreen + __instance.width)
+                    newX = snapped.bounds.Left - hoverBox.Width - 16;
+                if (newY + hoverBox.Height > __instance.yPositionOnScreen + __instance.height)
+                    newY = snapped.bounds.Top - hoverBox.Height;
+
+                hoverBox.X = newX;
+                hoverBox.Y = newY;
+                _skillsHoverBoxField.SetValue(__instance, hoverBox);
+            }
+            catch (Exception ex)
+            {
+                Monitor?.Log($"[SkillsPage] Error in draw prefix: {ex.Message}", LogLevel.Error);
+            }
+        }
+
+        /// <summary>
+        /// Postfix on SkillsPage.draw — draws finger cursor at the currently snapped component.
+        /// </summary>
+        private static void SkillsDraw_Postfix(SkillsPage __instance, SpriteBatch b)
+        {
+            if (!ModEntry.Config.EnableGameMenuNavigation || !Game1.options.gamepadControls)
+                return;
+
+            try
+            {
+                var snapped = __instance.currentlySnappedComponent;
+                if (snapped == null)
+                    return;
+
+                int cursorX = snapped.bounds.Center.X;
+                int cursorY = snapped.bounds.Center.Y;
+
+                b.Draw(Game1.mouseCursors,
+                    new Vector2(cursorX, cursorY),
+                    Game1.getSourceRectForStandardTileSheet(Game1.mouseCursors, 44, 16, 16),
+                    Color.White, 0f, Vector2.Zero,
+                    4f + Game1.dialogueButtonScale / 150f,
+                    SpriteEffects.None, 1f);
+            }
+            catch (Exception ex)
+            {
+                Monitor?.Log($"[SkillsPage] Error in draw postfix: {ex.Message}", LogLevel.Error);
             }
         }
 
