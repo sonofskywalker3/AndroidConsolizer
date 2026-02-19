@@ -18,46 +18,39 @@ For completed features and their technical reference, see `DONE.md`.
 - **Part of the Main Menu Overhaul project — see #14c.**
 - **File:** `Patches/GameMenuPatches.cs`
 
-### ~~14. Social Tab — Right Stick Scrolling~~ DONE (v3.3.44-v3.3.47)
-- Fixed: Right stick now jumps 3 slots at a time. Suppressed right stick Y at GetState level on social tab, poll RawRightStickY in SocialUpdate_Prefix. Fixed held-scroll threshold (0.2 to match game's button event threshold) and direction-switching.
+### 14. Social Tab — Right Stick Scrolling
+- Right stick still scrolls like vanilla (smooth MobileScrollBox scroll) instead of our 3-at-a-time slot navigation.
+- **Root cause (v3.3.43 logs):** Game NEVER sends `RightThumbstickDown`/`Up` button events through `receiveGamePadButton` on the social page. It reads right stick directly from `GetState()` to drive `MobileScrollBox`.
+- **Fix:** Poll right stick in `SocialUpdate_Prefix` to detect initial press ourselves (track neutral→engaged transition). Suppress right stick Y at GetState level while social page is active so vanilla scrollbox doesn't also scroll.
+- **File:** `Patches/GameMenuPatches.cs`, `Patches/GameplayButtonPatches.cs`
 
-### ~~14. Social Tab — Scrollbar Doesn't Track Left Stick~~ DONE (v3.3.48)
-- Fixed: Was setting `yOffsetForScroll` field directly via reflection, bypassing `MobileScrollbox.setYOffsetForScroll()` which syncs the scrollbar via `scrollBar.setPercentage()`. Changed both call sites to invoke the method instead.
-
-### 14a. Gift Log Improvements — PARTIALLY DONE
-- ~~**Bumper-switch return position**~~ — DONE (v3.3.49). Harmony postfix on ProfileMenu.ChangeCharacter tracks villager name. Name→index resolution on return via SocialPage.SocialEntries.
-- ~~**Scroll-to-top on return**~~ — DONE (v3.3.50). Saves original slotPosition when A opens gift log, restores on return. Falls back to scroll-to-visible if LB/RB moved to far-away villager.
-- **Visible cursor:** No visible cursor/selection indicator on gift items in ProfileMenu. Arrow buttons (LB/RB/LT/RT) get slightly larger when selected but hard to see on small screens. Diagnostic logging added (v3.3.51). Need to check: are snap components set up with IDs/neighbors? Does DPad navigation work? Is drawMouse suppressed?
+### 14. Social Tab — Scrollbar Doesn't Track Left Stick
+- Visual scrollbar doesn't update when using left stick/D-pad to navigate the villager list.
+- We set `slotPosition` and `yOffsetForScroll` via reflection, but the scrollbar visual may be tied to a separate field or need an explicit update call.
+- **Investigation needed:** Check how `MobileScrollBox` renders its scrollbar. May need to call a scrollbar update method or set a scrollbar position field after changing `yOffsetForScroll`.
 - **File:** `Patches/GameMenuPatches.cs`
 
-### ~~14b. Collections Tab — Sub-Tab Navigation~~ DONE (v3.3.53-v3.3.55)
-- Fixed: D-pad grid navigation + side tab selection. Left from col 0 enters tab mode, A switches tab. Finger cursor replaces red highlight box. Draw-phase cursor positioning (item bounds.Y only valid during draw).
-
-### 14b-future. Collections Tab — Layout Resize (console parity)
-- Android layout wastes space: items only fill ~2 of 4 rows, rest hidden behind side tabs and info panel. This is a **vanilla Android issue** (confirmed in unmodded game).
-- **Console approach:** Collections takes the full screen width, item tooltips shown on hover instead of a permanent side info panel.
-- **Investigation needed:** Check Switch version for exact layout. May need to rebuild CollectionsPage layout (resize mainBox, hide infoBox, add tooltip on cursor).
+### 14a. Gift Log Improvements
+- **Visible cursor:** No visible cursor/selection indicator when viewing a villager's gift log (ProfileMenu). Need to investigate what components exist and add cursor support.
+- **Bumper-switch return position:** Using LB/RB to switch villagers inside the gift log doesn't update the saved return index. Pressing B returns to the villager you originally pressed A on, not the one you switched to. Fix: patch ProfileMenu's `ChangeCharacter` to update `_savedSocialReturnIndex`, or detect the current villager on ProfileMenu exit.
+- **Scroll-to-top on return (cosmetic, non-blocking):** Returning from gift log for villagers 5+ scrolls them to the top of the screen. Villagers 1-4 stay in place since they're already visible at `slotPosition=0`. Cause: restore sets `slotPosition = snapTargetIndex` which puts the villager at the top. Could save original `slotPosition` alongside the slot index for a more natural return position.
+- **Log evidence (v3.3.42):** `FixSocialPage` is called twice on gift log exit (ChangeTab_Postfix + OnGameMenuOpened). Fix: don't clear `_savedSocialReturnIndex` in FixSocialPage; clear on next user input instead.
 - **File:** `Patches/GameMenuPatches.cs`
 
-### ~~14f. Crafting Tab — Replace Red Square with Finger Cursor~~ DONE (v3.3.57)
-- Fixed: Draw prefix nulls selectedCraftingItem to suppress inline drawTextureBox red highlight, postfix restores and draws finger cursor at selected recipe's bounds center.
+### 14b. Collections/Shipping Tab — Vertical Sub-Tabs Unreachable
+- No way to switch between vertical sub-tabs (Crops, Fish, Recipes, Achievements, etc.) using controller. Only first sub-tab accessible.
+- **On console:** LT/RT swap between vertical sub-tabs, LB/RB swap main tabs.
+- **Fix approaches:**
+  1. **Triggers for sub-tab switching (console parity):** LT/RT cycle through vertical sub-tabs. Check if triggers already used on this tab.
+  2. **Replace red-box selector with visible cursor:** More work but fixes underlying navigation model.
+- **File:** `Patches/GameMenuPatches.cs` (new patches needed)
 
-### ~~14g. Collections Tab — Left/Right Cycles Tooltips Without Moving Cursor~~ DONE (v3.3.56)
-- Fixed: NavigateCollectionsItem now syncs _selectedItemIndex via reflection after updating currentlySelectedComponent, keeping game's internal state consistent.
-
-### ~~14h. LT/RT Reach Community Center Tab~~ DONE (v3.3.58)
-- Fixed: LT from first tab and RT from last tab now click junimoNoteIcon via reflection. The icon is outside the pages list (pages.Count=9), matching game's own LB/RB special-case behavior.
-
-### 14i. Community Center (JunimoNote) — Tab Navigation from GameMenu
-- When entering CC bundles page via RT/LT from GameMenu, there's no way to get back to GameMenu tabs.
-- **RT** should return to Inventory tab (first GameMenu tab)
-- **LT** should return to Options tab (last GameMenu tab)
-- **LB/RB** should swap between CC rooms (Pantry, Crafts Room, Fish Tank, etc.)
-- **Left/right arrow buttons**: Can be selected with cursor, but pressing A doesn't navigate to next/previous room. Need to fire `receiveLeftClick` at arrow bounds on A press.
-- **File:** `Patches/JunimoNoteMenuPatches.cs` and/or `Patches/GameMenuPatches.cs`
-
-### ~~20. Settings Menu Controller Navigation~~ DONE (v3.3.59)
-- Fixed: Free cursor navigation with right stick scrolling on Options page.
+### 20. Settings Menu Controller Navigation
+- Options menu uses free cursor, not snap-based.
+- Left joystick moves free cursor anywhere, right joystick scrolls options list.
+- Can reach GMCM "Mod Options" button by moving cursor below visible area (1px visible at bottom).
+- Full fix: inject snap navigation for sliders, checkboxes, dropdowns. Complex.
+- **File:** Would need new `Patches/OptionsPagePatches.cs` or extend `GameMenuPatches.cs`
 
 ### 14e. CarpenterMenu "Build" Button Unaffordable — TO INVESTIGATE
 - Clicking "Build" for a building you can't afford dumps back to shop. Console greys out the button.
@@ -196,29 +189,9 @@ For completed features and their technical reference, see `DONE.md`.
 
 ---
 
-## GMCM Android Fork
-
-Fork of Generic Mod Config Menu (spacechase0, MIT license) as a standalone drop-in replacement with full controller navigation on Android. Same UniqueID (`spacechase0.GenericModConfigMenu`).
-
-**Repo:** `C:\Users\Jeff\Documents\Projects\GMCM-Android\`
-
-### Phases
-- [ ] **Phase 1:** Repo setup & clean build
-- [ ] **Phase 2:** Table navigation system (D-pad Up/Down/Left/Right, focus tracking, auto-scroll)
-- [ ] **Phase 3:** Element-specific interactions (checkbox, slider, dropdown, button)
-- [ ] **Phase 4:** Visual focus indicator (finger cursor)
-- [ ] **Phase 5:** Menu-level integration (B back, left stick suppression)
-- [ ] **Phase 6:** Remove Android skips (SButton, KeybindList, text input)
-- [ ] **Phase 7:** Fix GMCM icon positioning on title/main menu (was #26 — now our bug since we own the code)
-- [ ] **Phase 8:** AndroidConsolizer integration (remove GmcmPatches.cs, update manifest/sync)
-
----
-
 ## Not Our Bug (Tracked for Reference)
 
-### 26. Title Screen UI Elements Mispositioned
-- SMAPI details button and mod menu button positioned incorrectly on main/title menu.
-- **Confirmed on:** G Cloud (1920x1080), NXTPaper 11 Plus.
-- Likely SMAPI scaling/anchor bug at certain resolutions.
-- **Note:** GMCM icon positioning is now our responsibility via the fork (Phase 7).
-- **Not our bug** for SMAPI buttons — SMAPI responsibility.
+### 26. SMAPI Menu Button Position (G Cloud Title Screen)
+- SMAPI details and mod menu button positioned ~1/3 up screen instead of corner. Cannot tap or A-press them.
+- G Cloud 1920x1080 — SMAPI scaling/anchor bug at 1080p.
+- **Recommendation:** Report to SMAPI, not our responsibility.
