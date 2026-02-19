@@ -293,14 +293,13 @@ namespace AndroidConsolizer.Patches
                     );
                 }
 
-                // Patch SkillsPage.draw — postfix draws finger cursor + repositions tooltip
+                // Patch SkillsPage.draw — prefix repositions tooltip near selected component
                 var skillsDrawMethod = AccessTools.Method(skillsPageType, "draw", new[] { typeof(SpriteBatch) });
                 if (skillsDrawMethod != null)
                 {
                     harmony.Patch(
                         original: skillsDrawMethod,
-                        prefix: new HarmonyMethod(typeof(GameMenuPatches), nameof(SkillsDraw_Prefix)),
-                        postfix: new HarmonyMethod(typeof(GameMenuPatches), nameof(SkillsDraw_Postfix))
+                        prefix: new HarmonyMethod(typeof(GameMenuPatches), nameof(SkillsDraw_Prefix))
                     );
                 }
 
@@ -2262,36 +2261,6 @@ namespace AndroidConsolizer.Patches
             catch (Exception ex)
             {
                 Monitor?.Log($"[SkillsPage] Error in draw prefix: {ex.Message}", LogLevel.Error);
-            }
-        }
-
-        /// <summary>
-        /// Postfix on SkillsPage.draw — draws finger cursor at the currently snapped component.
-        /// </summary>
-        private static void SkillsDraw_Postfix(SkillsPage __instance, SpriteBatch b)
-        {
-            if (!ModEntry.Config.EnableGameMenuNavigation || !Game1.options.gamepadControls)
-                return;
-
-            try
-            {
-                var snapped = __instance.currentlySnappedComponent;
-                if (snapped == null)
-                    return;
-
-                int cursorX = snapped.bounds.Center.X;
-                int cursorY = snapped.bounds.Center.Y;
-
-                b.Draw(Game1.mouseCursors,
-                    new Vector2(cursorX, cursorY),
-                    Game1.getSourceRectForStandardTileSheet(Game1.mouseCursors, 44, 16, 16),
-                    Color.White, 0f, Vector2.Zero,
-                    4f + Game1.dialogueButtonScale / 150f,
-                    SpriteEffects.None, 1f);
-            }
-            catch (Exception ex)
-            {
-                Monitor?.Log($"[SkillsPage] Error in draw postfix: {ex.Message}", LogLevel.Error);
             }
         }
 
