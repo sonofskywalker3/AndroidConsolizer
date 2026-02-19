@@ -184,8 +184,16 @@ namespace AndroidConsolizer
                 Patches.GameMenuPatches.OnGameMenuOpened(newGameMenu);
             }
 
-            // GMCM diagnostic: log structure of non-GameMenu menus opened from OptionsPage
-            if (e.NewMenu != null && !(e.NewMenu is GameMenu) && e.OldMenu is GameMenu)
+            // GMCM diagnostic: log ANY menu transition to understand how GMCM opens
+            if (e.NewMenu != null || e.OldMenu != null)
+            {
+                string oldType = e.OldMenu?.GetType().FullName ?? "null";
+                string newType = e.NewMenu?.GetType().FullName ?? "null";
+                Monitor.Log($"[GMCM-Diag] MenuChanged: {oldType} -> {newType}", LogLevel.Info);
+            }
+
+            // Log full structure of non-standard menus (not GameMenu, not null)
+            if (e.NewMenu != null && !(e.NewMenu is GameMenu))
             {
                 var menuType = e.NewMenu.GetType();
                 Monitor.Log($"[GMCM-Diag] Menu opened: {menuType.FullName} (assembly: {menuType.Assembly.GetName().Name})", LogLevel.Info);
