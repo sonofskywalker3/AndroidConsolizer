@@ -300,28 +300,52 @@ namespace AndroidConsolizer
                 Patches.InventoryManagementPatches.OnUpdateTicked();
             }
 
-            // GMCM page diagnostic: detect when GMCM replaces the Options page
+            // GMCM page diagnostic: detect when GMCM is active
             if (!_gmcmPageLogged && Game1.activeClickableMenu is GameMenu gmDiag)
             {
-                if (gmDiag.currentTab == 8) // optionsTab = 8
+                // Check if any page is non-standard, or if activeClickableMenu has changed type,
+                // or if _childMenu is set on GameMenu or any page
+                var currentPage = gmDiag.GetCurrentPage();
+                var childMenuField = AccessTools.Field(typeof(IClickableMenu), "_childMenu");
+                var gmChild = childMenuField?.GetValue(gmDiag);
+                var pageChild = currentPage != null ? childMenuField?.GetValue(currentPage) : null;
+
+                // Log if: _childMenu is set on GameMenu, or currentPage has a _childMenu, or currentPage is non-standard
+                bool hasGmChild = gmChild != null;
+                bool hasPageChild = pageChild != null;
+                bool nonStandardPage = currentPage != null
+                    && !(currentPage is OptionsPage)
+                    && !(currentPage is InventoryPage)
+                    && !(currentPage is CraftingPage)
+                    && !(currentPage is SocialPage)
+                    && !(currentPage is CollectionsPage)
+                    && !(currentPage is MapPage);
+
+                if (hasGmChild || hasPageChild || nonStandardPage)
                 {
-                    var page = gmDiag.GetCurrentPage();
-                    if (page != null && !(page is OptionsPage))
+                    _gmcmPageLogged = true;
+                    Monitor.Log($"[GMCM-Page] currentTab={gmDiag.currentTab}, pages.count={gmDiag.pages.Count}", LogLevel.Info);
+                    Monitor.Log($"[GMCM-Page] currentPage type: {currentPage?.GetType().FullName ?? "null"}", LogLevel.Info);
+                    Monitor.Log($"[GMCM-Page] GameMenu._childMenu: {gmChild?.GetType().FullName ?? "null"}", LogLevel.Info);
+                    Monitor.Log($"[GMCM-Page] currentPage._childMenu: {pageChild?.GetType().FullName ?? "null"}", LogLevel.Info);
+
+                    // Dump the interesting menu (child or non-standard page)
+                    var target = (IClickableMenu)gmChild ?? (IClickableMenu)pageChild ?? (nonStandardPage ? currentPage : null);
+                    if (target != null)
                     {
-                        _gmcmPageLogged = true;
-                        var pageType = page.GetType();
-                        Monitor.Log($"[GMCM-Page] Detected non-OptionsPage at optionsTab: {pageType.FullName} (assembly: {pageType.Assembly.GetName().Name})", LogLevel.Info);
-                        Monitor.Log($"[GMCM-Page] allClickableComponents: {page.allClickableComponents?.Count ?? -1}", LogLevel.Info);
-                        Monitor.Log($"[GMCM-Page] currentlySnappedComponent: {(page.currentlySnappedComponent != null ? $"ID={page.currentlySnappedComponent.myID}" : "null")}", LogLevel.Info);
+                        var targetType = target.GetType();
+                        Monitor.Log($"[GMCM-Page] === Dumping: {targetType.FullName} (assembly: {targetType.Assembly.GetName().Name}) ===", LogLevel.Info);
+                        Monitor.Log($"[GMCM-Page] allClickableComponents: {target.allClickableComponents?.Count ?? -1}", LogLevel.Info);
+                        Monitor.Log($"[GMCM-Page] currentlySnappedComponent: {(target.currentlySnappedComponent != null ? $"ID={target.currentlySnappedComponent.myID}" : "null")}", LogLevel.Info);
 
                         // Dump all fields
-                        var fields = pageType.GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+                        var fields = targetType.GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
                         Monitor.Log($"[GMCM-Page] Total fields: {fields.Length}", LogLevel.Info);
                         foreach (var f in fields)
                         {
                             try
                             {
-                                var val = f.GetValue(page);
+                                var val = f.GetValue(target);
                                 string valStr;
                                 if (val is System.Collections.IList list)
                                     valStr = $"[list] count={list.Count}";
@@ -339,7 +363,7 @@ namespace AndroidConsolizer
                         {
                             try
                             {
-                                if (f.GetValue(page) is System.Collections.IList list && list.Count > 0 && list.Count <= 100)
+                                if (f.GetValue(target) is System.Collections.IList list && list.Count > 0 && list.Count <= 100)
                                 {
                                     for (int i = 0; i < Math.Min(list.Count, 30); i++)
                                     {
@@ -357,6 +381,18 @@ namespace AndroidConsolizer
                             }
                             catch { }
                         }
+
+                        // Also check for nested _childMenu
+                        var targetChild = childMenuField?.GetValue(target);
+                        if (targetChild != null)
+                            Monitor.Log($"[GMCM-Page] target._childMenu: {targetChild.GetType().FullName}", LogLevel.Info);
+                    }
+
+                    // Also log ALL page types in the pages list
+                    for (int i = 0; i < gmDiag.pages.Count; i++)
+                    {
+                        var p = gmDiag.pages[i];
+                        Monitor.Log($"[GMCM-Page] pages[{i}]: {p?.GetType().FullName ?? "null"}", LogLevel.Info);
                     }
                 }
             }
