@@ -60,6 +60,17 @@ namespace AndroidConsolizer.Patches
         private const int HeldScrollRepeatInterval = 8; // ~133ms between repeats (~2x manual speed)
         private const float StickEngageThreshold = 0.2f; // match game's button event threshold (not 0.5)
         private const int SocialRelStatusLift = 20; // px to move relationship status text up (shrinks bounds.Bottom)
+        private const int SocialHeartsYAdjust = 12; // px to shift hearts down for vertical centering
+        private const int SocialIconsYAdjust = 20; // px to shift gift/chat icons and dots down
+
+        // Additional cached fields for NPC slot drawing (private layout positions)
+        private static FieldInfo _socialNameXField;
+        private static FieldInfo _socialHeartsXField;
+        private static FieldInfo _socialGiftsXField;
+        private static FieldInfo _socialTalkXField;
+        private static FieldInfo _socialWidthModField;
+        private static bool _npcDrawFieldsCached;
+        private static FieldInfo _optionsBigFontsField; // Android-only Options.bigFonts
 
         // Cached reflection for GameMenu junimoNoteIcon (Community Center tab icon)
         private static FieldInfo _junimoNoteIconField;
@@ -155,25 +166,24 @@ namespace AndroidConsolizer.Patches
                     );
                 }
 
-                // Patch SocialPage.drawNPCSlot — shift content down relative to separator lines
+                // Patch SocialPage.drawNPCSlot — full replacement to adjust per-element Y positions
                 var drawNPCSlotMethod = AccessTools.Method(typeof(SocialPage), "drawNPCSlot", new[] { typeof(SpriteBatch), typeof(int) });
                 if (drawNPCSlotMethod != null)
                 {
                     harmony.Patch(
                         original: drawNPCSlotMethod,
-                        prefix: new HarmonyMethod(typeof(GameMenuPatches), nameof(DrawSlot_Prefix)),
-                        postfix: new HarmonyMethod(typeof(GameMenuPatches), nameof(DrawSlot_Postfix))
+                        prefix: new HarmonyMethod(typeof(GameMenuPatches), nameof(DrawNPCSlot_Prefix))
                     );
                 }
 
-                // Patch SocialPage.drawFarmerSlot — same content shift for player rows
+                // Patch SocialPage.drawFarmerSlot — Height-only adjustment for relationship status lift
                 var drawFarmerSlotMethod = AccessTools.Method(typeof(SocialPage), "drawFarmerSlot", new[] { typeof(SpriteBatch), typeof(int) });
                 if (drawFarmerSlotMethod != null)
                 {
                     harmony.Patch(
                         original: drawFarmerSlotMethod,
-                        prefix: new HarmonyMethod(typeof(GameMenuPatches), nameof(DrawSlot_Prefix)),
-                        postfix: new HarmonyMethod(typeof(GameMenuPatches), nameof(DrawSlot_Postfix))
+                        prefix: new HarmonyMethod(typeof(GameMenuPatches), nameof(DrawFarmerSlot_Prefix)),
+                        postfix: new HarmonyMethod(typeof(GameMenuPatches), nameof(DrawFarmerSlot_Postfix))
                     );
                 }
 
@@ -467,16 +477,222 @@ namespace AndroidConsolizer.Patches
             }
         }
 
-        // ===== SocialPage.drawNPCSlot / drawFarmerSlot — shift content down within cells =====
+        // ===== SocialPage.drawNPCSlot — full replacement with per-element Y adjustments =====
 
         /// <summary>
-        /// Prefix on drawNPCSlot and drawFarmerSlot: temporarily shrink sprites[i].bounds.Height
-        /// so bounds.Bottom moves up, pulling the relationship status text closer to the name.
-        /// Y is unchanged so portrait/name/hearts stay in their original position.
-        /// The postfix restores Height so the separator line (drawn in the SocialPage.draw
-        /// loop after each slot method returns) stays in its original position.
+        /// Cache private layout fields from SocialPage on first drawNPCSlot call.
         /// </summary>
-        private static void DrawSlot_Prefix(object __instance, int i)
+        /// <summary>Snap vector to 4-pixel grid (Android-only Utility.To4 equivalent).</summary>
+        private static Vector2 SnapTo4(Vector2 v)
+            => new Vector2((int)(v.X / 4f) * 4, (int)(v.Y / 4f) * 4);
+
+        /// <summary>Read Android-only Options.bigFonts via reflection (false on PC).</summary>
+        private static bool GetBigFonts()
+        {
+            if (_optionsBigFontsField == null)
+                _optionsBigFontsField = AccessTools.Field(typeof(Options), "bigFonts");
+            return (bool?)_optionsBigFontsField?.GetValue(Game1.options) ?? false;
+        }
+
+        private static void CacheNPCDrawFields(object instance)
+        {
+            if (_npcDrawFieldsCached) return;
+            var type = instance.GetType();
+            _socialNameXField = AccessTools.Field(type, "nameX");
+            _socialHeartsXField = AccessTools.Field(type, "heartsX");
+            _socialGiftsXField = AccessTools.Field(type, "giftsX");
+            _socialTalkXField = AccessTools.Field(type, "talkX");
+            _socialWidthModField = AccessTools.Field(type, "widthMod");
+            _npcDrawFieldsCached = true;
+        }
+
+        /// <summary>
+        /// Replacement prefix for drawNPCSlot. Reproduces the original drawing logic
+        /// from the decompiled Android source with adjusted Y positions:
+        /// - Hearts: shifted down SocialHeartsYAdjust px for vertical centering
+        /// - Gift/chat icons and dots: shifted down SocialIconsYAdjust px
+        /// - Portrait, name: unchanged
+        /// - Relationship status: lifted via SocialRelStatusLift (reduced Bottom)
+        /// Returns false to skip the original method. Falls through on error.
+        /// </summary>
+        private static bool DrawNPCSlot_Prefix(object __instance, SpriteBatch b, int i)
+        {
+            try
+            {
+                CacheNPCDrawFields(__instance);
+
+                var sprites = _socialSpritesField?.GetValue(__instance) as IList;
+                var entries = _socialEntriesField?.GetValue(__instance) as IList;
+                if (sprites == null || entries == null || i < 0 || i >= sprites.Count || i >= entries.Count)
+                    return true;
+
+                var sprite = sprites[i] as ClickableTextureComponent;
+                var entryObj = entries[i];
+                if (sprite == null || entryObj == null) return false;
+
+                var menu = __instance as IClickableMenu;
+                if (menu == null) return true;
+                int slotHeight = (int)_socialSlotHeightField.GetValue(__instance);
+                int Y = sprite.bounds.Y;
+
+                // Culling (same as original)
+                if (Y < menu.yPositionOnScreen - slotHeight || Y > menu.yPositionOnScreen + menu.height)
+                    return false;
+
+                var mainBox = (Rectangle)_socialMainBoxField.GetValue(__instance);
+                int nameX = (int)(_socialNameXField?.GetValue(__instance) ?? 0);
+                int heartsX = (int)(_socialHeartsXField?.GetValue(__instance) ?? 0);
+                int giftsX = (int)(_socialGiftsXField?.GetValue(__instance) ?? 0);
+                int talkX = (int)(_socialTalkXField?.GetValue(__instance) ?? 0);
+                float widthMod = (float)(_socialWidthModField?.GetValue(__instance) ?? 1f);
+
+                // Read SocialEntry fields via reflection
+                var eType = entryObj.GetType();
+                string internalName = eType.GetField("InternalName")?.GetValue(entryObj) as string ?? "";
+                string displayName = eType.GetField("DisplayName")?.GetValue(entryObj) as string ?? "";
+                bool isDatable = (bool)(eType.GetField("IsDatable")?.GetValue(entryObj) ?? false);
+                bool isChild = (bool)(eType.GetField("IsChild")?.GetValue(entryObj) ?? false);
+                var gender = (Gender)(eType.GetField("Gender")?.GetValue(entryObj) ?? Gender.Male);
+                var friendship = eType.GetField("Friendship")?.GetValue(entryObj) as Friendship;
+
+                bool isMarried = friendship?.IsMarried() ?? false;
+                bool isRoommate = isMarried && ((bool)(eType.GetMethod("IsRoommateForCurrentPlayer")?.Invoke(entryObj, null) ?? false));
+                bool isMarriedToAnyone = (bool)(eType.GetMethod("IsMarriedToAnyone")?.Invoke(entryObj, null) ?? false);
+                bool isDating = friendship?.IsDating() ?? false;
+                bool isDivorced = friendship?.IsDivorced() ?? false;
+
+                // 1. Portrait (unchanged Y)
+                sprite.draw(b);
+
+                // 2. Name text (unchanged Y)
+                float lineHeight = Game1.smallFont.MeasureString("W").Y;
+                float langOff = (LocalizedContentManager.CurrentLanguageCode == LocalizedContentManager.LanguageCode.ru ||
+                                 LocalizedContentManager.CurrentLanguageCode == LocalizedContentManager.LanguageCode.ko)
+                                 ? (-lineHeight / 2f) : 0f;
+                var nameFont = (displayName.Length <= 10 || Game1.uiViewport.Width > 1400)
+                                ? Game1.dialogueFont : Game1.smallFont;
+                bool bigFonts = GetBigFonts();
+                Utility.drawTextWithShadow(b, displayName, nameFont,
+                    new Vector2(nameX, (float)(Y + 48) + langOff - (float)(isDatable ? (bigFonts ? 40 : 24) : 20)),
+                    Game1.textColor);
+
+                // 3. Hearts (adjusted: +SocialHeartsYAdjust for centering)
+                int heartLevel = Game1.player.getFriendshipHeartLevelForNPC(internalName);
+                int maxHearts = Math.Max(Utility.GetMaximumHeartsForCharacter(Game1.getCharacterFromName(internalName)), 10);
+                for (int j = 0; j < maxHearts; j++)
+                {
+                    int srcX = (j < heartLevel) ? 211 : 218;
+                    if (isDatable && friendship != null && !isDating && !isMarried && j >= 8)
+                        srcX = 211;
+
+                    Color hc = Color.White;
+                    if (isDatable && friendship != null && !isDating &&
+                        !(sprite.hoverText?.Split('_')[0].Equals("true") ?? false) && !isMarried && j >= 8)
+                        hc = Color.Black * 0.35f;
+
+                    if (j < 10)
+                        b.Draw(Game1.mouseCursors,
+                            new Vector2((float)(mainBox.X + heartsX) + (float)(j * 32) * widthMod,
+                                        Y + 64 - 28 + SocialHeartsYAdjust),
+                            new Rectangle(srcX, 428, 7, 6), hc, 0f, Vector2.Zero, 4f, SpriteEffects.None, 0.88f);
+                    else
+                        b.Draw(Game1.mouseCursors,
+                            new Vector2((float)(mainBox.X + heartsX) + (float)((j - 10) * 32) * widthMod,
+                                        Y + 64 + SocialHeartsYAdjust),
+                            new Rectangle(srcX, 428, 7, 6), Color.White, 0f, Vector2.Zero, 4f, SpriteEffects.None, 0.88f);
+                }
+
+                // 4. Relationship status text (lifted via SocialRelStatusLift)
+                if (isDatable || isRoommate)
+                {
+                    string relText;
+                    if (isRoommate)
+                        relText = (gender == Gender.Female)
+                            ? Game1.content.LoadString("Strings\\StringsFromCSFiles:SocialPage_Relationship_Housemate_Female")
+                            : Game1.content.LoadString("Strings\\StringsFromCSFiles:SocialPage_Relationship_Housemate_Male");
+                    else if (isMarried)
+                        relText = (gender == Gender.Female)
+                            ? Game1.content.LoadString("Strings\\StringsFromCSFiles:SocialPage_Relationship_Wife")
+                            : Game1.content.LoadString("Strings\\StringsFromCSFiles:SocialPage_Relationship_Husband");
+                    else if (isMarriedToAnyone)
+                        relText = (gender == Gender.Female)
+                            ? Game1.content.LoadString("Strings\\UI:SocialPage_Relationship_MarriedToOtherPlayer_FemaleNpc")
+                            : Game1.content.LoadString("Strings\\UI:SocialPage_Relationship_MarriedToOtherPlayer_MaleNpc");
+                    else if (!Game1.player.isMarriedOrRoommates() && isDating)
+                        relText = (gender == Gender.Female)
+                            ? Game1.content.LoadString("Strings\\StringsFromCSFiles:SocialPage_Relationship_Girlfriend")
+                            : Game1.content.LoadString("Strings\\StringsFromCSFiles:SocialPage_Relationship_Boyfriend");
+                    else if (isDivorced)
+                        relText = (gender == Gender.Female)
+                            ? Game1.content.LoadString("Strings\\StringsFromCSFiles:SocialPage_Relationship_ExWife")
+                            : Game1.content.LoadString("Strings\\StringsFromCSFiles:SocialPage_Relationship_ExHusband");
+                    else
+                        relText = (gender == Gender.Female)
+                            ? Game1.content.LoadString("Strings\\StringsFromCSFiles:SocialPage_Relationship_Single_Female")
+                            : Game1.content.LoadString("Strings\\StringsFromCSFiles:SocialPage_Relationship_Single_Male");
+
+                    int parseWidth = (IClickableMenu.borderWidth * 3 + 128 - 40 + 192) / 2;
+                    relText = Game1.parseText(relText, Game1.smallFont, parseWidth);
+                    var textSize = Game1.smallFont.MeasureString(relText);
+                    int adjustedBottom = Y + sprite.bounds.Height - SocialRelStatusLift;
+                    Utility.drawTextWithShadow(b, relText, Game1.smallFont,
+                        new Vector2(nameX, (float)adjustedBottom - (textSize.Y - lineHeight) - (float)(bigFonts ? 16 : 0)),
+                        Game1.textColor);
+                }
+
+                // 5. Gift/chat icons and dots (adjusted: +SocialIconsYAdjust)
+                if (!isMarriedToAnyone && !isChild)
+                {
+                    // Gift icon
+                    b.Draw(Game1.mouseCursors, SnapTo4(new Vector2(mainBox.X + giftsX, Y - 4 + SocialIconsYAdjust)),
+                        new Rectangle(229, 410, 14, 14), Color.White, 0f, Vector2.Zero, 4f, SpriteEffects.None, 0.88f);
+                    // Gift dot 1
+                    b.Draw(Game1.mouseCursors, SnapTo4(new Vector2(mainBox.X + giftsX - 12, Y + 32 + 20 + SocialIconsYAdjust)),
+                        new Rectangle(227 + ((friendship != null && friendship.GiftsThisWeek == 2) ? 9 : 0), 425, 9, 9),
+                        Color.White, 0f, Vector2.Zero, 4f, SpriteEffects.None, 0.88f);
+                    // Gift dot 2
+                    b.Draw(Game1.mouseCursors, SnapTo4(new Vector2(mainBox.X + giftsX + 32, Y + 32 + 20 + SocialIconsYAdjust)),
+                        new Rectangle(227 + ((friendship != null && friendship.GiftsThisWeek >= 1) ? 9 : 0), 425, 9, 9),
+                        Color.White, 0f, Vector2.Zero, 4f, SpriteEffects.None, 0.88f);
+                    // Chat icon
+                    b.Draw(Game1.mouseCursors2, SnapTo4(new Vector2(mainBox.X + talkX, Y + SocialIconsYAdjust)),
+                        new Rectangle(180, 175, 13, 11), Color.White, 0f, Vector2.Zero, 4f, SpriteEffects.None, 0.88f);
+                    // Chat dot
+                    b.Draw(Game1.mouseCursors, SnapTo4(new Vector2(mainBox.X + talkX + 8, Y + 32 + 20 + SocialIconsYAdjust)),
+                        new Rectangle(227 + ((friendship != null && friendship.TalkedToToday) ? 9 : 0), 425, 9, 9),
+                        Color.White, 0f, Vector2.Zero, 4f, SpriteEffects.None, 0.88f);
+                }
+
+                // 6. Ring/bouquet icon (unchanged Y, next to name)
+                if (isMarried)
+                {
+                    if (!isRoommate || internalName == "Krobus")
+                    {
+                        b.Draw(Game1.objectSpriteSheet,
+                            SnapTo4(new Vector2((float)nameX + Game1.dialogueFont.MeasureString(displayName).X, Y)),
+                            Game1.getSourceRectForStandardTileSheet(Game1.objectSpriteSheet, isRoommate ? 808 : 460, 16, 16),
+                            Color.White, 0f, Vector2.Zero, 2f, SpriteEffects.None, 0.88f);
+                    }
+                }
+                else if (isDating)
+                {
+                    b.Draw(Game1.objectSpriteSheet,
+                        SnapTo4(new Vector2((float)nameX + Game1.dialogueFont.MeasureString(displayName).X, Y)),
+                        Game1.getSourceRectForStandardTileSheet(Game1.objectSpriteSheet, isRoommate ? 808 : 458, 16, 16),
+                        Color.White, 0f, Vector2.Zero, 2f, SpriteEffects.None, 0.88f);
+                }
+            }
+            catch (Exception ex)
+            {
+                Monitor?.Log($"[SocialDraw] DrawNPCSlot_Prefix error: {ex.Message}", LogLevel.Error);
+                return true; // fall through to original on error
+            }
+            return false; // skip original
+        }
+
+        // ===== SocialPage.drawFarmerSlot — Height-only adjustment for relationship status =====
+
+        private static void DrawFarmerSlot_Prefix(object __instance, int i)
         {
             try
             {
@@ -492,7 +708,7 @@ namespace AndroidConsolizer.Patches
             catch { }
         }
 
-        private static void DrawSlot_Postfix(object __instance, int i)
+        private static void DrawFarmerSlot_Postfix(object __instance, int i)
         {
             try
             {
