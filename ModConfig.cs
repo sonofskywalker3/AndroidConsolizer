@@ -55,8 +55,11 @@ namespace AndroidConsolizer
         /// <summary>Whether to debounce furniture Y-button interactions (prevents rapid toggle between placed and picked up).</summary>
         public bool EnableFurnitureDebounce { get; set; } = true;
 
-        /// <summary>Whether to fix controller navigation on GameMenu tabs (Social, Animals, Crafting, Collections).</summary>
+        /// <summary>Whether to fix controller navigation on GameMenu tabs (Social, Animals, Crafting, Collections, Options).</summary>
         public bool EnableGameMenuNavigation { get; set; } = true;
+
+        /// <summary>Whether to use free cursor (vanilla) instead of snap navigation on the Options page and GMCM config page.</summary>
+        public bool FreeCursorOnSettings { get; set; } = false;
 
         /// <summary>
         /// Use bumpers (LB/RB) instead of triggers (LT/RT) for controls.
