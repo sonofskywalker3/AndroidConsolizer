@@ -35,9 +35,10 @@ namespace AndroidConsolizer.Patches
         private static Type _modConfigMenuType;
         private static Type _specificModConfigMenuType;
 
-        // SpaceShared Table reflection
-        private static FieldInfo _tableField;         // ModConfigMenu.Table (SpaceShared.UI.Table)
-        private static FieldInfo _tableRowsField;     // Table.rows (List<Element[]>)
+        // SpaceShared Table reflection — per-type because ModConfigMenu and SpecificModConfigMenu
+        // are sibling classes, each with their own Table field
+        private static readonly Dictionary<Type, FieldInfo> _tableFieldCache = new Dictionary<Type, FieldInfo>();
+        private static FieldInfo _tableRowsField;     // Table.Rows (List<Element[]>)
         private static PropertyInfo _tableScrollbarProp; // Table.Scrollbar
         private static FieldInfo _tableSizeField;     // Table.size (Vector2)
         private static FieldInfo _tableRowHeightField; // Table.rowHeight (int)
@@ -130,17 +131,23 @@ namespace AndroidConsolizer.Patches
                     return;
                 }
 
-                // The type we care about is ModConfigMenu (it's what appears as _childMenu)
-                var gmcmType = _modConfigMenuType ?? _specificModConfigMenuType;
-                _tableField = AccessTools.Field(gmcmType, "Table");
-                if (_tableField == null)
+                // Cache Table fields for both types
+                Type tableType = null;
+                foreach (var gmcmType in new[] { _modConfigMenuType, _specificModConfigMenuType })
                 {
-                    Monitor.Log("GMCM Table field not found.", LogLevel.Warn);
+                    if (gmcmType == null) continue;
+                    var tf = AccessTools.Field(gmcmType, "Table");
+                    if (tf != null)
+                    {
+                        _tableFieldCache[gmcmType] = tf;
+                        tableType = tf.FieldType;
+                    }
+                }
+                if (tableType == null)
+                {
+                    Monitor.Log("GMCM Table field not found on either menu type.", LogLevel.Warn);
                     return;
                 }
-
-                // SpaceShared.UI.Table
-                var tableType = _tableField.FieldType;
                 _tableRowsField = AccessTools.Field(tableType, "Rows");
                 _tableScrollbarProp = AccessTools.Property(tableType, "Scrollbar");
                 _tableSizeField = AccessTools.Field(tableType, "SizeImpl");
@@ -212,7 +219,7 @@ namespace AndroidConsolizer.Patches
         /// <summary>Apply Harmony patches for GMCM input interception.</summary>
         public static void Apply(Harmony harmony, IMonitor monitor)
         {
-            if (_modConfigMenuType == null)
+            if (_modConfigMenuType == null && _specificModConfigMenuType == null)
                 return;
 
             try
@@ -232,17 +239,20 @@ namespace AndroidConsolizer.Patches
                     Monitor.Log("GMCM receiveGamePadButton prefix applied (on IClickableMenu base).", LogLevel.Trace);
                 }
 
-                // Similarly, GMCM likely overrides receiveLeftClick — try patching it.
-                // If GMCM doesn't override it, patch the base.
-                var receiveLeftClick = AccessTools.Method(_modConfigMenuType, "receiveLeftClick",
-                    new[] { typeof(int), typeof(int), typeof(bool) });
-                if (receiveLeftClick != null)
+                // Patch receiveLeftClick on both GMCM menu types (they override it independently)
+                foreach (var gmcmType in new[] { _modConfigMenuType, _specificModConfigMenuType })
                 {
-                    harmony.Patch(
-                        original: receiveLeftClick,
-                        prefix: new HarmonyMethod(typeof(GmcmPatches), nameof(ReceiveLeftClick_Prefix))
-                    );
-                    Monitor.Log("GMCM receiveLeftClick prefix applied.", LogLevel.Trace);
+                    if (gmcmType == null) continue;
+                    var receiveLeftClick = AccessTools.Method(gmcmType, "receiveLeftClick",
+                        new[] { typeof(int), typeof(int), typeof(bool) });
+                    if (receiveLeftClick != null)
+                    {
+                        harmony.Patch(
+                            original: receiveLeftClick,
+                            prefix: new HarmonyMethod(typeof(GmcmPatches), nameof(ReceiveLeftClick_Prefix))
+                        );
+                        Monitor.Log($"GMCM receiveLeftClick prefix applied on {gmcmType.Name}.", LogLevel.Trace);
+                    }
                 }
 
                 Monitor.Log("GMCM Harmony patches applied.", LogLevel.Trace);
@@ -256,17 +266,17 @@ namespace AndroidConsolizer.Patches
         /// <summary>Check if the given menu is a GMCM menu type.</summary>
         public static bool IsGmcmMenu(IClickableMenu menu)
         {
-            if (menu == null || _modConfigMenuType == null)
+            if (menu == null || (_modConfigMenuType == null && _specificModConfigMenuType == null))
                 return false;
             var menuType = menu.GetType();
-            return menuType == _modConfigMenuType
+            return (_modConfigMenuType != null && menuType == _modConfigMenuType)
                 || (_specificModConfigMenuType != null && menuType == _specificModConfigMenuType);
         }
 
         /// <summary>Find the active GMCM menu (as _childMenu of GameMenu, or as activeClickableMenu on title).</summary>
         private static IClickableMenu FindGmcmMenu()
         {
-            if (_modConfigMenuType == null)
+            if (_modConfigMenuType == null && _specificModConfigMenuType == null)
                 return null;
 
             var active = Game1.activeClickableMenu;
@@ -304,11 +314,11 @@ namespace AndroidConsolizer.Patches
 
             // Log activation details
             var rows = GetRows(gmcmMenu);
-            Monitor?.Log($"[GMCM] Activated. Rows: {rows?.Count ?? -1}, Table: {GetTable(gmcmMenu)?.GetType().FullName ?? "null"}", LogLevel.Info);
+            Monitor?.Log($"[GMCM] Activated on {gmcmMenu.GetType().Name}. Rows: {rows?.Count ?? -1}, Table: {GetTable(gmcmMenu)?.GetType().FullName ?? "null"}", LogLevel.Info);
             if (rows != null && rows.Count > 0)
             {
-                // Log first few rows for debugging
-                for (int i = 0; i < Math.Min(rows.Count, 5); i++)
+                // Log first few rows with element bounds for debugging
+                for (int i = 0; i < Math.Min(rows.Count, 8); i++)
                 {
                     var row = rows[i] as object[];
                     if (row == null)
@@ -318,11 +328,14 @@ namespace AndroidConsolizer.Patches
                     }
                     string elems = "";
                     foreach (var e in row)
-                        elems += $"{e?.GetType().Name ?? "null"}, ";
+                    {
+                        var b = GetElementBounds(e);
+                        elems += $"{e?.GetType().Name ?? "null"}@({b.X},{b.Y},{b.Width}x{b.Height}), ";
+                    }
                     Monitor?.Log($"[GMCM]   Row[{i}]: [{elems.TrimEnd(',', ' ')}] interactive={IsRowInteractive(row)}", LogLevel.Info);
                 }
-                if (rows.Count > 5)
-                    Monitor?.Log($"[GMCM]   ... {rows.Count - 5} more rows", LogLevel.Info);
+                if (rows.Count > 8)
+                    Monitor?.Log($"[GMCM]   ... {rows.Count - 8} more rows", LogLevel.Info);
             }
 
             SnapCursorToRow(gmcmMenu);
@@ -337,12 +350,25 @@ namespace AndroidConsolizer.Patches
             _stickNavDir = 0;
         }
 
+        /// <summary>Get the Table field for the given menu instance's type.</summary>
+        private static FieldInfo GetTableField(object gmcmMenu)
+        {
+            if (gmcmMenu == null) return null;
+            var menuType = gmcmMenu.GetType();
+            if (_tableFieldCache.TryGetValue(menuType, out var cached))
+                return cached;
+            // Try resolving at runtime for unknown subtypes
+            var tf = AccessTools.Field(menuType, "Table");
+            if (tf != null)
+                _tableFieldCache[menuType] = tf;
+            return tf;
+        }
+
         /// <summary>Get the Table's rows list via reflection.</summary>
         private static IList GetRows(object gmcmMenu)
         {
-            if (_tableField == null || _tableRowsField == null)
-                return null;
-            var table = _tableField.GetValue(gmcmMenu);
+            if (_tableRowsField == null) return null;
+            var table = GetTable(gmcmMenu);
             if (table == null) return null;
             return _tableRowsField.GetValue(table) as IList;
         }
@@ -350,7 +376,7 @@ namespace AndroidConsolizer.Patches
         /// <summary>Get the Table object from the GMCM menu.</summary>
         private static object GetTable(object gmcmMenu)
         {
-            return _tableField?.GetValue(gmcmMenu);
+            return GetTableField(gmcmMenu)?.GetValue(gmcmMenu);
         }
 
         /// <summary>Get the Scrollbar from the Table.</summary>
