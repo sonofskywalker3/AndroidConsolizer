@@ -83,7 +83,14 @@ namespace AndroidConsolizer.Patches
             if (Game1.activeClickableMenu is GameMenu gm)
             {
                 var currentPage = gm.GetCurrentPage();
-                return currentPage is OptionsPage;
+                if (!(currentPage is OptionsPage))
+                    return false;
+                // Don't suppress left stick when GMCM is open as a child menu —
+                // let GMCM use its own vanilla controls.
+                var childMenu = gm.GetChildMenu();
+                if (childMenu != null && GmcmPatches.IsGmcmMenu(childMenu))
+                    return false;
+                return true;
             }
             return false;
         }
@@ -603,6 +610,9 @@ namespace AndroidConsolizer.Patches
             if (ModEntry.Config.FreeCursorOnSettings)
                 return;
             if (!Game1.options.gamepadControls)
+                return;
+            // Don't run our nav when GMCM is open as child menu
+            if (Game1.activeClickableMenu is GameMenu gm && gm.GetChildMenu() is IClickableMenu child && GmcmPatches.IsGmcmMenu(child))
                 return;
 
             try

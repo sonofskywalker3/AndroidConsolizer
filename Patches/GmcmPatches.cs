@@ -97,24 +97,10 @@ namespace AndroidConsolizer.Patches
         /// <summary>Try to detect and activate GMCM navigation. Called from OnUpdateTicked.</summary>
         public static void Update()
         {
-            if (!ModEntry.Config.EnableGameMenuNavigation || ModEntry.Config.FreeCursorOnSettings)
-            {
-                if (_isActive) Deactivate();
-                return;
-            }
-
-            // Check for GMCM menu
-            var gmcmMenu = FindGmcmMenu();
-            if (gmcmMenu != null)
-            {
-                if (!_isActive || _currentGmcmInstance != gmcmMenu)
-                    Activate(gmcmMenu);
-                UpdateNavigation(gmcmMenu);
-            }
-            else if (_isActive)
-            {
-                Deactivate();
-            }
+            // GMCM navigation is disabled — let GMCM use its own vanilla controls.
+            // Our custom snap navigation (D-pad, A/B interception, left stick suppression)
+            // was interfering with GMCM's own controller support.
+            if (_isActive) Deactivate();
         }
 
         /// <summary>Initialize reflection for GMCM types. Called once during mod init.</summary>
