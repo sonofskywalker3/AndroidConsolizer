@@ -2120,6 +2120,10 @@ namespace AndroidConsolizer.Patches
                     }
                 }
 
+                // Re-snap cursor to match the position moveCursorInDirection uses (3/4 point)
+                // instead of snapToDefaultClickableComponent's center position which lands on the text
+                page.snapCursorToCurrentSnappedComponent();
+
                 bool verbose = ModEntry.Config.VerboseLogging;
                 if (verbose)
                 {
