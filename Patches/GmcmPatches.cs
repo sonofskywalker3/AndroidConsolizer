@@ -317,9 +317,20 @@ namespace AndroidConsolizer.Patches
         {
             _isActive = true;
             _currentGmcmInstance = gmcmMenu;
-            _focusedRow = 0;
             _stickNavDir = 0;
             _stickNavInitial = true;
+
+            // Start at first interactive row (skip non-interactive headers)
+            _focusedRow = 0;
+            var initRows = GetRows(gmcmMenu);
+            if (initRows != null)
+            {
+                for (int i = 0; i < initRows.Count; i++)
+                {
+                    var r = initRows[i] as object[];
+                    if (IsRowInteractive(r)) { _focusedRow = i; break; }
+                }
+            }
 
             // Log activation details
             var rows = GetRows(gmcmMenu);
@@ -523,43 +534,14 @@ namespace AndroidConsolizer.Patches
             var target = interactive ?? (row.Length > 0 ? row[0] : null);
             if (target == null) return;
 
-            // Element.Bounds Y values are table-local (all rows report the same Y).
-            // Compute screen Y from: tableBounds.Y + (rowIndex - topRow) * rowHeight + rowHeight/2
-            var table = GetTable(gmcmMenu);
-            if (table == null) return;
-
-            var tableBounds = GetElementBounds(table);
-            int rowHeight = 0;
-            if (_tableRowHeightField != null)
+            // SpaceShared updates Element.Bounds to absolute screen positions during draw.
+            // After the first draw cycle, bounds are correct and we use them directly.
+            // On the very first frame (before draw), all rows may share the same Y —
+            // that's just a 1-frame glitch that self-corrects.
+            var bounds = GetElementBounds(target);
+            if (bounds != Rectangle.Empty)
             {
-                try { rowHeight = (int)_tableRowHeightField.GetValue(table); } catch { }
-            }
-
-            int topRow = 0;
-            var scrollbar = GetScrollbar(table);
-            if (scrollbar != null && _scrollbarTopRow != null)
-            {
-                try { topRow = (int)_scrollbarTopRow.GetValue(scrollbar); } catch { }
-            }
-
-            if (rowHeight > 0)
-            {
-                // Compute screen position from table layout
-                int screenY = tableBounds.Y + (_focusedRow - topRow) * rowHeight + rowHeight / 2;
-                // Element.Bounds.X is already an absolute screen coordinate (same as Table.Bounds.X)
-                // Don't add tableBounds.X again — just use elemBounds.X directly
-                var elemBounds = GetElementBounds(target);
-                int screenX = elemBounds.Width > 0
-                    ? elemBounds.X + elemBounds.Width / 2
-                    : tableBounds.X + tableBounds.Width / 2;
-                Game1.setMousePosition(screenX, screenY);
-            }
-            else
-            {
-                // Fallback to raw element bounds
-                var bounds = GetElementBounds(target);
-                if (bounds != Rectangle.Empty)
-                    Game1.setMousePosition(bounds.Center.X, bounds.Center.Y);
+                Game1.setMousePosition(bounds.Center.X, bounds.Center.Y);
             }
         }
 
