@@ -26,6 +26,9 @@ namespace AndroidConsolizer
         /// <summary>The mod's monitor instance for global access.</summary>
         internal static IMonitor ModMonitor;
 
+        /// <summary>Whether we've already logged the GMCM page structure this session.</summary>
+        private bool _gmcmPageLogged = false;
+
         /// <summary>The current toolbar row (0, 1, or 2) that the player should be locked to.</summary>
         private int currentToolbarRow = 0;
 
@@ -296,6 +299,70 @@ namespace AndroidConsolizer
             {
                 Patches.InventoryManagementPatches.OnUpdateTicked();
             }
+
+            // GMCM page diagnostic: detect when GMCM replaces the Options page
+            if (!_gmcmPageLogged && Game1.activeClickableMenu is GameMenu gmDiag)
+            {
+                if (gmDiag.currentTab == 8) // optionsTab = 8
+                {
+                    var page = gmDiag.GetCurrentPage();
+                    if (page != null && !(page is OptionsPage))
+                    {
+                        _gmcmPageLogged = true;
+                        var pageType = page.GetType();
+                        Monitor.Log($"[GMCM-Page] Detected non-OptionsPage at optionsTab: {pageType.FullName} (assembly: {pageType.Assembly.GetName().Name})", LogLevel.Info);
+                        Monitor.Log($"[GMCM-Page] allClickableComponents: {page.allClickableComponents?.Count ?? -1}", LogLevel.Info);
+                        Monitor.Log($"[GMCM-Page] currentlySnappedComponent: {(page.currentlySnappedComponent != null ? $"ID={page.currentlySnappedComponent.myID}" : "null")}", LogLevel.Info);
+
+                        // Dump all fields
+                        var fields = pageType.GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+                        Monitor.Log($"[GMCM-Page] Total fields: {fields.Length}", LogLevel.Info);
+                        foreach (var f in fields)
+                        {
+                            try
+                            {
+                                var val = f.GetValue(page);
+                                string valStr;
+                                if (val is System.Collections.IList list)
+                                    valStr = $"[list] count={list.Count}";
+                                else if (val is System.Collections.ICollection col)
+                                    valStr = $"[collection] count={col.Count}";
+                                else
+                                    valStr = val?.ToString() ?? "null";
+                                Monitor.Log($"[GMCM-Page]   {f.Name} : {f.FieldType.Name} = {valStr}", LogLevel.Info);
+                            }
+                            catch { }
+                        }
+
+                        // Dump list contents (option elements)
+                        foreach (var f in fields)
+                        {
+                            try
+                            {
+                                if (f.GetValue(page) is System.Collections.IList list && list.Count > 0 && list.Count <= 100)
+                                {
+                                    for (int i = 0; i < Math.Min(list.Count, 30); i++)
+                                    {
+                                        var item = list[i];
+                                        if (item is OptionsElement opt)
+                                            Monitor.Log($"[GMCM-Page]   {f.Name}[{i}]: {item.GetType().Name} label='{opt.label}' whichOption={opt.whichOption} bounds={opt.bounds}", LogLevel.Info);
+                                        else if (item is ClickableComponent cc)
+                                            Monitor.Log($"[GMCM-Page]   {f.Name}[{i}]: ClickableComponent ID={cc.myID} name='{cc.name}' bounds={cc.bounds}", LogLevel.Info);
+                                        else
+                                            Monitor.Log($"[GMCM-Page]   {f.Name}[{i}]: {item?.GetType().FullName ?? "null"}", LogLevel.Info);
+                                    }
+                                    if (list.Count > 30)
+                                        Monitor.Log($"[GMCM-Page]   ... {list.Count - 30} more items in {f.Name}", LogLevel.Info);
+                                }
+                            }
+                            catch { }
+                        }
+                    }
+                }
+            }
+            // Reset GMCM diagnostic flag when GameMenu closes
+            if (_gmcmPageLogged && !(Game1.activeClickableMenu is GameMenu))
+                _gmcmPageLogged = false;
 
             // Only enforce toolbar fix during gameplay
             if (!Config.EnableConsoleToolbar || Game1.activeClickableMenu != null || !Context.IsPlayerFree)
