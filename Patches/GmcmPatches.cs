@@ -141,10 +141,10 @@ namespace AndroidConsolizer.Patches
 
                 // SpaceShared.UI.Table
                 var tableType = _tableField.FieldType;
-                _tableRowsField = AccessTools.Field(tableType, "rows");
+                _tableRowsField = AccessTools.Field(tableType, "Rows");
                 _tableScrollbarProp = AccessTools.Property(tableType, "Scrollbar");
-                _tableSizeField = AccessTools.Field(tableType, "size");
-                _tableRowHeightField = AccessTools.Field(tableType, "rowHeight");
+                _tableSizeField = AccessTools.Field(tableType, "SizeImpl");
+                _tableRowHeightField = AccessTools.Field(tableType, "RowHeightImpl");
 
                 if (_tableRowsField == null)
                 {
@@ -187,6 +187,18 @@ namespace AndroidConsolizer.Patches
                     _scrollbarTopRow = AccessTools.Property(scrollbarType, "TopRow");
                     _scrollbarFrameSize = AccessTools.Property(scrollbarType, "FrameSize");
                     _scrollbarRows = AccessTools.Property(scrollbarType, "Rows");
+
+                    if (_scrollbarScrollBy == null || _scrollbarTopRow == null)
+                    {
+                        Monitor.Log($"Scrollbar reflection incomplete. Dumping Scrollbar type ({scrollbarType.FullName}):", LogLevel.Warn);
+                        foreach (var f in scrollbarType.GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public))
+                            Monitor.Log($"  Field: {f.Name} : {f.FieldType.Name}", LogLevel.Warn);
+                        foreach (var p in scrollbarType.GetProperties(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public))
+                            Monitor.Log($"  Prop: {p.Name} : {p.PropertyType.Name}", LogLevel.Warn);
+                        foreach (var m in scrollbarType.GetMethods(BindingFlags.Instance | BindingFlags.Public))
+                            if (!m.IsSpecialName && m.DeclaringType == scrollbarType)
+                                Monitor.Log($"  Method: {m.Name}({string.Join(", ", Array.ConvertAll(m.GetParameters(), p2 => p2.ParameterType.Name))})", LogLevel.Warn);
+                    }
                 }
 
                 Monitor.Log($"GMCM patches initialized. Table type: {tableType?.FullName}", LogLevel.Trace);
@@ -289,6 +301,30 @@ namespace AndroidConsolizer.Patches
             _focusedRow = 0;
             _stickNavDir = 0;
             _stickNavInitial = true;
+
+            // Log activation details
+            var rows = GetRows(gmcmMenu);
+            Monitor?.Log($"[GMCM] Activated. Rows: {rows?.Count ?? -1}, Table: {GetTable(gmcmMenu)?.GetType().FullName ?? "null"}", LogLevel.Info);
+            if (rows != null && rows.Count > 0)
+            {
+                // Log first few rows for debugging
+                for (int i = 0; i < Math.Min(rows.Count, 5); i++)
+                {
+                    var row = rows[i] as object[];
+                    if (row == null)
+                    {
+                        Monitor?.Log($"[GMCM]   Row[{i}]: null (raw type: {rows[i]?.GetType().FullName ?? "null"})", LogLevel.Info);
+                        continue;
+                    }
+                    string elems = "";
+                    foreach (var e in row)
+                        elems += $"{e?.GetType().Name ?? "null"}, ";
+                    Monitor?.Log($"[GMCM]   Row[{i}]: [{elems.TrimEnd(',', ' ')}] interactive={IsRowInteractive(row)}", LogLevel.Info);
+                }
+                if (rows.Count > 5)
+                    Monitor?.Log($"[GMCM]   ... {rows.Count - 5} more rows", LogLevel.Info);
+            }
+
             SnapCursorToRow(gmcmMenu);
         }
 
