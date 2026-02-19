@@ -22,6 +22,10 @@ namespace AndroidConsolizer.Patches
         /// <summary>Raw right stick Y cached from GetState before suppression, for ShopMenuPatches navigation.</summary>
         internal static float RawRightStickY;
 
+        /// <summary>Raw left stick cached from GetState before suppression, for OptionsPagePatches navigation.</summary>
+        internal static float RawLeftStickX;
+        internal static float RawLeftStickY;
+
         /// <summary>Raw trigger values cached from GetState before suppression, for HandleTriggersDirectly.</summary>
         internal static float RawLeftTrigger;
         internal static float RawRightTrigger;
@@ -29,6 +33,8 @@ namespace AndroidConsolizer.Patches
         /// <summary>Cached swapped GamePadState to ensure all GetState() calls within the same tick return identical results.</summary>
         private static GamePadState? _cachedState;
         private static float _cachedRawRightStickY;
+        private static float _cachedRawLeftStickX;
+        private static float _cachedRawLeftStickY;
         private static float _cachedRawLeftTrigger;
         private static float _cachedRawRightTrigger;
         private static int _cachedTick = -1;
@@ -222,6 +228,8 @@ namespace AndroidConsolizer.Patches
                 {
                     __result = _cachedState.Value;
                     RawRightStickY = _cachedRawRightStickY;
+                    RawLeftStickX = _cachedRawLeftStickX;
+                    RawLeftStickY = _cachedRawLeftStickY;
                     RawLeftTrigger = _cachedRawLeftTrigger;
                     RawRightTrigger = _cachedRawRightTrigger;
                     return;
@@ -236,6 +244,10 @@ namespace AndroidConsolizer.Patches
 
                 // Cache raw right stick Y before any suppression, so ShopMenuPatches can use it
                 RawRightStickY = __result.ThumbSticks.Right.Y;
+
+                // Cache raw left stick before suppression, so OptionsPagePatches can use it
+                RawLeftStickX = __result.ThumbSticks.Left.X;
+                RawLeftStickY = __result.ThumbSticks.Left.Y;
 
                 // Cache raw trigger values before suppression, so HandleTriggersDirectly can use them
                 RawLeftTrigger = __result.Triggers.Left;
@@ -323,6 +335,8 @@ namespace AndroidConsolizer.Patches
                     __result = ApplyButtonSuppression(__result);
                     _cachedState = __result;
                     _cachedRawRightStickY = RawRightStickY;
+                    _cachedRawLeftStickX = RawLeftStickX;
+                    _cachedRawLeftStickY = RawLeftStickY;
                     _cachedRawLeftTrigger = RawLeftTrigger;
                     _cachedRawRightTrigger = RawRightTrigger;
                     _cachedTick = currentTick;
@@ -347,6 +361,8 @@ namespace AndroidConsolizer.Patches
                     __result = ApplyButtonSuppression(__result);
                     _cachedState = __result;
                     _cachedRawRightStickY = RawRightStickY;
+                    _cachedRawLeftStickX = RawLeftStickX;
+                    _cachedRawLeftStickY = RawLeftStickY;
                     _cachedRawLeftTrigger = RawLeftTrigger;
                     _cachedRawRightTrigger = RawRightTrigger;
                     _cachedTick = currentTick;
