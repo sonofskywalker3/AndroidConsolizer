@@ -650,6 +650,38 @@ namespace AndroidConsolizer.Patches
                             int delta = (int)(rightY * 8);
                             int newOffset = Math.Max(-maxYOffset, Math.Min(0, curOffset + delta));
                             setYOffset.Invoke(scrollArea, new object[] { newOffset });
+
+                            // After scrolling, update focus if current option scrolled off-screen.
+                            // Without this, D-pad would snap back to the old off-screen position.
+                            var scissorField = AccessTools.Field(scrollType, "scissorRectangle");
+                            if (scissorField != null && _focusedIndex >= 0 && _focusedIndex < options.Count
+                                && _interactiveIndices != null)
+                            {
+                                var scissor = (Rectangle)scissorField.GetValue(scrollArea);
+                                var fb = options[_focusedIndex].bounds;
+                                if (fb.Bottom < scissor.Y || fb.Y > scissor.Bottom)
+                                {
+                                    // Off-screen — pick nearest visible interactive option
+                                    int bestIdx = -1;
+                                    int bestDist = int.MaxValue;
+                                    int viewCenter = scissor.Y + scissor.Height / 2;
+                                    foreach (int idx in _interactiveIndices)
+                                    {
+                                        var b = options[idx].bounds;
+                                        if (b.Bottom >= scissor.Y && b.Y <= scissor.Bottom)
+                                        {
+                                            int dist = Math.Abs(b.Center.Y - viewCenter);
+                                            if (dist < bestDist)
+                                            {
+                                                bestDist = dist;
+                                                bestIdx = idx;
+                                            }
+                                        }
+                                    }
+                                    if (bestIdx >= 0)
+                                        _focusedIndex = bestIdx;
+                                }
+                            }
                         }
                     }
                 }
