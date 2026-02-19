@@ -59,7 +59,7 @@ namespace AndroidConsolizer.Patches
         private const int HeldScrollInitialDelay = 24; // ~400ms before acceleration starts
         private const int HeldScrollRepeatInterval = 8; // ~133ms between repeats (~2x manual speed)
         private const float StickEngageThreshold = 0.2f; // match game's button event threshold (not 0.5)
-        private const int SocialContentYOffset = 8; // px to shift cell content down from separator lines
+        private const int SocialContentYOffset = 16; // px to shift cell content down from separator lines
 
         // Cached reflection for GameMenu junimoNoteIcon (Community Center tab icon)
         private static FieldInfo _junimoNoteIconField;
