@@ -59,6 +59,7 @@ namespace AndroidConsolizer.Patches
         private const int HeldScrollInitialDelay = 24; // ~400ms before acceleration starts
         private const int HeldScrollRepeatInterval = 8; // ~133ms between repeats (~2x manual speed)
         private const float StickEngageThreshold = 0.2f; // match game's button event threshold (not 0.5)
+        private const int SocialContentYOffset = 8; // px to shift cell content down from separator lines
 
         // Cached reflection for GameMenu junimoNoteIcon (Community Center tab icon)
         private static FieldInfo _junimoNoteIconField;
@@ -151,6 +152,28 @@ namespace AndroidConsolizer.Patches
                     harmony.Patch(
                         original: socialUpdateMethod,
                         prefix: new HarmonyMethod(typeof(GameMenuPatches), nameof(SocialUpdate_Prefix))
+                    );
+                }
+
+                // Patch SocialPage.drawNPCSlot — shift content down relative to separator lines
+                var drawNPCSlotMethod = AccessTools.Method(typeof(SocialPage), "drawNPCSlot", new[] { typeof(SpriteBatch), typeof(int) });
+                if (drawNPCSlotMethod != null)
+                {
+                    harmony.Patch(
+                        original: drawNPCSlotMethod,
+                        prefix: new HarmonyMethod(typeof(GameMenuPatches), nameof(DrawSlot_Prefix)),
+                        postfix: new HarmonyMethod(typeof(GameMenuPatches), nameof(DrawSlot_Postfix))
+                    );
+                }
+
+                // Patch SocialPage.drawFarmerSlot — same content shift for player rows
+                var drawFarmerSlotMethod = AccessTools.Method(typeof(SocialPage), "drawFarmerSlot", new[] { typeof(SpriteBatch), typeof(int) });
+                if (drawFarmerSlotMethod != null)
+                {
+                    harmony.Patch(
+                        original: drawFarmerSlotMethod,
+                        prefix: new HarmonyMethod(typeof(GameMenuPatches), nameof(DrawSlot_Prefix)),
+                        postfix: new HarmonyMethod(typeof(GameMenuPatches), nameof(DrawSlot_Postfix))
                     );
                 }
 
@@ -442,6 +465,47 @@ namespace AndroidConsolizer.Patches
             {
                 Monitor?.Log($"[GameMenu] Error fixing AnimalPage: {ex.Message}\n{ex.StackTrace}", LogLevel.Error);
             }
+        }
+
+        // ===== SocialPage.drawNPCSlot / drawFarmerSlot — shift content down within cells =====
+
+        /// <summary>
+        /// Prefix on drawNPCSlot and drawFarmerSlot: temporarily shift sprites[i].bounds.Y
+        /// down by SocialContentYOffset so cell content draws lower, creating more space
+        /// between the separator line (top of cell) and the portrait/name/hearts.
+        /// The postfix restores the original Y so the separator line (drawn in the
+        /// SocialPage.draw loop after each slot method returns) stays in its original position.
+        /// </summary>
+        private static void DrawSlot_Prefix(object __instance, int i)
+        {
+            try
+            {
+                var sprites = _socialSpritesField?.GetValue(__instance) as IList;
+                if (sprites == null || i < 0 || i >= sprites.Count) return;
+
+                var sprite = sprites[i] as ClickableComponent;
+                if (sprite == null) return;
+
+                sprite.bounds = new Rectangle(sprite.bounds.X, sprite.bounds.Y + SocialContentYOffset,
+                    sprite.bounds.Width, sprite.bounds.Height);
+            }
+            catch { }
+        }
+
+        private static void DrawSlot_Postfix(object __instance, int i)
+        {
+            try
+            {
+                var sprites = _socialSpritesField?.GetValue(__instance) as IList;
+                if (sprites == null || i < 0 || i >= sprites.Count) return;
+
+                var sprite = sprites[i] as ClickableComponent;
+                if (sprite == null) return;
+
+                sprite.bounds = new Rectangle(sprite.bounds.X, sprite.bounds.Y - SocialContentYOffset,
+                    sprite.bounds.Width, sprite.bounds.Height);
+            }
+            catch { }
         }
 
         /// <summary>
