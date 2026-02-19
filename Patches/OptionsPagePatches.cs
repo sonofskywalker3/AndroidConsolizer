@@ -16,9 +16,10 @@ namespace AndroidConsolizer.Patches
     /// Interaction model:
     /// - D-pad Up/Down navigates between interactive options (skips labels/spacers)
     /// - D-pad Left/Right adjusts values via direct reflection (snappyMenus=false on Android
-    ///   so receiveKeyPress doesn't work): sliders +/-10, dropdown cycling, plusminus +/-1
-    /// - A toggles checkboxes and activates buttons; blocks touch-sim click via same-tick guard
-    /// - B closes the menu (passed to base)
+    ///   so receiveKeyPress doesn't work): sliders +/-10, plusminus +/-1
+    /// - A toggles checkboxes, activates buttons, and opens/confirms dropdowns
+    /// - Dropdowns: A opens the list, D-pad Up/Down selects, A confirms, B cancels
+    /// - B closes the menu (or cancels an open dropdown)
     /// - Right stick scrolls the options list
     /// - Left thumbstick is suppressed at GetState level (no free-roaming cursor)
     /// </summary>
@@ -30,6 +31,11 @@ namespace AndroidConsolizer.Patches
         private static int _focusedIndex = -1;
         private static List<int> _interactiveIndices;
         private static int _aPressTick = -1; // Same-tick guard: blocks touch-sim receiveLeftClick
+
+        // Dropdown mode state — when a dropdown is open, D-pad navigates within it
+        private static bool _dropdownMode = false;
+        private static OptionsDropDown _activeDropdown = null;
+        private static int _dropdownStartSelection = -1;
 
         // Cached reflection — OptionsPage fields
         private static FieldInfo _optionsField;
@@ -47,6 +53,8 @@ namespace AndroidConsolizer.Patches
         // Cached reflection — OptionsDropDown fields
         private static FieldInfo _ddSelectedOptionField;
         private static FieldInfo _ddDropDownOptionsField;
+        private static FieldInfo _ddDropDownOpenField;
+        private static FieldInfo _ddSelectedStaticField;
 
         // Cached reflection — OptionsPlusMinus fields
         private static FieldInfo _pmMinusButtonField;
@@ -101,6 +109,8 @@ namespace AndroidConsolizer.Patches
                 // Cache OptionsDropDown reflection
                 _ddSelectedOptionField = AccessTools.Field(typeof(OptionsDropDown), "selectedOption");
                 _ddDropDownOptionsField = AccessTools.Field(typeof(OptionsDropDown), "dropDownOptions");
+                _ddDropDownOpenField = AccessTools.Field(typeof(OptionsDropDown), "dropDownOpen");
+                _ddSelectedStaticField = AccessTools.Field(typeof(OptionsDropDown), "selected");
 
                 // Cache OptionsPlusMinus reflection
                 _pmMinusButtonField = AccessTools.Field(typeof(OptionsPlusMinus), "minusButton");
@@ -150,9 +160,35 @@ namespace AndroidConsolizer.Patches
         /// <summary>Reset state when leaving the options tab or closing the GameMenu.</summary>
         public static void OnOptionsPageClosed()
         {
+            CloseDropdown(false);
             _focusedIndex = -1;
             _interactiveIndices = null;
             _aPressTick = -1;
+        }
+
+        /// <summary>Close the active dropdown, optionally applying the selection.</summary>
+        private static void CloseDropdown(bool apply)
+        {
+            if (_activeDropdown != null)
+            {
+                if (apply)
+                {
+                    var ddOptions = _ddDropDownOptionsField?.GetValue(_activeDropdown) as List<string>;
+                    int sel = _ddSelectedOptionField != null ? (int)_ddSelectedOptionField.GetValue(_activeDropdown) : 0;
+                    if (ddOptions != null && sel >= 0 && sel < ddOptions.Count)
+                        Game1.options.changeDropDownOption(_activeDropdown.whichOption, ddOptions[sel]);
+                }
+                else
+                {
+                    _ddSelectedOptionField?.SetValue(_activeDropdown, _dropdownStartSelection);
+                }
+
+                _ddDropDownOpenField?.SetValue(_activeDropdown, false);
+                _ddSelectedStaticField?.SetValue(null, null);
+            }
+            _dropdownMode = false;
+            _activeDropdown = null;
+            _dropdownStartSelection = -1;
         }
 
         /// <summary>Snap the mouse cursor to the focused option so the game's cursor shows focus.</summary>
@@ -281,30 +317,52 @@ namespace AndroidConsolizer.Patches
 
             var scrollArea = _scrollAreaField?.GetValue(page);
 
-            // B button: let base handle (close menu)
+            // B button: cancel dropdown if open, otherwise let base handle (close menu)
             if (b == Buttons.B)
-                return true;
-
-            // D-pad Up — navigate to previous interactive option
-            if (b == Buttons.DPadUp || b == Buttons.LeftThumbstickUp)
             {
-                int pos = FindCurrentPosition();
-                if (pos <= 0)
-                    pos = _interactiveIndices.Count; // wrap
-                _focusedIndex = _interactiveIndices[pos - 1];
-                EnsureVisible(page, options, scrollArea);
-                SnapCursorToFocused(options);
-                Game1.playSound("shiny4");
-                return false;
+                if (_dropdownMode)
+                {
+                    CloseDropdown(false);
+                    Game1.playSound("bigDeSelect");
+                    return false;
+                }
+                return true;
             }
 
-            // D-pad Down — navigate to next interactive option
-            if (b == Buttons.DPadDown || b == Buttons.LeftThumbstickDown)
+            // D-pad Up/Down — navigate within dropdown if open, otherwise between options
+            if (b == Buttons.DPadUp || b == Buttons.LeftThumbstickUp ||
+                b == Buttons.DPadDown || b == Buttons.LeftThumbstickDown)
             {
-                int pos = FindCurrentPosition();
-                if (pos < 0 || pos >= _interactiveIndices.Count - 1)
-                    pos = -1; // wrap
-                _focusedIndex = _interactiveIndices[pos + 1];
+                bool isUp = (b == Buttons.DPadUp || b == Buttons.LeftThumbstickUp);
+
+                if (_dropdownMode && _activeDropdown != null)
+                {
+                    var ddOptions = _ddDropDownOptionsField?.GetValue(_activeDropdown) as List<string>;
+                    int count = ddOptions?.Count ?? 0;
+                    if (count > 0 && _ddSelectedOptionField != null)
+                    {
+                        int sel = (int)_ddSelectedOptionField.GetValue(_activeDropdown);
+                        sel = isUp ? (sel - 1 + count) % count : (sel + 1) % count;
+                        _ddSelectedOptionField.SetValue(_activeDropdown, sel);
+                        Game1.playSound("shiny4");
+                    }
+                    return false;
+                }
+
+                if (isUp)
+                {
+                    int pos = FindCurrentPosition();
+                    if (pos <= 0)
+                        pos = _interactiveIndices.Count; // wrap
+                    _focusedIndex = _interactiveIndices[pos - 1];
+                }
+                else
+                {
+                    int pos = FindCurrentPosition();
+                    if (pos < 0 || pos >= _interactiveIndices.Count - 1)
+                        pos = -1; // wrap
+                    _focusedIndex = _interactiveIndices[pos + 1];
+                }
                 EnsureVisible(page, options, scrollArea);
                 SnapCursorToFocused(options);
                 Game1.playSound("shiny4");
@@ -336,7 +394,29 @@ namespace AndroidConsolizer.Patches
                     return false;
                 }
 
-                // Sliders, dropdowns, plus/minus: A does nothing (use Left/Right to adjust)
+                if (opt is OptionsDropDown dropdown)
+                {
+                    if (_dropdownMode && _activeDropdown == dropdown)
+                    {
+                        // Second A press — confirm selection and close
+                        CloseDropdown(true);
+                        Game1.playSound("coin");
+                    }
+                    else
+                    {
+                        // First A press — open the dropdown
+                        int curSel = _ddSelectedOptionField != null ? (int)_ddSelectedOptionField.GetValue(dropdown) : 0;
+                        _dropdownStartSelection = curSel;
+                        _ddDropDownOpenField?.SetValue(dropdown, true);
+                        _ddSelectedStaticField?.SetValue(null, dropdown);
+                        _dropdownMode = true;
+                        _activeDropdown = dropdown;
+                        Game1.playSound("shwip");
+                    }
+                    return false;
+                }
+
+                // Sliders, plus/minus: A does nothing (use Left/Right to adjust)
                 return false;
             }
 
@@ -345,6 +425,10 @@ namespace AndroidConsolizer.Patches
             if (b == Buttons.DPadLeft || b == Buttons.LeftThumbstickLeft ||
                 b == Buttons.DPadRight || b == Buttons.LeftThumbstickRight)
             {
+                // While dropdown is open, consume Left/Right (no action — use Up/Down to navigate)
+                if (_dropdownMode)
+                    return false;
+
                 if (_focusedIndex < 0 || _focusedIndex >= options.Count)
                     return false;
 
@@ -365,21 +449,9 @@ namespace AndroidConsolizer.Patches
                     return false;
                 }
 
-                if (opt is OptionsDropDown dropdown)
+                if (opt is OptionsDropDown)
                 {
-                    if (_ddSelectedOptionField != null && _ddDropDownOptionsField != null)
-                    {
-                        var ddOptions = _ddDropDownOptionsField.GetValue(dropdown) as List<string>;
-                        if (ddOptions != null && ddOptions.Count > 0)
-                        {
-                            int sel = (int)_ddSelectedOptionField.GetValue(dropdown);
-                            sel = isRight ? (sel + 1) % ddOptions.Count
-                                         : (sel - 1 + ddOptions.Count) % ddOptions.Count;
-                            _ddSelectedOptionField.SetValue(dropdown, sel);
-                            Game1.options.changeDropDownOption(dropdown.whichOption, ddOptions[sel]);
-                        }
-                    }
-                    Game1.playSound("shiny4");
+                    // Dropdowns use A to open/close — Left/Right does nothing when closed
                     return false;
                 }
 
@@ -434,9 +506,10 @@ namespace AndroidConsolizer.Patches
 
                 // Right stick free-scroll — directly adjust scroll offset for smooth scrolling
                 // (receiveScrollWheelAction caused visual tearing)
+                // Blocked while dropdown is open (scrolling would move the dropdown, disorienting)
                 var state = GamePad.GetState(PlayerIndex.One);
                 float rightY = state.ThumbSticks.Right.Y;
-                if (Math.Abs(rightY) > StickScrollThreshold)
+                if (!_dropdownMode && Math.Abs(rightY) > StickScrollThreshold)
                 {
                     var scrollArea = _scrollAreaField?.GetValue(__instance);
                     if (scrollArea != null)
