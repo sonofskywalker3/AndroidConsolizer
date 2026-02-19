@@ -496,6 +496,36 @@ namespace AndroidConsolizer.Patches
                         _dropdownMode = true;
                         _activeDropdown = dropdown;
                         Game1.playSound("shwip");
+
+                        // Auto-scroll so the full expanded dropdown fits on screen.
+                        // Dropdown height = bounds.Height * optionCount.
+                        var ddOptions = _ddDropDownOptionsField?.GetValue(dropdown) as List<string>;
+                        int ddCount = ddOptions?.Count ?? 1;
+                        int expandedBottom = dropdown.bounds.Y + dropdown.bounds.Height * ddCount;
+                        if (scrollArea != null)
+                        {
+                            try
+                            {
+                                var scrollType = scrollArea.GetType();
+                                var scissorField = AccessTools.Field(scrollType, "scissorRectangle");
+                                var getYOffset = AccessTools.Method(scrollType, "getYOffsetForScroll");
+                                var setYOffset = AccessTools.Method(scrollType, "setYOffsetForScroll", new[] { typeof(int) });
+                                var maxYOffsetField = AccessTools.Field(scrollType, "maxYOffset");
+                                if (scissorField != null && getYOffset != null && setYOffset != null && maxYOffsetField != null)
+                                {
+                                    var scissor = (Rectangle)scissorField.GetValue(scrollArea);
+                                    if (expandedBottom > scissor.Bottom)
+                                    {
+                                        int yOffset = (int)getYOffset.Invoke(scrollArea, null);
+                                        int maxYOffset = (int)maxYOffsetField.GetValue(scrollArea);
+                                        int scrollNeeded = expandedBottom - scissor.Bottom + 20;
+                                        int newOffset = Math.Max(-maxYOffset, yOffset - scrollNeeded);
+                                        setYOffset.Invoke(scrollArea, new object[] { newOffset });
+                                    }
+                                }
+                            }
+                            catch { }
+                        }
                     }
                     return false;
                 }
