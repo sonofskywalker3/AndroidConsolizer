@@ -60,6 +60,14 @@ namespace AndroidConsolizer.Patches
         private static FieldInfo _pmMinusButtonField;
         private static FieldInfo _pmPlusButtonField;
 
+        // Left stick discrete navigation state
+        private static int _stickNavDir = 0; // 0=none, 1=up, 2=down, 3=left, 4=right
+        private static int _stickNavLastTick = -1;
+        private static bool _stickNavInitial = true;
+        private const float StickNavThreshold = 0.5f;
+        private const int StickNavInitialDelay = 18; // ~300ms at 60fps
+        private const int StickNavRepeatDelay = 9;   // ~150ms at 60fps
+
         // Constants
         private const float StickScrollThreshold = 0.2f;
 
@@ -164,6 +172,7 @@ namespace AndroidConsolizer.Patches
             _focusedIndex = -1;
             _interactiveIndices = null;
             _aPressTick = -1;
+            _stickNavDir = 0;
         }
 
         /// <summary>Close the active dropdown, optionally applying the selection.</summary>
@@ -261,6 +270,81 @@ namespace AndroidConsolizer.Patches
             catch (Exception ex)
             {
                 Monitor?.Log($"[OptionsPage] EnsureVisible error: {ex.Message}", LogLevel.Error);
+            }
+        }
+
+        /// <summary>Fire a synthetic navigation event from stick input (same logic as D-pad).</summary>
+        private static void HandleStickNav(int dir, OptionsPage page, List<OptionsElement> options)
+        {
+            var scrollArea = _scrollAreaField?.GetValue(page);
+
+            if (dir == 1 || dir == 2) // Up/Down
+            {
+                bool isUp = (dir == 1);
+                if (_dropdownMode && _activeDropdown != null)
+                {
+                    var ddOptions = _ddDropDownOptionsField?.GetValue(_activeDropdown) as List<string>;
+                    int count = ddOptions?.Count ?? 0;
+                    if (count > 0 && _ddSelectedOptionField != null)
+                    {
+                        int sel = (int)_ddSelectedOptionField.GetValue(_activeDropdown);
+                        sel = isUp ? (sel - 1 + count) % count : (sel + 1) % count;
+                        _ddSelectedOptionField.SetValue(_activeDropdown, sel);
+                        Game1.playSound("shiny4");
+                    }
+                    return;
+                }
+
+                if (isUp)
+                {
+                    int pos = FindCurrentPosition();
+                    if (pos <= 0)
+                        pos = _interactiveIndices.Count;
+                    _focusedIndex = _interactiveIndices[pos - 1];
+                }
+                else
+                {
+                    int pos = FindCurrentPosition();
+                    if (pos < 0 || pos >= _interactiveIndices.Count - 1)
+                        pos = -1;
+                    _focusedIndex = _interactiveIndices[pos + 1];
+                }
+                EnsureVisible(page, options, scrollArea);
+                SnapCursorToFocused(options);
+                Game1.playSound("shiny4");
+            }
+            else if (dir == 3 || dir == 4) // Left/Right
+            {
+                if (_dropdownMode)
+                    return;
+                if (_focusedIndex < 0 || _focusedIndex >= options.Count)
+                    return;
+
+                var opt = options[_focusedIndex];
+                bool isRight = (dir == 4);
+
+                if (opt is OptionsSlider slider)
+                {
+                    int curVal = _sliderValueProp != null ? (int)_sliderValueProp.GetValue(slider)
+                               : _sliderValueField != null ? (int)_sliderValueField.GetValue(slider) : 0;
+                    int minVal = _sliderMinField != null ? (int)_sliderMinField.GetValue(slider) : 0;
+                    int maxVal = _sliderMaxField != null ? (int)_sliderMaxField.GetValue(slider) : 100;
+                    int newVal = isRight ? Math.Min(curVal + 10, maxVal) : Math.Max(curVal - 10, minVal);
+                    if (_sliderValueProp != null) _sliderValueProp.SetValue(slider, newVal);
+                    else _sliderValueField?.SetValue(slider, newVal);
+                    Game1.options.changeSliderOption(slider.whichOption, newVal);
+                    Game1.playSound("shiny4");
+                }
+                else if (opt is OptionsPlusMinus plusMinus)
+                {
+                    if (_pmMinusButtonField != null && _pmPlusButtonField != null)
+                    {
+                        var targetRect = isRight
+                            ? (Rectangle)_pmPlusButtonField.GetValue(plusMinus)
+                            : (Rectangle)_pmMinusButtonField.GetValue(plusMinus);
+                        plusMinus.receiveLeftClick(targetRect.Center.X, targetRect.Center.Y);
+                    }
+                }
             }
         }
 
@@ -503,6 +587,47 @@ namespace AndroidConsolizer.Patches
                 // which runs before this postfix, so bounds are current. This keeps the cursor
                 // tracking the focused option through scrolling.
                 SnapCursorToFocused(options);
+
+                // Left stick → discrete navigation (raw values cached before GetState suppression)
+                float lsX = GameplayButtonPatches.RawLeftStickX;
+                float lsY = GameplayButtonPatches.RawLeftStickY;
+                int newDir = 0;
+                if (Math.Abs(lsY) >= Math.Abs(lsX))
+                {
+                    if (lsY > StickNavThreshold) newDir = 1;       // Up (Y is positive up)
+                    else if (lsY < -StickNavThreshold) newDir = 2; // Down
+                }
+                else
+                {
+                    if (lsX < -StickNavThreshold) newDir = 3;      // Left
+                    else if (lsX > StickNavThreshold) newDir = 4;  // Right
+                }
+
+                if (newDir == 0)
+                {
+                    _stickNavDir = 0;
+                    _stickNavInitial = true;
+                }
+                else if (newDir != _stickNavDir)
+                {
+                    // Direction changed — fire immediately
+                    _stickNavDir = newDir;
+                    _stickNavLastTick = Game1.ticks;
+                    _stickNavInitial = true;
+                    HandleStickNav(newDir, __instance, options);
+                }
+                else
+                {
+                    // Same direction held — check repeat timing
+                    int elapsed = Game1.ticks - _stickNavLastTick;
+                    int delay = _stickNavInitial ? StickNavInitialDelay : StickNavRepeatDelay;
+                    if (elapsed >= delay)
+                    {
+                        _stickNavLastTick = Game1.ticks;
+                        _stickNavInitial = false;
+                        HandleStickNav(newDir, __instance, options);
+                    }
+                }
 
                 // Right stick free-scroll — directly adjust scroll offset for smooth scrolling
                 // (receiveScrollWheelAction caused visual tearing)
