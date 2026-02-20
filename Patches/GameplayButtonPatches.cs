@@ -280,10 +280,10 @@ namespace AndroidConsolizer.Patches
                     );
                 }
 
-                // Zero out left thumbstick on Options tab and GMCM so the cursor doesn't free-roam.
+                // Zero out left thumbstick on Options tab so the cursor doesn't free-roam.
                 // D-pad handles option-to-option navigation; left stick would just move
                 // the cursor off the options list and out of bounds.
-                if ((OptionsPagePatches.ShouldSuppressLeftStick() || GmcmPatches.ShouldSuppressLeftStick())
+                if (OptionsPagePatches.ShouldSuppressLeftStick()
                     && __result.ThumbSticks.Left != Vector2.Zero)
                 {
                     __result = new GamePadState(
