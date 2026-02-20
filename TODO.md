@@ -97,6 +97,14 @@ For completed features and their technical reference, see `DONE.md`.
 - **Not blocking.** Cosmetic only.
 - **File:** `Patches/ItemGrabMenuPatches.cs`
 
+### 33. Replace Red Square Selector with Finger Cursor in Chests
+- The chest menu uses the red square highlight for the selected slot. Replace with a finger/hand cursor for visual consistency with other menus.
+- **File:** `Patches/ItemGrabMenuPatches.cs`
+
+### 34. Chest Style Picker Snap Point
+- The chest style/appearance picker has no snap point for controller navigation. Add a snap-navigable component so the style picker is reachable without touch.
+- **File:** `Patches/ItemGrabMenuPatches.cs`
+
 ### O2. Remove GamePad.GetState() from Draw Postfix
 - `InventoryManagementPatches.InventoryPage_Draw_Postfix` calls `GamePad.GetState()` every frame to check if A is pressed. On Android, this is a JNI call through MonoGame.
 - **Fix:** Store A-button state in a static bool from `OnUpdateTicked`, read in draw postfix.
