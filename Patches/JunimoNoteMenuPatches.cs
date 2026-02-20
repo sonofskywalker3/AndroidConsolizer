@@ -181,11 +181,13 @@ namespace AndroidConsolizer.Patches
                             {
                                 // Triggers = GameMenu tab switching. Exit CC back to GameMenu.
                                 // LT wraps to last tab (Options), RT wraps to first tab (Inventory).
+                                var gm = new GameMenu();
                                 int tab = (b == Buttons.LeftTrigger)
-                                    ? GameMenu.numberOfTabs - 1
+                                    ? gm.pages.Count - 1
                                     : 0;
+                                gm.changeTab(tab, playSound: false);
                                 Game1.playSound("smallSelect");
-                                Game1.activeClickableMenu = new GameMenu(tab);
+                                Game1.activeClickableMenu = gm;
                                 return false;
                             }
                             return true; // bumper mode: let vanilla handle room switching
