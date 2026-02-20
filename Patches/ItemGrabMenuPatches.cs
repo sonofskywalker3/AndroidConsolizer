@@ -78,6 +78,11 @@ namespace AndroidConsolizer.Patches
         // Cached reflection for FillOutStacks method (add-to-existing-stacks)
         private static MethodInfo _fillOutStacksMethod;
 
+        // Diagnostic #11b: track gamepadControls state for touch→controller transition detection
+        private static bool _lastGamepadControls = true;
+        private static int _diagHoverFrameCount = 0;
+        private static int _diagDrawFrameCount = 0;
+
         // Unique IDs assigned to buttons with duplicate or sentinel myIDs
         private const int ID_SORT_CHEST = 54106;    // was 106
         private const int ID_SORT_INV = 54206;       // was 106
@@ -128,7 +133,21 @@ namespace AndroidConsolizer.Patches
                 // Patch draw to render swap-held item at cursor position
                 harmony.Patch(
                     original: AccessTools.Method(typeof(ItemGrabMenu), nameof(ItemGrabMenu.draw), new[] { typeof(SpriteBatch) }),
+                    prefix: new HarmonyMethod(typeof(ItemGrabMenuPatches), nameof(Draw_Prefix)),
                     postfix: new HarmonyMethod(typeof(ItemGrabMenuPatches), nameof(Draw_Postfix))
+                );
+
+                // Diagnostic #11b: performHoverAction — log coords and hoveredItem state
+                harmony.Patch(
+                    original: AccessTools.Method(typeof(ItemGrabMenu), nameof(ItemGrabMenu.performHoverAction)),
+                    prefix: new HarmonyMethod(typeof(ItemGrabMenuPatches), nameof(PerformHoverAction_Diag_Prefix))
+                );
+
+                // Diagnostic #11b: snapToDefaultClickableComponent — log before/after snap
+                harmony.Patch(
+                    original: AccessTools.Method(typeof(ItemGrabMenu), nameof(ItemGrabMenu.snapToDefaultClickableComponent)),
+                    prefix: new HarmonyMethod(typeof(ItemGrabMenuPatches), nameof(SnapToDefault_Diag_Prefix)),
+                    postfix: new HarmonyMethod(typeof(ItemGrabMenuPatches), nameof(SnapToDefault_Diag_Postfix))
                 );
 
                 Monitor.Log("ItemGrabMenu patches applied successfully.", LogLevel.Trace);
@@ -1022,6 +1041,39 @@ namespace AndroidConsolizer.Patches
         /// <summary>Postfix for update — Y-button hold-to-repeat for single-item transfer.</summary>
         private static void Update_Postfix(ItemGrabMenu __instance, GameTime time)
         {
+            // Diagnostic #11b: detect gamepadControls transition (touch → controller)
+            if (!__instance.shippingBin)
+            {
+                bool currentGpc = Game1.options.gamepadControls;
+                if (currentGpc != _lastGamepadControls)
+                {
+                    if (currentGpc && !_lastGamepadControls)
+                    {
+                        // touch → controller transition — this is what triggers snapToDefault
+                        bool hasSortChestDiag = false;
+                        int compCount = __instance.allClickableComponents?.Count ?? 0;
+                        if (__instance.allClickableComponents != null)
+                        {
+                            foreach (var comp in __instance.allClickableComponents)
+                            {
+                                if (comp.myID == ID_SORT_CHEST) { hasSortChestDiag = true; break; }
+                            }
+                        }
+                        Monitor?.Log($"[DiagTransition] GAMEPAD RE-ENGAGED (touch→controller). " +
+                            $"components={compCount}, hasSortChest={hasSortChestDiag}, " +
+                            $"snapped={__instance.currentlySnappedComponent?.myID}, " +
+                            $"hoveredItem={__instance.hoveredItem?.DisplayName ?? "null"}", LogLevel.Info);
+                    }
+                    else
+                    {
+                        Monitor?.Log($"[DiagTransition] TOUCH ENGAGED (controller→touch). " +
+                            $"snapped={__instance.currentlySnappedComponent?.myID}, " +
+                            $"hoveredItem={__instance.hoveredItem?.DisplayName ?? "null"}", LogLevel.Info);
+                    }
+                    _lastGamepadControls = currentGpc;
+                }
+            }
+
             // Self-healing: if touch rebuilt allClickableComponents, our custom IDs are gone
             if (ModEntry.Config.EnableConsoleChests && !__instance.shippingBin)
             {
@@ -1749,6 +1801,71 @@ namespace AndroidConsolizer.Patches
             Game1.playSound("cancel");
             _swapHeldItem = null;
             _swapSourceSlot = -1;
+        }
+
+        // =====================================================
+        // Diagnostic #11b: Touch-interrupt logging patches
+        // =====================================================
+
+        /// <summary>Diagnostic: log performHoverAction calls — throttled to every 60 frames.</summary>
+        private static void PerformHoverAction_Diag_Prefix(ItemGrabMenu __instance, int x, int y)
+        {
+            if (__instance.shippingBin) return;
+            _diagHoverFrameCount++;
+            if (_diagHoverFrameCount % 60 == 1) // log first call, then every 60th
+            {
+                Monitor?.Log($"[DiagHover] performHoverAction({x},{y}) " +
+                    $"hoveredItem={__instance.hoveredItem?.DisplayName ?? "null"} " +
+                    $"gamepadControls={Game1.options.gamepadControls} " +
+                    $"mousePos=({Game1.getMouseX()},{Game1.getMouseY()})", LogLevel.Info);
+            }
+        }
+
+        /// <summary>Diagnostic: log before snapToDefaultClickableComponent fires.</summary>
+        private static void SnapToDefault_Diag_Prefix(ItemGrabMenu __instance)
+        {
+            if (__instance.shippingBin) return;
+            var snapped = __instance.currentlySnappedComponent;
+            Monitor?.Log($"[DiagSnap] snapToDefaultClickableComponent CALLED — " +
+                $"before: snappedID={snapped?.myID}, name={snapped?.name}, " +
+                $"bounds={snapped?.bounds}, " +
+                $"gamepadControls={Game1.options.gamepadControls}", LogLevel.Info);
+            // Log abbreviated stack trace to identify caller
+            var trace = new System.Diagnostics.StackTrace(2, false);
+            var frames = trace.GetFrames();
+            if (frames != null && frames.Length > 0)
+            {
+                string callers = string.Join(" → ", frames.Take(4).Select(f =>
+                    f.GetMethod()?.DeclaringType?.Name + "." + f.GetMethod()?.Name));
+                Monitor?.Log($"[DiagSnap] Caller chain: {callers}", LogLevel.Info);
+            }
+        }
+
+        /// <summary>Diagnostic: log after snapToDefaultClickableComponent fires.</summary>
+        private static void SnapToDefault_Diag_Postfix(ItemGrabMenu __instance)
+        {
+            if (__instance.shippingBin) return;
+            var snapped = __instance.currentlySnappedComponent;
+            Monitor?.Log($"[DiagSnap] snapToDefaultClickableComponent DONE — " +
+                $"after: snappedID={snapped?.myID}, name={snapped?.name}, " +
+                $"bounds={snapped?.bounds}", LogLevel.Info);
+        }
+
+        /// <summary>Diagnostic: draw prefix — log tooltip rendering state, throttled to every 120 frames.</summary>
+        private static void Draw_Prefix(ItemGrabMenu __instance, SpriteBatch b)
+        {
+            if (__instance.shippingBin) return;
+            _diagDrawFrameCount++;
+            if (_diagDrawFrameCount % 120 == 1)
+            {
+                var snapped = __instance.currentlySnappedComponent;
+                string snappedInfo = snapped != null ? $"id={snapped.myID} center=({snapped.bounds.Center.X},{snapped.bounds.Center.Y})" : "null";
+                Monitor?.Log($"[DiagDraw] hoveredItem={__instance.hoveredItem?.DisplayName ?? "null"} " +
+                    $"hoverText={(__instance.hoverText != null ? "\"" + __instance.hoverText + "\"" : "null")} " +
+                    $"mousePos=({Game1.getMouseX()},{Game1.getMouseY()}) " +
+                    $"snapped=[{snappedInfo}] " +
+                    $"gamepadControls={Game1.options.gamepadControls}", LogLevel.Info);
+            }
         }
 
         /// <summary>Draw postfix — render swap-held item at the currently snapped component position.</summary>
