@@ -793,6 +793,24 @@ namespace AndroidConsolizer.Patches
                             return false;
                         }
 
+                        // --- While holding swap item: trash or cancel-then-proceed ---
+                        if (_swapHeldItem != null)
+                        {
+                            if (snapped.myID == ID_TRASH_PLAYER)
+                            {
+                                // Trash the held item
+                                if (ModEntry.Config.VerboseLogging)
+                                    Monitor.Log($"[ChestSwap] Trashing held item {_swapHeldItem.DisplayName}", LogLevel.Debug);
+                                Utility.trashItem(_swapHeldItem);
+                                _swapHeldItem = null;
+                                _swapSourceSlot = -1;
+                                return false;
+                            }
+
+                            // Cancel swap first, then let the side button action proceed
+                            CancelSwap(__instance);
+                        }
+
                         // --- All other side buttons: receiveLeftClick at button center ---
                         int cx = snapped.bounds.Center.X;
                         int cy = snapped.bounds.Center.Y;
@@ -823,6 +841,34 @@ namespace AndroidConsolizer.Patches
                         }
                     }
                     return false; // consume A even if not on a valid slot
+                }
+
+                // While holding swap item: block Y, cancel-then-proceed for X/RB
+                if (_swapHeldItem != null && ModEntry.Config.EnableConsoleChests)
+                {
+                    if (remapped == Buttons.Y)
+                    {
+                        // Y while holding → no-op
+                        return false;
+                    }
+                    if (remapped == Buttons.X)
+                    {
+                        // X (sort) while holding → cancel swap first, then sort
+                        CancelSwap(__instance);
+                        OrganizeChest(__instance);
+                        return false;
+                    }
+                    if (remapped == Buttons.RightShoulder && !_colorPickerOpen)
+                    {
+                        // RB (fill stacks) while holding → cancel swap first, then snap to fill stacks
+                        CancelSwap(__instance);
+                        if (__instance.fillStacksButton != null)
+                        {
+                            __instance.currentlySnappedComponent = __instance.fillStacksButton;
+                            __instance.snapCursorToCurrentSnappedComponent();
+                        }
+                        return false;
+                    }
                 }
 
                 // A/Y on grid slots — console-style chest item transfer
