@@ -52,6 +52,7 @@ namespace AndroidConsolizer.Patches
         private static FieldInfo BuildingToMoveField; // Building being moved (both platforms)
         private static FieldInfo PriceField;           // int — current blueprint price
         private static FieldInfo SelectedBottomButtonField; // BottomButton enum — which button is selected
+        private static MethodInfo DoesFarmerHaveEnoughResourcesToBuildMethod; // affordability check
 
         private const float StickDeadzone = 0.2f;
         private const float CursorSpeedMax = 16f;  // px/tick at full tilt
@@ -149,7 +150,8 @@ namespace AndroidConsolizer.Patches
                 PriceField = AccessTools.Field(typeof(CarpenterMenu), "price");
                 SelectedBottomButtonField = AccessTools.Field(typeof(CarpenterMenu), "_selectedBottomButton");
                 Monitor.Log($"CarpenterMenu mode fields: Action={ActionField != null}, moving={MovingField != null}, demolishing={DemolishingField != null}, buildingToMove={BuildingToMoveField != null}", LogLevel.Debug);
-                Monitor.Log($"CarpenterMenu diagnostic fields: price={PriceField != null}, _selectedBottomButton={SelectedBottomButtonField != null}", LogLevel.Debug);
+                DoesFarmerHaveEnoughResourcesToBuildMethod = AccessTools.Method(typeof(CarpenterMenu), "DoesFarmerHaveEnoughResourcesToBuild");
+                Monitor.Log($"CarpenterMenu diagnostic fields: price={PriceField != null}, _selectedBottomButton={SelectedBottomButtonField != null}, hasResources={DoesFarmerHaveEnoughResourcesToBuildMethod != null}", LogLevel.Debug);
 
                 // Diagnostic: log OnReleaseBuildButton state for #14e investigation
                 harmony.Patch(
@@ -434,12 +436,35 @@ namespace AndroidConsolizer.Patches
 
             if (!_cursorActive)
             {
-                // Diagnostic: log shop-screen A presses for #14e investigation
+                // #14e fix: When A is pressed on the shop screen for "Build" and the player
+                // can't afford, the game's OnReleaseBuildButton plays "cancel" but doesn't exit.
+                // However, Android touch-sim then fires receiveLeftClick/releaseLeftClick at
+                // (-39,-39), which hits cancelButton's off-screen bounds (-100,-100,80,80) and
+                // closes the menu via OnReleaseCancelButton. Intercept unaffordable Build presses.
                 if (b == Buttons.A)
                 {
                     bool onFarm = OnFarmField != null && (bool)OnFarmField.GetValue(__instance);
                     int selectedBtn = SelectedBottomButtonField != null ? (int)SelectedBottomButtonField.GetValue(__instance) : -1;
-                    Monitor.Log($"[#14e DIAG] receiveGamePadButton(A) on shop screen: onFarm={onFarm} selectedBtn={selectedBtn} cursorActive={_cursorActive}", LogLevel.Info);
+
+                    if (!onFarm && selectedBtn == 2) // 2 = BottomButton.BuildOrUpgrade
+                    {
+                        int price = PriceField != null ? (int)PriceField.GetValue(__instance) : 0;
+                        bool canAfford = price >= 0 && Game1.player.Money >= price;
+                        bool hasResources = true;
+                        if (canAfford && DoesFarmerHaveEnoughResourcesToBuildMethod != null)
+                            hasResources = (bool)DoesFarmerHaveEnoughResourcesToBuildMethod.Invoke(__instance, null);
+
+                        if (!canAfford || !hasResources)
+                        {
+                            Game1.playSound("cancel");
+                            if (ModEntry.Config.VerboseLogging)
+                                Monitor.Log($"[CarpenterMenu] Blocked unaffordable Build: price={price} money={Game1.player.Money} hasResources={hasResources}", LogLevel.Debug);
+                            return false;
+                        }
+                    }
+
+                    if (ModEntry.Config.VerboseLogging)
+                        Monitor.Log($"[CarpenterMenu] Shop screen A: onFarm={onFarm} selectedBtn={selectedBtn}", LogLevel.Debug);
                 }
                 return true;
             }
