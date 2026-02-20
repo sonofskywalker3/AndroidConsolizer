@@ -31,6 +31,9 @@ namespace AndroidConsolizer.Patches
         /// <summary>Flag to let a synthetic B press bypass our prefix.</summary>
         private static bool _bypassPrefix = false;
 
+        /// <summary>Whether our code initiated a receiveLeftClick call (bypass touch-sim block).</summary>
+        private static bool _allowOurClick = false;
+
         /// <summary>Whether the color picker is currently open and we're navigating swatches.</summary>
         private static bool _colorPickerOpen = false;
 
@@ -112,6 +115,14 @@ namespace AndroidConsolizer.Patches
                 harmony.Patch(
                     original: AccessTools.Method(typeof(ItemGrabMenu), nameof(ItemGrabMenu.update)),
                     postfix: new HarmonyMethod(typeof(ItemGrabMenuPatches), nameof(Update_Postfix))
+                );
+
+                // Patch receiveLeftClick to block Android's touch-sim clicks when A is pressed.
+                // On Android, pressing A generates a synthetic receiveLeftClick that would
+                // pick up items we just placed/transferred via our controller handler.
+                harmony.Patch(
+                    original: AccessTools.Method(typeof(ItemGrabMenu), nameof(ItemGrabMenu.receiveLeftClick)),
+                    prefix: new HarmonyMethod(typeof(ItemGrabMenuPatches), nameof(ReceiveLeftClick_Prefix))
                 );
 
                 // Patch draw to render swap-held item at cursor position
@@ -604,6 +615,35 @@ namespace AndroidConsolizer.Patches
             }
         }
 
+        /// <summary>Prefix for ItemGrabMenu.receiveLeftClick to block Android's touch-sim clicks.
+        /// On Android, pressing A generates a synthetic receiveLeftClick at the cursor position.
+        /// Our A-button handler transfers/places items directly, so the touch-sim click would
+        /// pick up the item we just placed, making it appear "attached to the cursor."</summary>
+        private static bool ReceiveLeftClick_Prefix(ItemGrabMenu __instance, int x, int y, bool playSound)
+        {
+            // Allow clicks we initiated ourselves (side button clicks, color swatch clicks)
+            if (_allowOurClick)
+                return true;
+
+            // Skip shipping bins — they have their own handler
+            if (__instance.shippingBin)
+                return true;
+
+            // Block touch-sim clicks while A is pressed and we're handling chest interactions
+            if (ModEntry.Config.EnableConsoleChests)
+            {
+                var gpState = GamePad.GetState(Microsoft.Xna.Framework.PlayerIndex.One);
+                if (gpState.Buttons.A == ButtonState.Pressed)
+                {
+                    if (ModEntry.Config.VerboseLogging)
+                        Monitor.Log($"[ChestNav] Blocked touch-sim receiveLeftClick({x},{y}) — A pressed", LogLevel.Debug);
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
         /// <summary>Prefix for exitThisMenu to block same-frame exit when B closes the color picker.
         /// The game's update loop processes B through a separate code path that reads gamepad state
         /// cached at the start of the frame (before our receiveGamePadButton prefix could suppress it).
@@ -699,7 +739,9 @@ namespace AndroidConsolizer.Patches
                             int cy = snapped.bounds.Center.Y;
                             if (ModEntry.Config.VerboseLogging)
                                 Monitor.Log($"[ChestNav] A on color swatch {snapped.myID} — click at ({cx},{cy})", LogLevel.Debug);
-                            __instance.receiveLeftClick(cx, cy);
+                            _allowOurClick = true;
+                            try { __instance.receiveLeftClick(cx, cy); }
+                            finally { _allowOurClick = false; }
                         }
                         return false;
                     }
@@ -816,7 +858,9 @@ namespace AndroidConsolizer.Patches
                         int cy = snapped.bounds.Center.Y;
                         if (ModEntry.Config.VerboseLogging)
                             Monitor.Log($"[ChestNav] A on side button {snapped.myID} — click at ({cx},{cy})", LogLevel.Debug);
-                        __instance.receiveLeftClick(cx, cy);
+                        _allowOurClick = true;
+                        try { __instance.receiveLeftClick(cx, cy); }
+                        finally { _allowOurClick = false; }
                         return false;
                     }
                 }
