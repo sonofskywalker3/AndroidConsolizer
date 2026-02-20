@@ -4,6 +4,7 @@ using System.Linq;
 using System.Reflection;
 using HarmonyLib;
 using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 using StardewModdingAPI;
 using StardewValley;
@@ -111,6 +112,12 @@ namespace AndroidConsolizer.Patches
                 harmony.Patch(
                     original: AccessTools.Method(typeof(ItemGrabMenu), nameof(ItemGrabMenu.update)),
                     postfix: new HarmonyMethod(typeof(ItemGrabMenuPatches), nameof(Update_Postfix))
+                );
+
+                // Patch draw to render swap-held item at cursor position
+                harmony.Patch(
+                    original: AccessTools.Method(typeof(ItemGrabMenu), nameof(ItemGrabMenu.draw), new[] { typeof(SpriteBatch) }),
+                    postfix: new HarmonyMethod(typeof(ItemGrabMenuPatches), nameof(Draw_Postfix))
                 );
 
                 Monitor.Log("ItemGrabMenu patches applied successfully.", LogLevel.Trace);
@@ -1622,6 +1629,48 @@ namespace AndroidConsolizer.Patches
             Game1.playSound("cancel");
             _swapHeldItem = null;
             _swapSourceSlot = -1;
+        }
+
+        /// <summary>Draw postfix — render swap-held item at the currently snapped component position.</summary>
+        private static void Draw_Postfix(ItemGrabMenu __instance, SpriteBatch b)
+        {
+            if (_swapHeldItem == null || !ModEntry.Config.EnableConsoleChests)
+                return;
+
+            var snapped = __instance.currentlySnappedComponent;
+            if (snapped == null) return;
+
+            // Draw at snapped component center, offset so item is centered
+            var bounds = snapped.bounds;
+            float scale = 0.75f;
+            int drawSize = (int)(64 * scale);
+            int drawX = bounds.Center.X - drawSize / 2;
+            int drawY = bounds.Center.Y - drawSize / 2;
+
+            // Draw shadow underneath
+            b.Draw(
+                Game1.shadowTexture,
+                new Vector2(bounds.Center.X - Game1.shadowTexture.Bounds.Width / 2, bounds.Center.Y + drawSize / 2 - 4),
+                Game1.shadowTexture.Bounds,
+                Color.White * 0.5f,
+                0f,
+                Vector2.Zero,
+                1f,
+                SpriteEffects.None,
+                0.0001f
+            );
+
+            // Draw the item
+            _swapHeldItem.drawInMenu(
+                b,
+                new Vector2(drawX, drawY),
+                scale,
+                1f,    // transparency
+                0.9f,  // layerDepth (draw on top of most things)
+                StackDrawType.Draw,
+                Color.White,
+                true   // drawShadow
+            );
         }
 
         /// <summary>Called when the ItemGrabMenu closes. Returns any held swap item to its source.</summary>
