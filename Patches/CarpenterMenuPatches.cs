@@ -94,10 +94,10 @@ namespace AndroidConsolizer.Patches
         /// select + confirm as a pair.</summary>
         private static Building _demolishSelectedBuilding = null;
 
-        /// <summary>Tick until which touch-sim clicks should be blocked on the shop screen.
+        /// <summary>When true, touch-sim clicks are blocked on the shop screen until A is released.
         /// Set when we intercept an unaffordable Build A press to prevent the touch-sim
         /// receiveLeftClick/releaseLeftClick at (-39,-39) from hitting cancelButton.</summary>
-        private static int _blockShopClickUntilTick = -1;
+        private static bool _blockShopClicks = false;
 
         /// <summary>Apply Harmony patches.</summary>
         public static void Apply(Harmony harmony, IMonitor monitor)
@@ -277,6 +277,7 @@ namespace AndroidConsolizer.Patches
             _ghostPlaced = false;
             _buildPressHandled = false;
             _demolishSelectedBuilding = null;
+            _blockShopClicks = false;
         }
 
         /// <summary>Check if we're within the grace period after menu open.</summary>
@@ -331,8 +332,13 @@ namespace AndroidConsolizer.Patches
         {
             // Block touch-sim clicks after we intercepted an unaffordable Build A press.
             // The A button triggers touch-sim at (-39,-39) which hits cancelButton's off-screen bounds.
-            if (!_cursorActive && Game1.ticks <= _blockShopClickUntilTick)
+            if (!_cursorActive && _blockShopClicks)
             {
+                // Clear the flag once A is released, but still block this click
+                // (the release itself generates the touch-sim we're trying to block)
+                var gps = GamePad.GetState(PlayerIndex.One);
+                if (gps.Buttons.A != ButtonState.Pressed)
+                    _blockShopClicks = false;
                 if (ModEntry.Config.VerboseLogging)
                     Monitor.Log($"[CarpenterMenu] Blocked touch-sim receiveLeftClick({x},{y}) after unaffordable Build intercept", LogLevel.Debug);
                 return false;
@@ -374,7 +380,7 @@ namespace AndroidConsolizer.Patches
                         if (!canAfford || !hasResources)
                         {
                             Game1.playSound("cancel");
-                            _blockShopClickUntilTick = Game1.ticks + 2;
+                            _blockShopClicks = true;
                             if (ModEntry.Config.VerboseLogging)
                                 Monitor.Log($"[CarpenterMenu] Blocked unaffordable Build: price={price} money={Game1.player.Money} hasResources={hasResources}", LogLevel.Debug);
                             return false;
@@ -509,9 +515,12 @@ namespace AndroidConsolizer.Patches
                 return false;
             }
 
-            // #14e: Block touch-sim after unaffordable Build intercept
-            if (!_cursorActive && Game1.ticks <= _blockShopClickUntilTick)
+            // #14e: Block touch-sim after unaffordable Build intercept (until A released)
+            if (!_cursorActive && _blockShopClicks)
             {
+                var gps = GamePad.GetState(PlayerIndex.One);
+                if (gps.Buttons.A != ButtonState.Pressed)
+                    _blockShopClicks = false;
                 if (ModEntry.Config.VerboseLogging)
                     Monitor.Log($"[CarpenterMenu] Blocked touch-sim releaseLeftClick({x},{y}) after unaffordable Build intercept", LogLevel.Debug);
                 return false;
