@@ -1304,9 +1304,15 @@ namespace AndroidConsolizer.Patches
             }
             else
             {
-                Game1.playSound("cancel");
+                // Nothing transferred — chest full, no matching stacks.
+                // Pick up for console-style displacement swap.
+                _swapHeldItem = Game1.player.Items[slotIndex];
+                Game1.player.Items[slotIndex] = null;
+                _swapSourceSlot = slotIndex;
+                _swapFromChest = false;
+                Game1.playSound("dwop");
                 if (ModEntry.Config.VerboseLogging)
-                    Monitor.Log("[ChestTransfer] Chest full, cannot place item", LogLevel.Debug);
+                    Monitor.Log($"[ChestTransfer] Picked up {_swapHeldItem.DisplayName} from player slot {slotIndex} for swap", LogLevel.Debug);
             }
         }
 
@@ -1364,9 +1370,16 @@ namespace AndroidConsolizer.Patches
             }
             else
             {
-                Game1.playSound("cancel");
+                // Chest full, no matching stacks — pick up one for swap.
+                item.Stack--;
+                if (item.Stack <= 0)
+                    Game1.player.Items[slotIndex] = null;
+                _swapHeldItem = one;
+                _swapSourceSlot = -1; // no specific slot — source stack may still exist
+                _swapFromChest = false;
+                Game1.playSound("dwop");
                 if (ModEntry.Config.VerboseLogging)
-                    Monitor.Log("[ChestTransfer] Chest full, cannot place 1 item", LogLevel.Debug);
+                    Monitor.Log($"[ChestTransfer] Picked up 1x {one.DisplayName} from player for swap ({item?.Stack ?? 0} remain)", LogLevel.Debug);
             }
         }
 
