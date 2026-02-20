@@ -86,13 +86,22 @@ namespace AndroidConsolizer.Patches
                 if (!(currentPage is OptionsPage))
                     return false;
                 // Don't suppress left stick when GMCM is open as a child menu —
-                // let GMCM use its own vanilla controls.
+                // GMCM fork handles its own controller navigation.
                 var childMenu = gm.GetChildMenu();
-                if (childMenu != null && GmcmPatches.IsGmcmMenu(childMenu))
+                if (childMenu != null && IsGmcmMenu(childMenu))
                     return false;
                 return true;
             }
             return false;
+        }
+
+        /// <summary>Check if the given menu is a GMCM menu type (by full type name, no reflection init needed).</summary>
+        private static bool IsGmcmMenu(IClickableMenu menu)
+        {
+            if (menu == null) return false;
+            var fullName = menu.GetType().FullName;
+            return fullName == "GenericModConfigMenu.Framework.ModConfigMenu"
+                || fullName == "GenericModConfigMenu.Framework.SpecificModConfigMenu";
         }
 
         public static void Apply(Harmony harmony, IMonitor monitor)
@@ -612,7 +621,7 @@ namespace AndroidConsolizer.Patches
             if (!Game1.options.gamepadControls)
                 return;
             // Don't run our nav when GMCM is open as child menu
-            if (Game1.activeClickableMenu is GameMenu gm && gm.GetChildMenu() is IClickableMenu child && GmcmPatches.IsGmcmMenu(child))
+            if (Game1.activeClickableMenu is GameMenu gm && gm.GetChildMenu() is IClickableMenu child && IsGmcmMenu(child))
                 return;
 
             try
