@@ -50,6 +50,8 @@ namespace AndroidConsolizer.Patches
         private static FieldInfo MovingField;        // Android: bool (null on PC)
         private static FieldInfo DemolishingField;   // Android: bool (null on PC)
         private static FieldInfo BuildingToMoveField; // Building being moved (both platforms)
+        private static FieldInfo PriceField;           // int — current blueprint price
+        private static FieldInfo SelectedBottomButtonField; // BottomButton enum — which button is selected
 
         private const float StickDeadzone = 0.2f;
         private const float CursorSpeedMax = 16f;  // px/tick at full tilt
@@ -144,7 +146,16 @@ namespace AndroidConsolizer.Patches
                 MovingField = AccessTools.Field(typeof(CarpenterMenu), "moving");
                 DemolishingField = AccessTools.Field(typeof(CarpenterMenu), "demolishing");
                 BuildingToMoveField = AccessTools.Field(typeof(CarpenterMenu), "buildingToMove");
+                PriceField = AccessTools.Field(typeof(CarpenterMenu), "price");
+                SelectedBottomButtonField = AccessTools.Field(typeof(CarpenterMenu), "_selectedBottomButton");
                 Monitor.Log($"CarpenterMenu mode fields: Action={ActionField != null}, moving={MovingField != null}, demolishing={DemolishingField != null}, buildingToMove={BuildingToMoveField != null}", LogLevel.Debug);
+                Monitor.Log($"CarpenterMenu diagnostic fields: price={PriceField != null}, _selectedBottomButton={SelectedBottomButtonField != null}", LogLevel.Debug);
+
+                // Diagnostic: log OnReleaseBuildButton state for #14e investigation
+                harmony.Patch(
+                    original: AccessTools.Method(typeof(CarpenterMenu), "OnReleaseBuildButton"),
+                    prefix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(OnReleaseBuildButton_DiagnosticPrefix))
+                );
 
                 // Postfix on update — reads left stick and moves cursor when on farm
                 harmony.Patch(
@@ -310,6 +321,38 @@ namespace AndroidConsolizer.Patches
             return null;
         }
 
+        /// <summary>Diagnostic prefix for OnReleaseBuildButton — logs affordability state (#14e investigation).</summary>
+        private static void OnReleaseBuildButton_DiagnosticPrefix(CarpenterMenu __instance)
+        {
+            try
+            {
+                bool onFarm = OnFarmField != null && (bool)OnFarmField.GetValue(__instance);
+                int price = PriceField != null ? (int)PriceField.GetValue(__instance) : -999;
+                int money = Game1.player.Money;
+                bool canAfford = money >= price;
+                bool hasResources = false;
+                var hasResourcesMethod = AccessTools.Method(typeof(CarpenterMenu), "DoesFarmerHaveEnoughResourcesToBuild");
+                if (hasResourcesMethod != null)
+                    hasResources = (bool)hasResourcesMethod.Invoke(__instance, null);
+                bool wouldPass = !onFarm && price >= 0 && canAfford && hasResources;
+                int selectedBtn = SelectedBottomButtonField != null ? (int)SelectedBottomButtonField.GetValue(__instance) : -1;
+                var blueprintProp = AccessTools.Property(typeof(CarpenterMenu), "CurrentBlueprint");
+                string blueprintName = "unknown";
+                if (blueprintProp != null)
+                {
+                    var bp = blueprintProp.GetValue(__instance);
+                    var displayNameProp = bp?.GetType().GetProperty("DisplayName");
+                    blueprintName = displayNameProp?.GetValue(bp)?.ToString() ?? "null";
+                }
+
+                Monitor.Log($"[#14e DIAG] OnReleaseBuildButton called! blueprint={blueprintName} onFarm={onFarm} price={price} money={money} canAfford={canAfford} hasResources={hasResources} wouldPass={wouldPass} selectedBtn={selectedBtn}", LogLevel.Info);
+            }
+            catch (Exception ex)
+            {
+                Monitor.Log($"[#14e DIAG] Error in diagnostic: {ex.Message}", LogLevel.Error);
+            }
+        }
+
         /// <summary>
         /// Prefix for CarpenterMenu.receiveGamePadButton — two-press A button system.
         /// First A press: block here so Update_Postfix can position the ghost via receiveLeftClick.
@@ -322,7 +365,16 @@ namespace AndroidConsolizer.Patches
                 return true;
 
             if (!_cursorActive)
+            {
+                // Diagnostic: log shop-screen A presses for #14e investigation
+                if (b == Buttons.A)
+                {
+                    bool onFarm = OnFarmField != null && (bool)OnFarmField.GetValue(__instance);
+                    int selectedBtn = SelectedBottomButtonField != null ? (int)SelectedBottomButtonField.GetValue(__instance) : -1;
+                    Monitor.Log($"[#14e DIAG] receiveGamePadButton(A) on shop screen: onFarm={onFarm} selectedBtn={selectedBtn} cursorActive={_cursorActive}", LogLevel.Info);
+                }
                 return true;
+            }
 
             if (b == Buttons.A)
             {
