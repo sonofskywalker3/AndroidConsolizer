@@ -94,6 +94,10 @@ namespace AndroidConsolizer.Patches
         /// select + confirm as a pair.</summary>
         private static Building _demolishSelectedBuilding = null;
 
+        /// <summary>Tick until which touch-sim clicks should be blocked on the shop screen.
+        /// Set when we intercept an unaffordable Build A press to prevent the touch-sim
+        /// receiveLeftClick/releaseLeftClick at (-39,-39) from hitting cancelButton.</summary>
+        private static int _blockShopClickUntilTick = -1;
 
         /// <summary>Apply Harmony patches.</summary>
         public static void Apply(Harmony harmony, IMonitor monitor)
@@ -367,9 +371,19 @@ namespace AndroidConsolizer.Patches
             }
         }
 
-        /// <summary>Diagnostic prefix for receiveLeftClick — logs all click calls to trace touch-sim after A press (#14e).</summary>
-        private static void ReceiveLeftClick_DiagnosticPrefix(CarpenterMenu __instance, int x, int y)
+        /// <summary>Prefix for receiveLeftClick — blocks touch-sim clicks after unaffordable Build intercept (#14e).
+        /// Also logs click calls for diagnostics.</summary>
+        private static bool ReceiveLeftClick_DiagnosticPrefix(CarpenterMenu __instance, int x, int y)
         {
+            // #14e: Block touch-sim clicks after we intercepted an unaffordable Build A press.
+            // The A button triggers touch-sim at (-39,-39) which hits cancelButton's off-screen bounds.
+            if (!_cursorActive && Game1.ticks <= _blockShopClickUntilTick)
+            {
+                if (ModEntry.Config.VerboseLogging)
+                    Monitor.Log($"[CarpenterMenu] Blocked touch-sim receiveLeftClick({x},{y}) after unaffordable Build intercept", LogLevel.Debug);
+                return false;
+            }
+
             try
             {
                 bool onFarm = OnFarmField != null && (bool)OnFarmField.GetValue(__instance);
@@ -411,6 +425,7 @@ namespace AndroidConsolizer.Patches
             {
                 Monitor.Log($"[#14e DIAG] receiveLeftClick diagnostic error: {ex.Message}", LogLevel.Error);
             }
+            return true;
         }
 
         /// <summary>Diagnostic postfix for releaseLeftClick — logs when it fires outside grace period (#14e).</summary>
@@ -457,6 +472,7 @@ namespace AndroidConsolizer.Patches
                         if (!canAfford || !hasResources)
                         {
                             Game1.playSound("cancel");
+                            _blockShopClickUntilTick = Game1.ticks + 2;
                             if (ModEntry.Config.VerboseLogging)
                                 Monitor.Log($"[CarpenterMenu] Blocked unaffordable Build: price={price} money={Game1.player.Money} hasResources={hasResources}", LogLevel.Debug);
                             return false;
@@ -588,6 +604,14 @@ namespace AndroidConsolizer.Patches
             {
                 if (ModEntry.Config.VerboseLogging)
                     Monitor.Log($"[CarpenterMenu] BLOCKED releaseLeftClick at ({x},{y}) — grace period ({Game1.ticks - MenuOpenTick}/{GracePeriodTicks} ticks)", LogLevel.Debug);
+                return false;
+            }
+
+            // #14e: Block touch-sim after unaffordable Build intercept
+            if (!_cursorActive && Game1.ticks <= _blockShopClickUntilTick)
+            {
+                if (ModEntry.Config.VerboseLogging)
+                    Monitor.Log($"[CarpenterMenu] Blocked touch-sim releaseLeftClick({x},{y}) after unaffordable Build intercept", LogLevel.Debug);
                 return false;
             }
 
