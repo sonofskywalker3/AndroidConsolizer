@@ -1228,9 +1228,18 @@ namespace AndroidConsolizer.Patches
             }
             else
             {
-                Game1.playSound("cancel");
+                // Inventory full, no matching stacks — pick up one for swap.
+                // The source stack still has items, so use _swapSourceSlot = -1
+                // to indicate "find first available" when placing displaced item.
+                item.Stack--;
+                if (item.Stack <= 0)
+                    chestInv[slotIndex] = null;
+                _swapHeldItem = one;
+                _swapSourceSlot = -1; // no specific slot — source stack may still exist
+                _swapFromChest = true;
+                Game1.playSound("dwop");
                 if (ModEntry.Config.VerboseLogging)
-                    Monitor.Log($"[ChestTransfer] Inventory full, cannot take 1x {one.DisplayName}", LogLevel.Debug);
+                    Monitor.Log($"[ChestTransfer] Picked up 1x {one.DisplayName} from chest for swap ({item?.Stack ?? 0} remain)", LogLevel.Debug);
             }
         }
 
