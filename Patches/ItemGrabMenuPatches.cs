@@ -62,6 +62,11 @@ namespace AndroidConsolizer.Patches
         private const int TransferHoldDelay = 20;   // ~333ms at 60fps before repeat starts
         private const int TransferRepeatRate = 3;    // ~50ms at 60fps between repeats
 
+        // Swap-held-item state for console-style displacement swaps
+        private static Item _swapHeldItem = null;
+        private static int _swapSourceSlot = -1;
+        private static bool _swapFromChest = true; // true = item came from chest, false = from player inv
+
         // Cached reflection fields for InventoryMenu sidebar buttons
         private static FieldInfo _organizeButtonField;
         private static FieldInfo _trashCanField;
@@ -630,7 +635,16 @@ namespace AndroidConsolizer.Patches
 
                 // Log all button presses in chest menu for debugging
                 if (ModEntry.Config.VerboseLogging)
-                    Monitor.Log($"ItemGrabMenu button: {b} (remapped={remapped}), pickerOpen={_colorPickerOpen}", LogLevel.Debug);
+                    Monitor.Log($"ItemGrabMenu button: {b} (remapped={remapped}), pickerOpen={_colorPickerOpen}, swapHeld={_swapHeldItem != null}", LogLevel.Debug);
+
+                // =====================================================
+                // B while holding swap item: cancel swap, return item
+                // =====================================================
+                if (remapped == Buttons.B && _swapHeldItem != null && ModEntry.Config.EnableConsoleChests)
+                {
+                    CancelSwap(__instance);
+                    return false;
+                }
 
                 // =====================================================
                 // Color picker open: intercept ALL navigation + B
@@ -780,6 +794,28 @@ namespace AndroidConsolizer.Patches
                         __instance.receiveLeftClick(cx, cy);
                         return false;
                     }
+                }
+
+                // A while holding swap item — place into target slot (displacement swap)
+                if (remapped == Buttons.A && _swapHeldItem != null && ModEntry.Config.EnableConsoleChests)
+                {
+                    var snapped = __instance.currentlySnappedComponent;
+                    if (snapped != null)
+                    {
+                        int chestIdx = __instance.ItemsToGrabMenu?.inventory?.IndexOf(snapped) ?? -1;
+                        int playerIdx = __instance.inventory?.inventory?.IndexOf(snapped) ?? -1;
+                        if (chestIdx >= 0)
+                        {
+                            PlaceSwapItem(__instance, chestIdx, isChestSlot: true);
+                            return false;
+                        }
+                        if (playerIdx >= 0)
+                        {
+                            PlaceSwapItem(__instance, playerIdx, isChestSlot: false);
+                            return false;
+                        }
+                    }
+                    return false; // consume A even if not on a valid slot
                 }
 
                 // A/Y on grid slots — console-style chest item transfer
@@ -1146,10 +1182,15 @@ namespace AndroidConsolizer.Patches
             }
             else
             {
-                // Nothing transferred — player inventory full
-                Game1.playSound("cancel");
+                // Nothing transferred — player inventory full, no matching stacks.
+                // Pick up for console-style displacement swap.
+                _swapHeldItem = chestInv[slotIndex];
+                chestInv[slotIndex] = null;
+                _swapSourceSlot = slotIndex;
+                _swapFromChest = true;
+                Game1.playSound("dwop");
                 if (ModEntry.Config.VerboseLogging)
-                    Monitor.Log($"[ChestTransfer] Inventory full, cannot take {item.DisplayName}", LogLevel.Debug);
+                    Monitor.Log($"[ChestTransfer] Picked up {_swapHeldItem.DisplayName} from chest slot {slotIndex} for swap", LogLevel.Debug);
             }
         }
 
@@ -1401,6 +1442,215 @@ namespace AndroidConsolizer.Patches
             }
 
             return false; // No non-null attachments — tool is bare
+        }
+
+        /// <summary>Place the swap-held item into the target slot, displacing whatever is there
+        /// back to the source inventory. The destination is guaranteed full (no empty slots,
+        /// no matching stacks) since normal transfer already failed.</summary>
+        private static void PlaceSwapItem(ItemGrabMenu menu, int targetSlot, bool isChestSlot)
+        {
+            var chestInv = menu.ItemsToGrabMenu?.actualInventory;
+            if (chestInv == null || _swapHeldItem == null) return;
+
+            IList<Item> targetInv = isChestSlot ? chestInv : (IList<Item>)Game1.player.Items;
+            IList<Item> sourceInv = _swapFromChest ? chestInv : (IList<Item>)Game1.player.Items;
+
+            if (targetSlot < 0 || targetSlot >= targetInv.Count)
+            {
+                if (ModEntry.Config.VerboseLogging)
+                    Monitor.Log($"[ChestSwap] Target slot {targetSlot} out of range ({targetInv.Count})", LogLevel.Debug);
+                return;
+            }
+
+            Item displacedItem = targetInv[targetSlot];
+            targetInv[targetSlot] = _swapHeldItem;
+
+            // Return displaced item to source
+            if (_swapSourceSlot >= 0 && _swapSourceSlot < sourceInv.Count && sourceInv[_swapSourceSlot] == null)
+            {
+                // Source slot is empty (expected for A-pickup of full stack)
+                sourceInv[_swapSourceSlot] = displacedItem;
+            }
+            else if (_swapSourceSlot == -1)
+            {
+                // Y-pickup-one: source slot still has items, find first available in source inv
+                bool placed = false;
+                if (displacedItem != null)
+                {
+                    // Try stacking first
+                    for (int i = 0; i < sourceInv.Count; i++)
+                    {
+                        if (sourceInv[i] != null && sourceInv[i].canStackWith(displacedItem) &&
+                            sourceInv[i].Stack < sourceInv[i].maximumStackSize())
+                        {
+                            int space = sourceInv[i].maximumStackSize() - sourceInv[i].Stack;
+                            int toMove = Math.Min(space, displacedItem.Stack);
+                            sourceInv[i].Stack += toMove;
+                            displacedItem.Stack -= toMove;
+                            if (displacedItem.Stack <= 0) { placed = true; break; }
+                        }
+                    }
+                    // Then try empty slot
+                    if (!placed)
+                    {
+                        for (int i = 0; i < sourceInv.Count; i++)
+                        {
+                            if (sourceInv[i] == null)
+                            {
+                                sourceInv[i] = displacedItem;
+                                placed = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    placed = true; // target was empty, nothing to return
+                }
+
+                if (!placed && displacedItem != null)
+                {
+                    // Defensive fallback: drop item as debris
+                    Monitor.Log($"[ChestSwap] WARNING: Could not return displaced item {displacedItem.DisplayName} to source — dropping as debris", LogLevel.Warn);
+                    Game1.createItemDebris(displacedItem, Game1.player.getStandingPosition(), Game1.player.FacingDirection);
+                }
+            }
+            else
+            {
+                // Defensive fallback: source slot was unexpectedly occupied
+                if (displacedItem != null)
+                {
+                    Monitor.Log($"[ChestSwap] WARNING: Source slot {_swapSourceSlot} occupied, using addItemToInventory fallback", LogLevel.Warn);
+                    if (_swapFromChest)
+                    {
+                        // Source was chest — try to put displaced item anywhere in chest
+                        bool placed = false;
+                        for (int i = 0; i < sourceInv.Count; i++)
+                        {
+                            if (sourceInv[i] == null) { sourceInv[i] = displacedItem; placed = true; break; }
+                        }
+                        if (!placed)
+                            Game1.createItemDebris(displacedItem, Game1.player.getStandingPosition(), Game1.player.FacingDirection);
+                    }
+                    else
+                    {
+                        // Source was player — use addItemToInventory
+                        var leftover = Game1.player.addItemToInventory(displacedItem);
+                        if (leftover != null && leftover.Stack > 0)
+                            Game1.createItemDebris(leftover, Game1.player.getStandingPosition(), Game1.player.FacingDirection);
+                    }
+                }
+            }
+
+            if (ModEntry.Config.VerboseLogging)
+                Monitor.Log($"[ChestSwap] Placed {_swapHeldItem?.DisplayName} into {(isChestSlot ? "chest" : "player")} slot {targetSlot}, displaced {displacedItem?.DisplayName ?? "(empty)"} to {(_swapFromChest ? "chest" : "player")}", LogLevel.Debug);
+
+            Game1.playSound("stoneStep");
+            _swapHeldItem = null;
+            _swapSourceSlot = -1;
+        }
+
+        /// <summary>Cancel the swap — return the held item to its source slot.</summary>
+        private static void CancelSwap(ItemGrabMenu menu)
+        {
+            if (_swapHeldItem == null) return;
+
+            var chestInv = menu?.ItemsToGrabMenu?.actualInventory;
+            IList<Item> sourceInv = _swapFromChest
+                ? (IList<Item>)chestInv
+                : (IList<Item>)Game1.player.Items;
+
+            if (sourceInv != null)
+            {
+                if (_swapSourceSlot >= 0 && _swapSourceSlot < sourceInv.Count && sourceInv[_swapSourceSlot] == null)
+                {
+                    sourceInv[_swapSourceSlot] = _swapHeldItem;
+                }
+                else if (_swapSourceSlot == -1)
+                {
+                    // Y-pickup-one: try stacking onto matching items, then empty slot
+                    bool placed = false;
+                    for (int i = 0; i < sourceInv.Count; i++)
+                    {
+                        if (sourceInv[i] != null && sourceInv[i].canStackWith(_swapHeldItem) &&
+                            sourceInv[i].Stack < sourceInv[i].maximumStackSize())
+                        {
+                            sourceInv[i].Stack += _swapHeldItem.Stack;
+                            placed = true;
+                            break;
+                        }
+                    }
+                    if (!placed)
+                    {
+                        for (int i = 0; i < sourceInv.Count; i++)
+                        {
+                            if (sourceInv[i] == null) { sourceInv[i] = _swapHeldItem; placed = true; break; }
+                        }
+                    }
+                    if (!placed)
+                    {
+                        Monitor.Log($"[ChestSwap] WARNING: Could not return {_swapHeldItem.DisplayName} on cancel — dropping as debris", LogLevel.Warn);
+                        Game1.createItemDebris(_swapHeldItem, Game1.player.getStandingPosition(), Game1.player.FacingDirection);
+                    }
+                }
+                else
+                {
+                    // Source slot occupied — try to find space
+                    bool placed = false;
+                    for (int i = 0; i < sourceInv.Count; i++)
+                    {
+                        if (sourceInv[i] == null) { sourceInv[i] = _swapHeldItem; placed = true; break; }
+                    }
+                    if (!placed)
+                    {
+                        Monitor.Log($"[ChestSwap] WARNING: No space to return {_swapHeldItem.DisplayName} on cancel — dropping as debris", LogLevel.Warn);
+                        Game1.createItemDebris(_swapHeldItem, Game1.player.getStandingPosition(), Game1.player.FacingDirection);
+                    }
+                }
+            }
+            else
+            {
+                // Menu already gone — drop as debris to prevent item loss
+                Monitor.Log($"[ChestSwap] WARNING: Source inventory unavailable on cancel — dropping {_swapHeldItem.DisplayName} as debris", LogLevel.Warn);
+                Game1.createItemDebris(_swapHeldItem, Game1.player.getStandingPosition(), Game1.player.FacingDirection);
+            }
+
+            if (ModEntry.Config.VerboseLogging)
+                Monitor.Log($"[ChestSwap] Cancelled swap, returned {_swapHeldItem?.DisplayName}", LogLevel.Debug);
+
+            Game1.playSound("cancel");
+            _swapHeldItem = null;
+            _swapSourceSlot = -1;
+        }
+
+        /// <summary>Called when the ItemGrabMenu closes. Returns any held swap item to its source.</summary>
+        public static void OnMenuClosed()
+        {
+            if (_swapHeldItem != null)
+            {
+                // We need to find the menu that's closing, but it's already gone.
+                // Try to return to player inventory as fallback.
+                if (_swapFromChest)
+                {
+                    // Source was chest which is now closed — give to player
+                    var leftover = Game1.player.addItemToInventory(_swapHeldItem);
+                    if (leftover != null && leftover.Stack > 0)
+                        Game1.createItemDebris(leftover, Game1.player.getStandingPosition(), Game1.player.FacingDirection);
+                    Monitor.Log($"[ChestSwap] Menu closed while holding {_swapHeldItem.DisplayName} from chest — added to player inventory", LogLevel.Info);
+                }
+                else
+                {
+                    // Source was player inventory — return to first available slot
+                    var leftover = Game1.player.addItemToInventory(_swapHeldItem);
+                    if (leftover != null && leftover.Stack > 0)
+                        Game1.createItemDebris(leftover, Game1.player.getStandingPosition(), Game1.player.FacingDirection);
+                    Monitor.Log($"[ChestSwap] Menu closed while holding {_swapHeldItem.DisplayName} from player — returned to inventory", LogLevel.Info);
+                }
+
+                _swapHeldItem = null;
+                _swapSourceSlot = -1;
+            }
         }
     }
 }
