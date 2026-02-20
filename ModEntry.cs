@@ -169,6 +169,12 @@ namespace AndroidConsolizer
                 Patches.ItemGrabMenuPatches.FixSnapNavigation(itemGrabMenu);
             }
 
+            // Clean up swap-held-item state when leaving chest menu
+            if (e.OldMenu is ItemGrabMenu)
+            {
+                Patches.ItemGrabMenuPatches.OnMenuClosed();
+            }
+
             // Track CarpenterMenu open/close for grace period fix
             if (e.NewMenu is CarpenterMenu)
             {
