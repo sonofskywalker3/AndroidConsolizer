@@ -96,7 +96,7 @@ When "Use Bumpers Instead of Triggers" is enabled:
 - **Powers tab**: Finger cursor replaces glow highlight.
 - **Options tab**: Left stick navigates options, A activates, right stick scrolls the list. Dropdowns supported.
 - **LT/RT tab switching**: Cycle between all game menu tabs with triggers (console parity).
-- **GMCM handoff**: When opening Generic Mod Config Menu from the Options tab, controls revert to vanilla so GMCM works normally.
+- **GMCM controller navigation**: Full d-pad/thumbstick snap navigation in Generic Mod Config Menu via our [controller-enabled GMCM fork](https://github.com/sonofskywalker3/GenericModConfigMenu). B button navigates back through mod config → mod list → close.
 
 ### Furniture Placement Fix
 - Y button no longer rapid-toggles furniture between picked up and placed
@@ -161,7 +161,7 @@ When "Use Bumpers Instead of Triggers" is enabled:
 - [SMAPI 4.0.0+ for Android](https://github.com/NRTnarathip/SMAPI-Android-1.6) by NRTnarathip
 
 **Optional:**
-- [Generic Mod Config Menu](https://www.nexusmods.com/stardewvalley/mods/5098) - for in-game settings
+- [Generic Mod Config Menu](https://github.com/sonofskywalker3/GenericModConfigMenu/releases) - for in-game settings (our fork adds controller snap navigation; the [standard version](https://www.nexusmods.com/stardewvalley/mods/5098) also works)
 
 ## Tested Controllers
 
@@ -317,7 +317,7 @@ MIT License - Feel free to modify and redistribute.
 - **Powers Tab** — Finger cursor replaces glow highlight
 - **Options Tab Navigation** — Left stick navigates options, A activates/toggles, right stick scrolls the options list. Dropdown menus open and close properly.
 - **LT/RT Tab Switching** — Cycle between all game menu tabs with triggers (console parity). Works with CC tab too.
-- **GMCM Controls Handoff** — When opening Generic Mod Config Menu, controls revert to vanilla so GMCM works normally
+- **GMCM Controller Navigation** — Full d-pad/thumbstick snap navigation in [our GMCM fork](https://github.com/sonofskywalker3/GenericModConfigMenu). B navigates back through mod config → mod list → close with scroll position and selection preserved.
 - **Chest Swap System** — When inventory or chest is full, A picks up an item for displacement swap. Navigate to any slot and press A to place it; the displaced item returns to the source. B cancels. Works both directions (chest→inventory, inventory→chest).
 - **CarpenterMenu Build Fix** — Clicking "Build" for a building you can't afford no longer closes the menu
 - **Chest Touch-Sim Fix** — Items no longer get re-selected after placing them via controller
