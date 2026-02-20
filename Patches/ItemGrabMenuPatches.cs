@@ -134,11 +134,12 @@ namespace AndroidConsolizer.Patches
                     postfix: new HarmonyMethod(typeof(ItemGrabMenuPatches), nameof(Draw_Postfix))
                 );
 
-                // #11b: block snapToDefaultClickableComponent on touch→controller transition
-                // to prevent cursor resetting to slot 0. Save position and restore after self-healing.
+                // #11b: save snap position before touch→controller reset, restore immediately after.
+                // Prefix saves current ID, vanilla runs (sets up all internal state), postfix overrides position.
                 harmony.Patch(
                     original: AccessTools.Method(typeof(ItemGrabMenu), nameof(ItemGrabMenu.snapToDefaultClickableComponent)),
-                    prefix: new HarmonyMethod(typeof(ItemGrabMenuPatches), nameof(SnapToDefault_Prefix))
+                    prefix: new HarmonyMethod(typeof(ItemGrabMenuPatches), nameof(SnapToDefault_Prefix)),
+                    postfix: new HarmonyMethod(typeof(ItemGrabMenuPatches), nameof(SnapToDefault_Postfix))
                 );
 
                 Monitor.Log("ItemGrabMenu patches applied successfully.", LogLevel.Trace);
@@ -1045,25 +1046,6 @@ namespace AndroidConsolizer.Patches
                     Monitor?.Log("[ItemGrabMenu] Custom IDs missing — re-running FixSnapNavigation", LogLevel.Debug);
                     FixSnapNavigation(__instance);
                 }
-
-                // #11b: restore snap position after touch→controller transition
-                // SnapToDefault_Prefix saved the ID and blocked the vanilla snap;
-                // self-healing above restored our custom IDs. Now restore cursor position.
-                if (_restoreSnapID >= 0)
-                {
-                    var comp2 = __instance.getComponentWithID(_restoreSnapID);
-                    if (comp2 != null)
-                    {
-                        __instance.currentlySnappedComponent = comp2;
-                        __instance.snapCursorToCurrentSnappedComponent();
-                        Monitor?.Log($"[#11b] Restored snap position to ID {_restoreSnapID} after touch→controller transition", LogLevel.Debug);
-                    }
-                    else
-                    {
-                        Monitor?.Log($"[#11b] Could not find component {_restoreSnapID} to restore — letting default position stand", LogLevel.Debug);
-                    }
-                    _restoreSnapID = -1;
-                }
             }
 
             if (!_yTransferHeld || !ModEntry.Config.EnableConsoleChests)
@@ -1780,26 +1762,39 @@ namespace AndroidConsolizer.Patches
             _swapSourceSlot = -1;
         }
 
-        /// <summary>#11b: Block snapToDefaultClickableComponent when triggered by touch→controller
-        /// transition (CheckGamepadMode). Save current position for restore in Update_Postfix.
-        /// Allow constructor calls through (menu not yet initialized).</summary>
-        private static bool SnapToDefault_Prefix(ItemGrabMenu __instance)
+        /// <summary>#11b: Save current snap position before CheckGamepadMode resets it.
+        /// We let the vanilla snap run (it sets up all internal cursor/rendering state),
+        /// then immediately override the position in the postfix.</summary>
+        private static void SnapToDefault_Prefix(ItemGrabMenu __instance)
         {
-            if (__instance.shippingBin) return true;
+            if (__instance.shippingBin) return;
 
-            // If FixSnapNavigation hasn't run yet, this is the constructor — let it through
+            // If FixSnapNavigation hasn't run yet, this is the constructor — nothing to save
             if (_sideButtonObjects.Count == 0)
-                return true;
+                return;
 
-            // Menu is initialized — this is a touch→controller reset from CheckGamepadMode.
-            // Save current position and block the snap.
+            // Menu is initialized — save current position for postfix restore
             var snapped = __instance.currentlySnappedComponent;
             if (snapped != null)
             {
                 _restoreSnapID = snapped.myID;
-                Monitor?.Log($"[#11b] Blocked snapToDefault — saved position ID {_restoreSnapID} (name={snapped.name})", LogLevel.Debug);
             }
-            return false; // Block vanilla snap to slot 0
+        }
+
+        /// <summary>#11b: After vanilla snapToDefault runs (setting up all internal state),
+        /// immediately restore the saved position so cursor doesn't jump to slot 0.</summary>
+        private static void SnapToDefault_Postfix(ItemGrabMenu __instance)
+        {
+            if (__instance.shippingBin || _restoreSnapID < 0) return;
+
+            var comp = __instance.getComponentWithID(_restoreSnapID);
+            if (comp != null)
+            {
+                __instance.currentlySnappedComponent = comp;
+                __instance.snapCursorToCurrentSnappedComponent();
+                Monitor?.Log($"[#11b] Restored snap position to ID {_restoreSnapID} after touch→controller transition", LogLevel.Debug);
+            }
+            _restoreSnapID = -1;
         }
 
         /// <summary>Draw postfix — render swap-held item at the currently snapped component position.</summary>
