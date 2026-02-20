@@ -2,7 +2,7 @@
 
 A SMAPI mod that brings console-style controller support to Android Stardew Valley. Play with a controller like you would on Nintendo Switch - 12-slot toolbar rows, proper shop purchasing, chest management, and more.
 
-## Current Version: 3.3.0 — The Community Center Release
+## Current Version: 3.4.0 — The Game Menu Release
 
 ## Features
 
@@ -46,6 +46,7 @@ When "Use Bumpers Instead of Triggers" is enabled:
 - **RB**: Snap cursor to Fill Stacks button
 - **Sidebar buttons**: Sort Chest, Fill Stacks, Color Toggle, Sort Inventory, Trash, Close X — all reachable via controller navigation
 - **Color picker**: Full 7x3 swatch grid navigation when picker is open. B closes picker only (not the chest)
+- **Swap system**: When inventory is full, A picks up an item for displacement swap — place it anywhere with A, and the displaced item returns to the source. B cancels.
 - **X button deletion bug fixed**: The vanilla Android bug where X deletes items is completely blocked
 
 ### Inventory Fixes
@@ -85,6 +86,17 @@ When "Use Bumpers Instead of Triggers" is enabled:
   - Navigate ingredients to see what each bundle slot needs (tooltip shows item name)
   - Left from the ingredient list returns to inventory
 - Custom cursor drawn on both overview and donation pages (Android suppresses the default cursor here)
+
+### Game Menu Navigation
+- **Social tab**: D-pad/thumbstick navigates the villager list (3 at a time), right stick for fast scrolling. A opens the gift log. LB/RB switches villagers inside the gift log.
+- **Collections tab**: D-pad/thumbstick navigates the item grid. LT/RT cycles between sub-tabs (Crops, Fish, Recipes, etc.). Finger cursor replaces red highlight box.
+- **Crafting tab**: Finger cursor replaces red highlight box.
+- **Skills tab**: D-pad/thumbstick grid navigation across skill icons and level bars.
+- **Animals tab**: D-pad/thumbstick navigates the animal list with A to select.
+- **Powers tab**: Finger cursor replaces glow highlight.
+- **Options tab**: Left stick navigates options, A activates, right stick scrolls the list. Dropdowns supported.
+- **LT/RT tab switching**: Cycle between all game menu tabs with triggers (console parity).
+- **GMCM handoff**: When opening Generic Mod Config Menu from the Options tab, controls revert to vanilla so GMCM works normally.
 
 ### Furniture Placement Fix
 - Y button no longer rapid-toggles furniture between picked up and placed
@@ -131,6 +143,16 @@ When "Use Bumpers Instead of Triggers" is enabled:
 | **CC overview** | A | Open bundle donation page |
 | **CC donation** | D-Pad/stick | Navigate inventory / ingredient list |
 | **CC donation** | A | Donate item from inventory |
+| **Game Menu** | LT/RT | Switch between tabs |
+| **Social tab** | D-Pad/stick | Navigate villager list (3 at a time) |
+| **Social tab** | Right stick | Fast scroll villager list |
+| **Social tab** | A | Open gift log |
+| **Gift log** | LB/RB | Switch between villagers |
+| **Gift log** | B | Return to social tab |
+| **Collections** | LT/RT | Cycle sub-tabs (Crops, Fish, etc.) |
+| **Options** | Left stick | Navigate options |
+| **Options** | Right stick | Scroll options list |
+| **Options** | A | Activate option / toggle / open dropdown |
 
 ## Dependencies
 
@@ -180,6 +202,7 @@ Edit `config.json` or use Generic Mod Config Menu in-game:
   "EnableConsoleToolbar": true,
   "EnableConsoleInventory": true,
   "EnableConsoleShipping": true,
+  "EnableConsoleMenus": true,
   "EnableJournalButton": true,
   "EnableCutsceneSkip": true,
   "EnableCarpenterMenuFix": true,
@@ -198,6 +221,7 @@ Edit `config.json` or use Generic Mod Config Menu in-game:
 | `EnableConsoleToolbar` | 12-slot fixed toolbar with LB/RB row switching and LT/RT slot movement |
 | `EnableConsoleInventory` | A picks up/places items, Y picks up one from stack, fishing rod bait/tackle via Y |
 | `EnableConsoleShipping` | A ships full stack, Y ships one item from the shipping bin |
+| `EnableConsoleMenus` | Controller navigation for all game menu tabs (social, collections, options, skills, animals, powers) |
 | `EnableJournalButton` | Start button opens the Quest Log/Journal instead of inventory |
 | `EnableCutsceneSkip` | Press Start twice during a skippable cutscene to skip it |
 | `EnableCarpenterMenuFix` | Prevent Robin's building menu from instantly closing + joystick farm view controls |
@@ -246,22 +270,18 @@ Output: `bin/Release/net6.0/AndroidConsolizer X.X.X.zip`
 
 ## Known Issues
 
-- Clicking "Build" for a building you can't afford exits to the shop screen (investigating whether this is vanilla Android behavior)
 - Shop sell tab not navigable when switched via touchscreen tap (Y button works)
-- Social tab cursor doesn't visually follow when switching tabs with LB/RB
 - Geode breaking menu works but has no visual feedback with controller
-- Analog triggers register multiple presses on some controllers (use Bumper Mode as workaround)
 - Trash can lid animation doesn't play on Android with controller hover
+- Chest uses red square selector instead of finger cursor (cosmetic)
 
 ## TODO / Roadmap
 
-- Analog trigger debounce (fix multi-read on G Cloud and similar controllers)
 - Right joystick free cursor mode for menus and gameplay
 - Zoom control slider in options menu
 - Museum donation menu controller support
-- Social tab / collections tab controller navigation
-- Settings menu snap navigation
-- Cutscene skip visual fix (skip button renders behind dialogue)
+- Geode breaking menu visual feedback
+- Chest style picker snap point
 - Expanded controller testing (8BitDo, DualSense, etc.)
 
 ## Why "Consolizer"?
@@ -279,6 +299,32 @@ Android Stardew Valley has broken controller support that makes it nearly unplay
 MIT License - Feel free to modify and redistribute.
 
 ## Changelog
+
+### 3.4.0 — The Game Menu Release
+- **Social Tab Navigation** — Full controller support for the Social page
+  - D-pad/thumbstick navigates villager list (3 at a time with scroll support)
+  - Right stick for fast scrolling with hold-to-accelerate
+  - Scrollbar tracks your position as you navigate
+  - A opens the gift log (ProfileMenu) for the selected villager
+  - LB/RB switches between villagers inside the gift log
+  - B returns to social tab, restoring scroll position
+  - Cell content aligned properly (portrait, name, relationship status no longer overlap)
+  - Gift log has a visible cursor
+- **Collections Tab Navigation** — D-pad/thumbstick grid navigation with LT/RT sub-tab switching (Crops, Fish, Recipes, Achievements, etc.). Finger cursor replaces red highlight box.
+- **Crafting Tab** — Finger cursor replaces red highlight box
+- **Skills Page Navigation** — D-pad/thumbstick grid navigation across skill icons and level bars
+- **Animals Tab Navigation** — D-pad/thumbstick navigates animal list, A selects
+- **Powers Tab** — Finger cursor replaces glow highlight
+- **Options Tab Navigation** — Left stick navigates options, A activates/toggles, right stick scrolls the options list. Dropdown menus open and close properly.
+- **LT/RT Tab Switching** — Cycle between all game menu tabs with triggers (console parity). Works with CC tab too.
+- **GMCM Controls Handoff** — When opening Generic Mod Config Menu, controls revert to vanilla so GMCM works normally
+- **Chest Swap System** — When inventory or chest is full, A picks up an item for displacement swap. Navigate to any slot and press A to place it; the displaced item returns to the source. B cancels. Works both directions (chest→inventory, inventory→chest).
+- **CarpenterMenu Build Fix** — Clicking "Build" for a building you can't afford no longer closes the menu
+- **Chest Touch-Sim Fix** — Items no longer get re-selected after placing them via controller
+- **Analog Trigger Fix** — Triggers properly debounced at hardware level, no more multi-slot jumps
+- **Cutscene Skip Fix** — Press Start twice to skip cutscenes (uses native skip icon)
+- **Chest Tool Transfer** — Y strips attachments from fishing rods/slingshots when transferring, A transfers loaded tools as-is
+- **Codebase cleanup** — Removed dead diagnostic code, fixed GetState cache bug
 
 ### 3.3.0 — The Community Center Release
 - **Community Center Bundle Navigation** — Full controller support for the JunimoNoteMenu
