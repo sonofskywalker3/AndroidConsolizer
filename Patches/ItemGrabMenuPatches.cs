@@ -996,6 +996,14 @@ namespace AndroidConsolizer.Patches
             if (!_yTransferHeld || !ModEntry.Config.EnableConsoleChests)
                 return;
 
+            // Stop hold-to-repeat if a swap item was picked up (transfer failed → pickup)
+            if (_swapHeldItem != null)
+            {
+                _yTransferHeld = false;
+                _yTransferTicks = 0;
+                return;
+            }
+
             if (__instance.shippingBin)
             {
                 _yTransferHeld = false;
