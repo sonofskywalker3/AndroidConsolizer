@@ -153,26 +153,13 @@ namespace AndroidConsolizer.Patches
                 BuildingToMoveField = AccessTools.Field(typeof(CarpenterMenu), "buildingToMove");
                 PriceField = AccessTools.Field(typeof(CarpenterMenu), "price");
                 SelectedBottomButtonField = AccessTools.Field(typeof(CarpenterMenu), "_selectedBottomButton");
-                Monitor.Log($"CarpenterMenu mode fields: Action={ActionField != null}, moving={MovingField != null}, demolishing={DemolishingField != null}, buildingToMove={BuildingToMoveField != null}", LogLevel.Debug);
                 DoesFarmerHaveEnoughResourcesToBuildMethod = AccessTools.Method(typeof(CarpenterMenu), "DoesFarmerHaveEnoughResourcesToBuild");
-                Monitor.Log($"CarpenterMenu diagnostic fields: price={PriceField != null}, _selectedBottomButton={SelectedBottomButtonField != null}, hasResources={DoesFarmerHaveEnoughResourcesToBuildMethod != null}", LogLevel.Debug);
+                Monitor.Log($"CarpenterMenu fields: Action={ActionField != null}, moving={MovingField != null}, demolishing={DemolishingField != null}, price={PriceField != null}, selectedBtn={SelectedBottomButtonField != null}, hasResources={DoesFarmerHaveEnoughResourcesToBuildMethod != null}", LogLevel.Trace);
 
-                // Diagnostic: log OnReleaseBuildButton state for #14e investigation
-                harmony.Patch(
-                    original: AccessTools.Method(typeof(CarpenterMenu), "OnReleaseBuildButton"),
-                    prefix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(OnReleaseBuildButton_DiagnosticPrefix))
-                );
-
-                // Diagnostic #14e: log receiveLeftClick on shop screen to catch touch-sim clicks
+                // Block touch-sim receiveLeftClick after unaffordable Build intercept (#14e fix)
                 harmony.Patch(
                     original: AccessTools.Method(typeof(CarpenterMenu), nameof(CarpenterMenu.receiveLeftClick)),
-                    prefix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(ReceiveLeftClick_DiagnosticPrefix))
-                );
-
-                // Diagnostic #14e: log releaseLeftClick outside grace period too
-                harmony.Patch(
-                    original: AccessTools.Method(typeof(CarpenterMenu), nameof(CarpenterMenu.releaseLeftClick)),
-                    postfix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(ReleaseLeftClick_DiagnosticPostfix))
+                    prefix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(ReceiveLeftClick_Prefix))
                 );
 
                 // Postfix on update — reads left stick and moves cursor when on farm
@@ -339,43 +326,10 @@ namespace AndroidConsolizer.Patches
             return null;
         }
 
-        /// <summary>Diagnostic prefix for OnReleaseBuildButton — logs affordability state (#14e investigation).</summary>
-        private static void OnReleaseBuildButton_DiagnosticPrefix(CarpenterMenu __instance)
+        /// <summary>Prefix for receiveLeftClick — blocks touch-sim clicks after unaffordable Build intercept (#14e).</summary>
+        private static bool ReceiveLeftClick_Prefix(CarpenterMenu __instance, int x, int y)
         {
-            try
-            {
-                bool onFarm = OnFarmField != null && (bool)OnFarmField.GetValue(__instance);
-                int price = PriceField != null ? (int)PriceField.GetValue(__instance) : -999;
-                int money = Game1.player.Money;
-                bool canAfford = money >= price;
-                bool hasResources = false;
-                var hasResourcesMethod = AccessTools.Method(typeof(CarpenterMenu), "DoesFarmerHaveEnoughResourcesToBuild");
-                if (hasResourcesMethod != null)
-                    hasResources = (bool)hasResourcesMethod.Invoke(__instance, null);
-                bool wouldPass = !onFarm && price >= 0 && canAfford && hasResources;
-                int selectedBtn = SelectedBottomButtonField != null ? (int)SelectedBottomButtonField.GetValue(__instance) : -1;
-                var blueprintProp = AccessTools.Property(typeof(CarpenterMenu), "CurrentBlueprint");
-                string blueprintName = "unknown";
-                if (blueprintProp != null)
-                {
-                    var bp = blueprintProp.GetValue(__instance);
-                    var displayNameProp = bp?.GetType().GetProperty("DisplayName");
-                    blueprintName = displayNameProp?.GetValue(bp)?.ToString() ?? "null";
-                }
-
-                Monitor.Log($"[#14e DIAG] OnReleaseBuildButton called! blueprint={blueprintName} onFarm={onFarm} price={price} money={money} canAfford={canAfford} hasResources={hasResources} wouldPass={wouldPass} selectedBtn={selectedBtn}", LogLevel.Info);
-            }
-            catch (Exception ex)
-            {
-                Monitor.Log($"[#14e DIAG] Error in diagnostic: {ex.Message}", LogLevel.Error);
-            }
-        }
-
-        /// <summary>Prefix for receiveLeftClick — blocks touch-sim clicks after unaffordable Build intercept (#14e).
-        /// Also logs click calls for diagnostics.</summary>
-        private static bool ReceiveLeftClick_DiagnosticPrefix(CarpenterMenu __instance, int x, int y)
-        {
-            // #14e: Block touch-sim clicks after we intercepted an unaffordable Build A press.
+            // Block touch-sim clicks after we intercepted an unaffordable Build A press.
             // The A button triggers touch-sim at (-39,-39) which hits cancelButton's off-screen bounds.
             if (!_cursorActive && Game1.ticks <= _blockShopClickUntilTick)
             {
@@ -383,59 +337,7 @@ namespace AndroidConsolizer.Patches
                     Monitor.Log($"[CarpenterMenu] Blocked touch-sim receiveLeftClick({x},{y}) after unaffordable Build intercept", LogLevel.Debug);
                 return false;
             }
-
-            try
-            {
-                bool onFarm = OnFarmField != null && (bool)OnFarmField.GetValue(__instance);
-                bool frozen = FreezeField != null && (bool)FreezeField.GetValue(__instance);
-                int selectedBtn = SelectedBottomButtonField != null ? (int)SelectedBottomButtonField.GetValue(__instance) : -1;
-
-                // Log button bounds for hit testing
-                string hitInfo = "";
-                if (!onFarm)
-                {
-                    // Check if click lands on cancel/back button or close X
-                    var backButton = AccessTools.Field(typeof(CarpenterMenu), "backButton")?.GetValue(__instance) as ClickableComponent;
-                    var closeX = __instance.upperRightCloseButton;
-                    if (backButton != null && backButton.containsPoint(x, y))
-                        hitInfo += " HIT:backButton";
-                    if (closeX != null && closeX.containsPoint(x, y))
-                        hitInfo += " HIT:closeX";
-
-                    // Check OK/Build button
-                    var okButton = AccessTools.Field(typeof(CarpenterMenu), "okButton")?.GetValue(__instance) as ClickableComponent;
-                    if (okButton != null && okButton.containsPoint(x, y))
-                        hitInfo += " HIT:okButton";
-
-                    // Check bottom buttons area
-                    var moveButton = AccessTools.Field(typeof(CarpenterMenu), "moveButton")?.GetValue(__instance) as ClickableComponent;
-                    var buildButton = AccessTools.Field(typeof(CarpenterMenu), "buildButton")?.GetValue(__instance) as ClickableComponent;
-                    var demolishButton = AccessTools.Field(typeof(CarpenterMenu), "demolishButton")?.GetValue(__instance) as ClickableComponent;
-                    if (moveButton != null && moveButton.containsPoint(x, y))
-                        hitInfo += " HIT:moveButton";
-                    if (buildButton != null && buildButton.containsPoint(x, y))
-                        hitInfo += " HIT:buildButton";
-                    if (demolishButton != null && demolishButton.containsPoint(x, y))
-                        hitInfo += " HIT:demolishButton";
-                }
-
-                Monitor.Log($"[#14e DIAG] receiveLeftClick({x},{y}) onFarm={onFarm} freeze={frozen} selectedBtn={selectedBtn} gracePeriod={IsInGracePeriod()}{hitInfo}", LogLevel.Info);
-            }
-            catch (Exception ex)
-            {
-                Monitor.Log($"[#14e DIAG] receiveLeftClick diagnostic error: {ex.Message}", LogLevel.Error);
-            }
             return true;
-        }
-
-        /// <summary>Diagnostic postfix for releaseLeftClick — logs when it fires outside grace period (#14e).</summary>
-        private static void ReleaseLeftClick_DiagnosticPostfix(CarpenterMenu __instance, int x, int y)
-        {
-            if (!IsInGracePeriod())
-            {
-                bool onFarm = OnFarmField != null && (bool)OnFarmField.GetValue(__instance);
-                Monitor.Log($"[#14e DIAG] releaseLeftClick({x},{y}) EXECUTED (not blocked) onFarm={onFarm}", LogLevel.Info);
-            }
         }
 
         /// <summary>
