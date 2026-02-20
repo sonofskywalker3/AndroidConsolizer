@@ -52,6 +52,28 @@ For completed features and their technical reference, see `DONE.md`.
 - Full fix: inject snap navigation for sliders, checkboxes, dropdowns. Complex.
 - **File:** Would need new `Patches/OptionsPagePatches.cs` or extend `GameMenuPatches.cs`
 
+### 28. GMCM Controls Handoff — DONE (v3.3.81)
+- ~~When clicking the "Mod Options" button on the Options tab to open GMCM, controls should revert to default.~~
+- **Fixed:** GmcmPatches.Update() disabled — GMCM uses vanilla controls. OptionsPagePatches backs off when GMCM child menu is active (left stick no longer suppressed, Update_Postfix skips).
+- **Remaining:** Button remapping (A/B swap, X/Y swap) may still need disabling while GMCM is active — untested.
+
+### 29. Remove Red Square Highlight from Remaining Tabs — PARTIAL
+- Collections tab and Crafting tab fixed (v3.3.53-v3.3.57). **Powers tab fixed (v3.3.82).**
+- **Remaining:** Check Social, Options, Animals, Exit tabs in-game for red highlight.
+- **File:** `Patches/GameMenuPatches.cs`
+
+### 30. Social Menu Cell Content Alignment
+- The content inside the social page character cells (portrait, name, etc.) needs to shift down ~8-10px so it doesn't overlap the cell bounds at the top.
+- **File:** `Patches/GameMenuPatches.cs` (SocialPage draw or slot layout)
+
+### 31. Player Levels Navigation Broken
+- The player levels/skills page navigation with controller is broken. Needs investigation and fix.
+- **Investigation needed:** Check what class handles the levels page, what's broken about controller nav.
+- **File:** TBD
+
+### 32. CC View Trigger/Bumper Navigation — DONE (v3.3.94-v3.3.95)
+- Moved to DONE.md
+
 ### 14e. CarpenterMenu "Build" Button Unaffordable — TO INVESTIGATE
 - Clicking "Build" for a building you can't afford dumps back to shop. Console greys out the button.
 - Need to check: vanilla Android behavior? Our bug or theirs?
