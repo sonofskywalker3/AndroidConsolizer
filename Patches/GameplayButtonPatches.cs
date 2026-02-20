@@ -1,5 +1,4 @@
 using System;
-using System.Reflection;
 using HarmonyLib;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Input;
@@ -395,6 +394,8 @@ namespace AndroidConsolizer.Patches
                 __result = ApplyButtonSuppression(__result);
                 _cachedState = __result;
                 _cachedRawRightStickY = RawRightStickY;
+                _cachedRawLeftStickX = RawLeftStickX;
+                _cachedRawLeftStickY = RawLeftStickY;
                 _cachedRawLeftTrigger = RawLeftTrigger;
                 _cachedRawRightTrigger = RawRightTrigger;
                 _cachedTick = currentTick;
