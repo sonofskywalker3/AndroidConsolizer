@@ -145,7 +145,7 @@ namespace AndroidConsolizer.Patches
             // - Holding bait/tackle and hovering over a fishing rod (to see rod info)
             try
             {
-                if (!CachedAButtonDown)
+                if (!CachedAButtonDown && Game1.options.gamepadControls)
                 {
                     var snapped = __instance.currentlySnappedComponent;
                     if (snapped != null && snapped.myID >= 0 && snapped.myID < Game1.player.Items.Count)
