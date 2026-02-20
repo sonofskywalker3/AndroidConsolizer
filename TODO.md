@@ -85,11 +85,20 @@ For completed features and their technical reference, see `DONE.md`.
 ## Milestone 2: Chest & Item Interaction Polish (v3.5)
 
 ### 11b. Touch-Interrupt Side Effects — PARTIALLY FIXED
-- **Tooltip follows finger after touch cancel (CHEST — NOT FIXED):** Inventory touch guards block `receiveLeftClick`/`leftClickHeld`, but `performHoverAction` still fires in chests. `ItemGrabMenuPatches` needs equivalent touch guards.
+- **Cursor resets to slot 0 after touch (CHESTS):** `Game1.CheckGamepadMode()` detects touch→controller transition, calls `populateClickableComponentList()` (wipes our custom IDs) then `snapToDefaultClickableComponent()` (hard-resets to slot 0/53910). Confirmed via v3.4.1 diagnostic: caller chain `Game1.CheckGamepadMode → Game1._update`. Fix: block snap in prefix, save position, restore after self-healing re-runs FixSnapNavigation.
 - **Touch on chest breaks sidebar navigation — FIXED (v3.2.16):** Self-healing check in `Update_Postfix` detects missing `ID_SORT_CHEST` and re-runs `FixSnapNavigation()`.
-- **Cursor resets to slot 0 after touch:** After touch interrupt, next joystick input snaps to slot 0. Game calls `snapToDefaultClickableComponent()` when re-engaging controller after touch.
-- **Fix approach:** Save `currentlySnappedComponent.myID` before `CancelHold()`, restore on next controller input. Applies to both inventory and chest menus.
-- **File:** `Patches/ItemGrabMenuPatches.cs`, `Patches/InventoryPagePatches.cs`
+- **File:** `Patches/ItemGrabMenuPatches.cs`
+
+### 11b-tooltip. Inventory Tooltip Follows Finger After Touch
+- In the **inventory page** (not chests — chests have no tooltip), touching the screen causes the item tooltip to render at the finger position instead of the snapped slot.
+- `hoveredItem` persists from controller navigation. `drawToolTip` renders at `getMouseX()/getMouseY()` (which is now the touch position). Not an issue in chests because `hoveredItem` is always null there.
+- **Fix approach:** Clear `hoveredItem` on touch, or override tooltip position to use snapped component bounds.
+- **File:** `Patches/InventoryPagePatches.cs` or `Patches/InventoryManagementPatches.cs`
+
+### 36. Chest Item Tooltips (Console Parity)
+- On Switch, hovering over items in a chest shows item name/description tooltip. Android doesn't show any tooltip — `hoveredItem` is always null in `ItemGrabMenu`.
+- **Fix approach:** Set `hoveredItem` based on `currentlySnappedComponent` during controller navigation so tooltip renders like console.
+- **File:** `Patches/ItemGrabMenuPatches.cs`
 
 ### 13c. Color Picker Cursor Position Slightly Off
 - Visible cursor doesn't align perfectly with swatch grid during navigation. Functionality correct (A selects right color).
@@ -171,6 +180,12 @@ For completed features and their technical reference, see `DONE.md`.
 ### 17. Title/Main Menu Cursor Fix
 - Cursor reportedly invisible on main menu with controller.
 - **UNVERIFIED** — Not reproducible on Odin Pro. May be device/controller-specific.
+
+### 35. Load Game Screen Cursor/Navigation
+- After pressing Load on the main menu, cursor appears near the bottom right instead of on the first save slot.
+- Navigation has issues (details TBD — needs investigation).
+- **Minor.** Low priority.
+- **Investigation needed:** Check `LoadGameMenu` class, initial snap position, navigation wiring.
 
 ---
 
