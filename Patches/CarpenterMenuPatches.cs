@@ -157,6 +157,18 @@ namespace AndroidConsolizer.Patches
                     prefix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(OnReleaseBuildButton_DiagnosticPrefix))
                 );
 
+                // Diagnostic #14e: log receiveLeftClick on shop screen to catch touch-sim clicks
+                harmony.Patch(
+                    original: AccessTools.Method(typeof(CarpenterMenu), nameof(CarpenterMenu.receiveLeftClick)),
+                    prefix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(ReceiveLeftClick_DiagnosticPrefix))
+                );
+
+                // Diagnostic #14e: log releaseLeftClick outside grace period too
+                harmony.Patch(
+                    original: AccessTools.Method(typeof(CarpenterMenu), nameof(CarpenterMenu.releaseLeftClick)),
+                    postfix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(ReleaseLeftClick_DiagnosticPostfix))
+                );
+
                 // Postfix on update — reads left stick and moves cursor when on farm
                 harmony.Patch(
                     original: AccessTools.Method(typeof(CarpenterMenu), nameof(CarpenterMenu.update),
@@ -350,6 +362,62 @@ namespace AndroidConsolizer.Patches
             catch (Exception ex)
             {
                 Monitor.Log($"[#14e DIAG] Error in diagnostic: {ex.Message}", LogLevel.Error);
+            }
+        }
+
+        /// <summary>Diagnostic prefix for receiveLeftClick — logs all click calls to trace touch-sim after A press (#14e).</summary>
+        private static void ReceiveLeftClick_DiagnosticPrefix(CarpenterMenu __instance, int x, int y)
+        {
+            try
+            {
+                bool onFarm = OnFarmField != null && (bool)OnFarmField.GetValue(__instance);
+                bool frozen = FreezeField != null && (bool)FreezeField.GetValue(__instance);
+                int selectedBtn = SelectedBottomButtonField != null ? (int)SelectedBottomButtonField.GetValue(__instance) : -1;
+
+                // Log button bounds for hit testing
+                string hitInfo = "";
+                if (!onFarm)
+                {
+                    // Check if click lands on cancel/back button or close X
+                    var backButton = AccessTools.Field(typeof(CarpenterMenu), "backButton")?.GetValue(__instance) as ClickableComponent;
+                    var closeX = __instance.upperRightCloseButton;
+                    if (backButton != null && backButton.containsPoint(x, y))
+                        hitInfo += " HIT:backButton";
+                    if (closeX != null && closeX.containsPoint(x, y))
+                        hitInfo += " HIT:closeX";
+
+                    // Check OK/Build button
+                    var okButton = AccessTools.Field(typeof(CarpenterMenu), "okButton")?.GetValue(__instance) as ClickableComponent;
+                    if (okButton != null && okButton.containsPoint(x, y))
+                        hitInfo += " HIT:okButton";
+
+                    // Check bottom buttons area
+                    var moveButton = AccessTools.Field(typeof(CarpenterMenu), "moveButton")?.GetValue(__instance) as ClickableComponent;
+                    var buildButton = AccessTools.Field(typeof(CarpenterMenu), "buildButton")?.GetValue(__instance) as ClickableComponent;
+                    var demolishButton = AccessTools.Field(typeof(CarpenterMenu), "demolishButton")?.GetValue(__instance) as ClickableComponent;
+                    if (moveButton != null && moveButton.containsPoint(x, y))
+                        hitInfo += " HIT:moveButton";
+                    if (buildButton != null && buildButton.containsPoint(x, y))
+                        hitInfo += " HIT:buildButton";
+                    if (demolishButton != null && demolishButton.containsPoint(x, y))
+                        hitInfo += " HIT:demolishButton";
+                }
+
+                Monitor.Log($"[#14e DIAG] receiveLeftClick({x},{y}) onFarm={onFarm} freeze={frozen} selectedBtn={selectedBtn} gracePeriod={IsInGracePeriod()}{hitInfo}", LogLevel.Info);
+            }
+            catch (Exception ex)
+            {
+                Monitor.Log($"[#14e DIAG] receiveLeftClick diagnostic error: {ex.Message}", LogLevel.Error);
+            }
+        }
+
+        /// <summary>Diagnostic postfix for releaseLeftClick — logs when it fires outside grace period (#14e).</summary>
+        private static void ReleaseLeftClick_DiagnosticPostfix(CarpenterMenu __instance, int x, int y)
+        {
+            if (!IsInGracePeriod())
+            {
+                bool onFarm = OnFarmField != null && (bool)OnFarmField.GetValue(__instance);
+                Monitor.Log($"[#14e DIAG] releaseLeftClick({x},{y}) EXECUTED (not blocked) onFarm={onFarm}", LogLevel.Info);
             }
         }
 
