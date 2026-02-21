@@ -38,7 +38,7 @@ namespace AndroidConsolizer.Patches
         public static void Apply(Harmony harmony, IMonitor monitor)
         {
             Monitor = monitor;
-            Monitor.Log("DIAG v7: Targeting fadeFromWhiteTimer + IsDoingStorageMigration.", LogLevel.Info);
+            Monitor.Log("DIAG v7b: Targeting fadeFromWhiteTimer + IsDoingStorageMigration (isolated reads).", LogLevel.Info);
         }
 
         public static void ApplyAdditionalPatches(Harmony harmony, IMonitor monitor)
@@ -92,45 +92,48 @@ namespace AndroidConsolizer.Patches
                     Monitor.Log("DIAG v7: fadeFromWhiteTimer field found.", LogLevel.Trace);
 
                 // IsDoingStorageMigration on MainActivity
-                // Try to find MainActivity via reflection (it's in the game assembly)
+                // SMAPI replaces MainActivity with SMAPIGameLoader.SMAPIActivity at runtime.
+                // We must get the field from the ACTUAL runtime type, not the declared type.
                 var gameAssembly = typeof(Game1).Assembly;
                 var mainActivityType = gameAssembly.GetType("StardewValley.MainActivity");
-                if (mainActivityType == null)
-                {
-                    // Try without namespace
-                    foreach (var t in gameAssembly.GetTypes())
-                    {
-                        if (t.Name == "MainActivity")
-                        {
-                            mainActivityType = t;
-                            break;
-                        }
-                    }
-                }
 
+                // Get the instance first (from declared type)
                 if (mainActivityType != null)
                 {
-                    _isDoingStorageMigrationField = AccessTools.Field(mainActivityType, "IsDoingStorageMigration");
                     var instanceField = AccessTools.Field(mainActivityType, "instance");
                     if (instanceField != null)
                         _mainActivityInstance = instanceField.GetValue(null);
                     else
                     {
-                        // Try property
                         var instanceProp = AccessTools.Property(mainActivityType, "instance");
                         if (instanceProp != null)
                             _mainActivityInstance = instanceProp.GetValue(null);
                     }
+                }
 
-                    Monitor.Log($"DIAG v7: MainActivity found={mainActivityType != null}, " +
-                        $"instance={_mainActivityInstance != null}, " +
+                // Now get IsDoingStorageMigration from the ACTUAL runtime type
+                if (_mainActivityInstance != null)
+                {
+                    var actualType = _mainActivityInstance.GetType();
+                    _isDoingStorageMigrationField = actualType.GetField("IsDoingStorageMigration",
+                        BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+
+                    // If not on actual type, try declared type (in case of inheritance)
+                    if (_isDoingStorageMigrationField == null)
+                        _isDoingStorageMigrationField = AccessTools.Field(mainActivityType, "IsDoingStorageMigration");
+
+                    Monitor.Log($"DIAG v7b: instance type={actualType.FullName}, " +
+                        $"declared type={mainActivityType?.FullName}, " +
                         $"IsDoingStorageMigration field={_isDoingStorageMigrationField != null}",
                         LogLevel.Info);
                 }
+                else if (mainActivityType != null)
+                {
+                    Monitor.Log("DIAG v7b: MainActivity type found but instance is null!", LogLevel.Warn);
+                }
                 else
                 {
-                    Monitor.Log("DIAG v7: MainActivity type NOT FOUND in game assembly. " +
-                        "SMAPI launcher may replace it.", LogLevel.Warn);
+                    Monitor.Log("DIAG v7b: MainActivity type NOT FOUND in game assembly.", LogLevel.Warn);
                 }
             }
             catch (Exception ex)
@@ -174,15 +177,23 @@ namespace AndroidConsolizer.Patches
             InitReflection();
             _titleUpdateCount++;
 
+            // === Read fadeFromWhiteTimer (ISOLATED try/catch) ===
+            int fadeValue = -1;
             try
             {
-                // Read fadeFromWhiteTimer
-                int fadeValue = -1;
                 if (_fadeFromWhiteTimerField != null)
                     fadeValue = (int)_fadeFromWhiteTimerField.GetValue(__instance);
+            }
+            catch (Exception ex)
+            {
+                if (_titleUpdateCount <= 3)
+                    Monitor.Log($"DIAG v7b: fadeFromWhiteTimer read error: {ex.Message}", LogLevel.Error);
+            }
 
-                // Read IsDoingStorageMigration
-                string migrationStatus = "UNKNOWN";
+            // === Read IsDoingStorageMigration (ISOLATED try/catch) ===
+            string migrationStatus = "UNKNOWN";
+            try
+            {
                 if (_isDoingStorageMigrationField != null && _mainActivityInstance != null)
                 {
                     bool migrating = (bool)_isDoingStorageMigrationField.GetValue(_mainActivityInstance);
@@ -194,28 +205,34 @@ namespace AndroidConsolizer.Patches
                 }
                 else if (_mainActivityInstance == null)
                 {
-                    migrationStatus = "NO_MAINACTIVITY_INSTANCE";
+                    migrationStatus = "NO_INSTANCE";
                 }
+            }
+            catch (Exception ex)
+            {
+                migrationStatus = $"ERROR:{ex.Message}";
+                if (_titleUpdateCount <= 3)
+                    Monitor.Log($"DIAG v7b: migration read error: {ex.Message}", LogLevel.Error);
+            }
 
-                // Read other timers for context
-                int logoFadeTimer = -1;
-                int pauseTimer = -1;
-                int quitTimer = -1;
-                try
-                {
-                    var f1 = AccessTools.Field(typeof(TitleMenu), "logoFadeTimer");
-                    var f2 = AccessTools.Field(typeof(TitleMenu), "pauseBeforeViewportRiseTimer");
-                    var f3 = AccessTools.Field(typeof(TitleMenu), "quitTimer");
-                    if (f1 != null) logoFadeTimer = (int)f1.GetValue(__instance);
-                    if (f2 != null) pauseTimer = (int)f2.GetValue(__instance);
-                    if (f3 != null) quitTimer = (int)f3.GetValue(__instance);
-                }
-                catch { }
+            // === Read other timers (ISOLATED try/catch) ===
+            int logoFadeTimer = -1;
+            int pauseTimer = -1;
+            int quitTimer = -1;
+            try
+            {
+                var f1 = AccessTools.Field(typeof(TitleMenu), "logoFadeTimer");
+                var f2 = AccessTools.Field(typeof(TitleMenu), "pauseBeforeViewportRiseTimer");
+                var f3 = AccessTools.Field(typeof(TitleMenu), "quitTimer");
+                if (f1 != null) logoFadeTimer = (int)f1.GetValue(__instance);
+                if (f2 != null) pauseTimer = (int)f2.GetValue(__instance);
+                if (f3 != null) quitTimer = (int)f3.GetValue(__instance);
+            }
+            catch { }
 
-                // Detect state changes worth logging:
-                // 1. Always log first call
-                // 2. Log when fadeValue changes (or stops changing)
-                // 3. Log once per second regardless
+            // === Logging logic ===
+            try
+            {
                 long nowMs = _bootTimer.ElapsedMilliseconds;
                 bool fadeChanged = fadeValue != _lastFadeValue;
                 bool timeToLog = (nowMs - _lastLogMs) >= 1000;
@@ -230,18 +247,17 @@ namespace AndroidConsolizer.Patches
                     if (!fadeChanged && fadeValue > 0 && _titleUpdateCount > 10)
                         stuckWarning = " *** FADE TIMER NOT CHANGING - STUCK! ***";
 
-                    Monitor.Log($"DIAG v7 [+{nowMs}ms]: TitleMenu.update #{_titleUpdateCount} " +
+                    Monitor.Log($"DIAG v7b [+{nowMs}ms]: TitleMenu.update #{_titleUpdateCount} " +
                         $"fadeFromWhite={fadeValue} migration={migrationStatus} " +
                         $"logoFade={logoFadeTimer} pauseTimer={pauseTimer} quit={quitTimer} " +
                         $"elapsed={time.ElapsedGameTime.Milliseconds}ms" +
                         stuckWarning,
                         (fadeValue > 0 && !fadeChanged && _titleUpdateCount > 10) ? LogLevel.Error : LogLevel.Warn);
 
-                    // Detect fade completion
                     if (fadeValue <= 0 && !_fadeCompleted)
                     {
                         _fadeCompleted = true;
-                        Monitor.Log($"DIAG v7: fadeFromWhiteTimer reached 0 at +{nowMs}ms " +
+                        Monitor.Log($"DIAG v7b: fadeFromWhiteTimer reached 0 at +{nowMs}ms " +
                             $"(after {_titleUpdateCount} updates). Title screen should be visible!",
                             LogLevel.Info);
                     }
@@ -250,7 +266,7 @@ namespace AndroidConsolizer.Patches
             catch (Exception ex)
             {
                 if (_titleUpdateCount <= 3)
-                    Monitor.Log($"DIAG v7: TitleMenu.update error: {ex}", LogLevel.Error);
+                    Monitor.Log($"DIAG v7b: logging error: {ex.Message}", LogLevel.Error);
             }
         }
     }
