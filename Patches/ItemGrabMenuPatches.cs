@@ -1797,46 +1797,96 @@ namespace AndroidConsolizer.Patches
             _restoreSnapID = -1;
         }
 
-        /// <summary>Draw postfix — render swap-held item at the currently snapped component position.</summary>
+        /// <summary>Draw postfix — render swap-held item and controller tooltip.</summary>
         private static void Draw_Postfix(ItemGrabMenu __instance, SpriteBatch b)
         {
-            if (_swapHeldItem == null || !ModEntry.Config.EnableConsoleChests)
-                return;
+            // --- Swap-held item rendering ---
+            if (_swapHeldItem != null && ModEntry.Config.EnableConsoleChests)
+            {
+                var snapped = __instance.currentlySnappedComponent;
+                if (snapped != null)
+                {
+                    var bounds = snapped.bounds;
+                    float scale = 0.75f;
+                    int drawSize = (int)(64 * scale);
+                    int drawX = bounds.Center.X - drawSize / 2;
+                    int drawY = bounds.Center.Y - drawSize / 2;
 
-            var snapped = __instance.currentlySnappedComponent;
-            if (snapped == null) return;
+                    b.Draw(
+                        Game1.shadowTexture,
+                        new Vector2(bounds.Center.X - Game1.shadowTexture.Bounds.Width / 2, bounds.Center.Y + drawSize / 2 - 4),
+                        Game1.shadowTexture.Bounds,
+                        Color.White * 0.5f,
+                        0f,
+                        Vector2.Zero,
+                        1f,
+                        SpriteEffects.None,
+                        0.0001f
+                    );
 
-            // Draw at snapped component center, offset so item is centered
-            var bounds = snapped.bounds;
-            float scale = 0.75f;
-            int drawSize = (int)(64 * scale);
-            int drawX = bounds.Center.X - drawSize / 2;
-            int drawY = bounds.Center.Y - drawSize / 2;
+                    _swapHeldItem.drawInMenu(
+                        b,
+                        new Vector2(drawX, drawY),
+                        scale,
+                        1f,
+                        0.9f,
+                        StackDrawType.Draw,
+                        Color.White,
+                        true
+                    );
+                }
+            }
 
-            // Draw shadow underneath
-            b.Draw(
-                Game1.shadowTexture,
-                new Vector2(bounds.Center.X - Game1.shadowTexture.Bounds.Width / 2, bounds.Center.Y + drawSize / 2 - 4),
-                Game1.shadowTexture.Bounds,
-                Color.White * 0.5f,
-                0f,
-                Vector2.Zero,
-                1f,
-                SpriteEffects.None,
-                0.0001f
-            );
+            // --- Controller tooltip for chest items (#36) ---
+            try
+            {
+                if (!Game1.options.gamepadControls) return;
+                if (_swapHeldItem != null) return;
+                if (Game1.player.CursorSlotItem != null) return;
 
-            // Draw the item
-            _swapHeldItem.drawInMenu(
-                b,
-                new Vector2(drawX, drawY),
-                scale,
-                1f,    // transparency
-                0.9f,  // layerDepth (draw on top of most things)
-                StackDrawType.Draw,
-                Color.White,
-                true   // drawShadow
-            );
+                // Don't show tooltip while A is pressed (mid-transfer)
+                var gpState = GamePad.GetState(Microsoft.Xna.Framework.PlayerIndex.One);
+                if (gpState.Buttons.A == ButtonState.Pressed) return;
+
+                var snapped = __instance.currentlySnappedComponent;
+                if (snapped == null) return;
+
+                Item tooltipItem = null;
+
+                // Check if cursor is on a chest slot
+                int chestIdx = __instance.ItemsToGrabMenu?.inventory?.IndexOf(snapped) ?? -1;
+                if (chestIdx >= 0 && __instance.ItemsToGrabMenu.actualInventory != null
+                    && chestIdx < __instance.ItemsToGrabMenu.actualInventory.Count)
+                {
+                    tooltipItem = __instance.ItemsToGrabMenu.actualInventory[chestIdx];
+                }
+
+                // Check if cursor is on a player inventory slot
+                if (tooltipItem == null)
+                {
+                    int playerIdx = __instance.inventory?.inventory?.IndexOf(snapped) ?? -1;
+                    if (playerIdx >= 0 && playerIdx < Game1.player.Items.Count)
+                    {
+                        tooltipItem = Game1.player.Items[playerIdx];
+                    }
+                }
+
+                if (tooltipItem != null)
+                {
+                    IClickableMenu.drawToolTip(
+                        b,
+                        tooltipItem.getDescription(),
+                        tooltipItem.DisplayName,
+                        tooltipItem,
+                        false, -1, 0, null, -1, null, -1
+                    );
+                }
+            }
+            catch (Exception ex)
+            {
+                if (ModEntry.Config.VerboseLogging)
+                    Monitor.Log($"[ChestTooltip] Draw error: {ex.Message}", LogLevel.Debug);
+            }
         }
 
         /// <summary>Called when the ItemGrabMenu closes. Returns any held swap item to its source.</summary>
