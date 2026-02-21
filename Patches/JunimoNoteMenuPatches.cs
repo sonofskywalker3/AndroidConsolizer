@@ -26,6 +26,7 @@ namespace AndroidConsolizer.Patches
         private static FieldInfo _specificBundlePageField;
         private static FieldInfo _ingredientListField;
         private static FieldInfo _bundlesField;
+        private static FieldInfo _highlightedBundleField;
 
         // Overview page state
         private static bool _onOverviewPage;
@@ -59,6 +60,7 @@ namespace AndroidConsolizer.Patches
             _specificBundlePageField = AccessTools.Field(typeof(JunimoNoteMenu), "specificBundlePage");
             _ingredientListField = AccessTools.Field(typeof(JunimoNoteMenu), "ingredientList");
             _bundlesField = AccessTools.Field(typeof(JunimoNoteMenu), "bundles");
+            _highlightedBundleField = AccessTools.Field(typeof(JunimoNoteMenu), "highlightedBundle");
 
             // Patch GetMouseState — both input wrapper and XNA Mouse paths
             var inputType = Game1.input.GetType();
@@ -135,10 +137,20 @@ namespace AndroidConsolizer.Patches
 
         private static bool ReceiveLeftClick_Prefix(JunimoNoteMenu __instance, int x, int y)
         {
-            if (!_onDonationPage) return true;
+            // Allow clicks we initiated (HandleAPress, HandleIngredientAPress, HandleOverviewAPress)
             if (_weInitiatedClick) return true;
 
-            if (Game1.ticks - _enteredPageTick <= 3)
+            // Block touch-sim clicks while A is physically pressed.
+            // On Android, every A press generates a synthetic receiveLeftClick at the real
+            // mouse/touch position. Our A-handler already called receiveLeftClick with the
+            // correct GetMouseState override, so this second click would hit a wrong position
+            // and undo the donation (selectItemAt at random coords).
+            var gpState = GamePad.GetState(Microsoft.Xna.Framework.PlayerIndex.One);
+            if (gpState.Buttons.A == ButtonState.Pressed)
+                return false;
+
+            // Block stale click when A opens the donation page from overview
+            if (_onDonationPage && Game1.ticks - _enteredPageTick <= 3)
                 return false;
 
             return true;
@@ -761,9 +773,56 @@ namespace AndroidConsolizer.Patches
                 {
                     menu.currentlySnappedComponent = c;
                     menu.snapCursorToCurrentSnappedComponent();
+
+                    // Sync highlightedBundle and trigger hover animation — matches
+                    // doNonSpecificBundlePageJoystick lines 2112-2120 in decompiled source
+                    SyncHighlightedBundle(menu, c);
                     return;
                 }
             }
+        }
+
+        /// <summary>
+        /// Sync the game's highlightedBundle field to match the navigated component,
+        /// reset all other bundle sprites, and trigger the hover animation on the active one.
+        /// </summary>
+        private static void SyncHighlightedBundle(JunimoNoteMenu menu, ClickableComponent comp)
+        {
+            var bundlesList = _bundlesField?.GetValue(menu) as System.Collections.IList;
+            if (bundlesList == null || _highlightedBundleField == null) return;
+
+            // Find which bundle index matches this component
+            int targetIndex = -1;
+            for (int i = 0; i < bundlesList.Count; i++)
+            {
+                var bundle = bundlesList[i] as Bundle;
+                if (bundle != null && bundle.myID == comp.myID)
+                {
+                    targetIndex = i;
+                    break;
+                }
+            }
+
+            if (targetIndex < 0) return;
+
+            // Set highlightedBundle via reflection
+            _highlightedBundleField.SetValue(menu, targetIndex);
+
+            // Reset all non-highlighted bundle sprites, trigger hover on the active one
+            for (int i = 0; i < bundlesList.Count; i++)
+            {
+                var bundle = bundlesList[i] as Bundle;
+                if (bundle == null) continue;
+
+                if (i != targetIndex)
+                {
+                    bundle.sprite.reset();
+                    bundle.sprite.paused = true;
+                }
+            }
+
+            var highlighted = bundlesList[targetIndex] as Bundle;
+            highlighted?.tryHoverAction(highlighted.bounds.X, highlighted.bounds.Y);
         }
 
         private static void HandleOverviewAPress(JunimoNoteMenu menu)
@@ -777,12 +836,20 @@ namespace AndroidConsolizer.Patches
             _overrideRawY = (int)(center.Y * zoom);
             _overridingMouse = true;
 
+            // Must call both receiveLeftClick (sets pressedOnBundleSpecificPage flag)
+            // AND releaseLeftClick (actually opens the bundle via bundle.containsPoint).
+            // Previously we relied on the game's gamepad-to-click fallback in updateActiveMenu
+            // to call releaseLeftClick on A release, but that's fragile — coordinate scaling
+            // (zoom vs uiScale) and timing issues can cause containsPoint to fail.
+            _weInitiatedClick = true;
             try
             {
                 menu.receiveLeftClick(center.X, center.Y);
+                menu.releaseLeftClick(center.X, center.Y);
             }
             finally
             {
+                _weInitiatedClick = false;
                 _overridingMouse = false;
             }
         }
