@@ -130,6 +130,9 @@ namespace AndroidConsolizer.Patches
         /// </summary>
         public static bool ShouldSwapXY()
         {
+            if (ModEntry.Config?.EnableButtonRemapping == false)
+                return false;
+
             var layout = ModEntry.Config?.ControllerLayout ?? ControllerLayout.Switch;
 
             // Swap X/Y only for Switch layout
@@ -143,6 +146,9 @@ namespace AndroidConsolizer.Patches
         /// </summary>
         public static bool ShouldSwapAB()
         {
+            if (ModEntry.Config?.EnableButtonRemapping == false)
+                return false;
+
             var layout = ModEntry.Config?.ControllerLayout ?? ControllerLayout.Switch;
             var style = ModEntry.Config?.ControlStyle ?? ControlStyle.Switch;
 

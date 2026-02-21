@@ -8,6 +8,9 @@ namespace AndroidConsolizer
         /*********
         ** Controller Settings
         *********/
+        /// <summary>Whether to remap buttons based on controller layout and control style. When disabled, all buttons pass through unmodified.</summary>
+        public bool EnableButtonRemapping { get; set; } = true;
+
         /// <summary>
         /// Physical button layout of your controller.
         /// Switch/Odin: A=right, B=bottom, X=top, Y=left.
