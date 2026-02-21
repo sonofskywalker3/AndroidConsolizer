@@ -38,6 +38,9 @@ namespace AndroidConsolizer
         /// </summary>
         private static bool ShouldSwapXY()
         {
+            if (ModEntry.Config?.EnableButtonRemapping == false)
+                return false;
+
             var layout = ModEntry.Config?.ControllerLayout ?? ControllerLayout.Switch;
             return layout == ControllerLayout.Xbox || layout == ControllerLayout.PlayStation;
         }

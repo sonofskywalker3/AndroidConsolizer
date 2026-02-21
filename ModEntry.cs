@@ -96,6 +96,8 @@ namespace AndroidConsolizer
             Patches.JunimoNoteMenuPatches.Apply(harmony, this.Monitor);
             Patches.GameMenuPatches.Apply(harmony, this.Monitor);
             Patches.OptionsPagePatches.Apply(harmony, this.Monitor);
+            Patches.BootDiagnosticPatches.Apply(harmony, this.Monitor);
+            Patches.BootDiagnosticPatches.ApplyAdditionalPatches(harmony, this.Monitor);
 
             // Register events
             helper.Events.GameLoop.GameLaunched += this.OnGameLaunched;
@@ -720,6 +722,12 @@ namespace AndroidConsolizer
         /// <summary>Generate the controls display text based on current layout and style.</summary>
         private string GetControlsDisplay()
         {
+            if (Config?.EnableButtonRemapping == false)
+            {
+                return "Button remapping is disabled.\nAll buttons use Android default mapping.\n" +
+                       "(Enable Button Remapping above to customize)";
+            }
+
             var layout = Config?.ControllerLayout ?? ControllerLayout.Switch;
             var style = Config?.ControlStyle ?? ControlStyle.Switch;
 
@@ -843,10 +851,18 @@ namespace AndroidConsolizer
                 text: () => "Controller Settings"
             );
 
+            configMenu.AddBoolOption(
+                mod: this.ModManifest,
+                name: () => "Button Remapping",
+                tooltip: () => "Remap A/B and X/Y buttons based on your controller layout and control style.\nWhen disabled, all buttons pass through unmodified (Android default mapping).",
+                getValue: () => Config.EnableButtonRemapping,
+                setValue: value => Config.EnableButtonRemapping = value
+            );
+
             configMenu.AddTextOption(
                 mod: this.ModManifest,
                 name: () => "Controller Layout",
-                tooltip: () => "The physical button layout of your controller.\n" +
+                tooltip: () => "The physical button layout of your controller. Requires Button Remapping.\n" +
                               "Switch/Odin: A=right, B=bottom, X=top, Y=left\n" +
                               "Xbox: A=bottom, B=right, X=left, Y=top\n" +
                               "PlayStation: Same as Xbox (Cross=A, Circle=B, Square=X, Triangle=Y)",
@@ -865,7 +881,7 @@ namespace AndroidConsolizer
             configMenu.AddTextOption(
                 mod: this.ModManifest,
                 name: () => "Control Style",
-                tooltip: () => "Which console's control scheme you want.\n" +
+                tooltip: () => "Which console's control scheme you want. Requires Button Remapping.\n" +
                               "Switch: Right=confirm, Bottom=cancel\n" +
                               "Xbox/PS: Bottom=confirm, Right=cancel",
                 getValue: () => Config.ControlStyle.ToString(),
