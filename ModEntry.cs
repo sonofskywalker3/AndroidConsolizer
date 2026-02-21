@@ -143,6 +143,30 @@ namespace AndroidConsolizer
                 lastToolIndex = original;
 
                 this.Monitor.Log($"Save loaded - forced tool re-equip at index {original}, row {currentToolbarRow}", LogLevel.Trace);
+
+                // Diagnostic: log values affecting DialogueBox.GetWidth()
+                try
+                {
+                    var vtField = HarmonyLib.AccessTools.Field(typeof(StardewValley.Options), "verticalToolbar");
+                    var tpField = HarmonyLib.AccessTools.Field(typeof(Game1), "toolbarPaddingX");
+                    var tssField = HarmonyLib.AccessTools.Field(typeof(StardewValley.Options), "toolbarSlotSize");
+                    var xeField = HarmonyLib.AccessTools.Field(typeof(Game1), "xEdge");
+                    var instField = HarmonyLib.AccessTools.Property(typeof(StardewValley.Menus.Toolbar), "Instance")
+                                 ?? HarmonyLib.AccessTools.Property(typeof(StardewValley.Menus.Toolbar), "instance");
+                    object vt = vtField?.GetValue(Game1.options);
+                    object tp = tpField?.GetValue(null);
+                    object tss = tssField?.GetValue(Game1.options);
+                    object xe = xeField?.GetValue(null);
+                    object toolbar = instField?.GetValue(null);
+                    object tis = null;
+                    if (toolbar != null)
+                    {
+                        var tisField = HarmonyLib.AccessTools.Field(typeof(StardewValley.Menus.Toolbar), "_itemSlotSize");
+                        tis = tisField?.GetValue(toolbar);
+                    }
+                    this.Monitor.Log($"[DialogueDiag] clientBounds.W={Game1.game1?.Window?.ClientBounds.Width}, uiViewport.W={Game1.uiViewport.Width}, verticalToolbar={vt}, toolbarPaddingX={tp}, toolbarSlotSize={tss}, Toolbar._itemSlotSize={tis}, xEdge={xe}, displayHUD={Game1.displayHUD}", LogLevel.Debug);
+                }
+                catch (Exception ex) { this.Monitor.Log($"[DialogueDiag] Error: {ex.Message}", LogLevel.Debug); }
             }
         }
 
