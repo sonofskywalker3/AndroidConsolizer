@@ -481,6 +481,10 @@ namespace AndroidConsolizer.Patches
                     if (InitOverviewNavigation(__instance))
                     {
                         _onOverviewPage = true;
+                        // Clear inventory descriptionText so the bundle tooltip can draw —
+                        // the game's draw checks descriptionText.Length first (line 1415),
+                        // and the bundle tooltip is in the else-if branch (line 1422).
+                        __instance.inventory.descriptionText = "";
                         // Sync highlightedBundle so the initial bundle animates immediately
                         if (__instance.currentlySnappedComponent != null)
                             SyncHighlightedBundle(__instance, __instance.currentlySnappedComponent);
