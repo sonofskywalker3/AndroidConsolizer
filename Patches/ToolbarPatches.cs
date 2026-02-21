@@ -6,6 +6,7 @@ using Microsoft.Xna.Framework.Graphics;
 using StardewModdingAPI;
 using StardewValley;
 using StardewValley.Menus;
+using StardewValley.Tools;
 
 namespace AndroidConsolizer.Patches
 {
@@ -21,6 +22,12 @@ namespace AndroidConsolizer.Patches
         /// <summary>Cached reflection accessor for Android-only Options.toolbarSlotSize field.</summary>
         private static System.Reflection.FieldInfo _toolbarSlotSizeField;
 
+        /// <summary>Cached reflection accessor for Android-only Item._itemSlotSize field.</summary>
+        private static System.Reflection.FieldInfo _itemSlotSizeField;
+
+        /// <summary>Saved toolbarSlotSize value, restored in WateringCan postfix.</summary>
+        [ThreadStatic] private static object _savedToolbarSlotSize;
+
         /// <summary>Apply Harmony patches.</summary>
         public static void Apply(Harmony harmony, IMonitor monitor)
         {
@@ -34,8 +41,23 @@ namespace AndroidConsolizer.Patches
                     prefix: new HarmonyMethod(typeof(ToolbarPatches), nameof(Toolbar_Draw_Prefix))
                 );
 
-                // Cache reflection accessor for Android-only toolbarSlotSize field
+                // Cache reflection accessors for Android-only fields
                 _toolbarSlotSizeField = AccessTools.Field(typeof(StardewValley.Options), "toolbarSlotSize");
+                _itemSlotSizeField = AccessTools.Field(typeof(Item), "_itemSlotSize");
+
+                // Patch WateringCan.drawInMenu to fix water gauge position in ALL contexts.
+                // The gauge formula uses toolbarSlotSize (a user preference, e.g. 200) which
+                // produces a large downward offset. We temporarily set it to the item's actual
+                // slot size so the gauge renders inside the icon regardless of context.
+                if (_toolbarSlotSizeField != null)
+                {
+                    harmony.Patch(
+                        original: AccessTools.Method(typeof(WateringCan), nameof(WateringCan.drawInMenu),
+                            new Type[] { typeof(SpriteBatch), typeof(Vector2), typeof(float), typeof(float), typeof(float), typeof(StackDrawType), typeof(Color), typeof(bool) }),
+                        prefix: new HarmonyMethod(typeof(ToolbarPatches), nameof(WateringCan_drawInMenu_Prefix)),
+                        postfix: new HarmonyMethod(typeof(ToolbarPatches), nameof(WateringCan_drawInMenu_Postfix))
+                    );
+                }
 
                 Monitor.Log("Toolbar patches applied successfully.", LogLevel.Trace);
             }
@@ -105,18 +127,6 @@ namespace AndroidConsolizer.Patches
                     false
                 );
 
-                // Temporarily override toolbarSlotSize so items like WateringCan
-                // position their gauge correctly for our 64px slots instead of
-                // the user's configured (potentially much larger) slot size.
-                object savedToolbarSlotSize = null;
-                if (_toolbarSlotSizeField != null)
-                {
-                    savedToolbarSlotSize = _toolbarSlotSizeField.GetValue(Game1.options);
-                    _toolbarSlotSizeField.SetValue(Game1.options, SlotSize);
-                }
-
-                try
-                {
                 // Draw each slot
                 for (int i = 0; i < 12; i++)
                 {
@@ -167,13 +177,6 @@ namespace AndroidConsolizer.Patches
                         );
                     }
                 }
-                }
-                finally
-                {
-                    // Restore original toolbarSlotSize
-                    if (_toolbarSlotSizeField != null && savedToolbarSlotSize != null)
-                        _toolbarSlotSizeField.SetValue(Game1.options, savedToolbarSlotSize);
-                }
             }
             catch (Exception ex)
             {
@@ -182,6 +185,43 @@ namespace AndroidConsolizer.Patches
             }
 
             return false; // Skip original Toolbar.draw
+        }
+
+        /// <summary>
+        /// Prefix for WateringCan.drawInMenu — temporarily sets toolbarSlotSize to the
+        /// item's actual slot size so the water gauge offset formula produces the correct
+        /// result for the current drawing context (toolbar, inventory, or chest).
+        /// </summary>
+        private static void WateringCan_drawInMenu_Prefix(WateringCan __instance)
+        {
+            try
+            {
+                _savedToolbarSlotSize = _toolbarSlotSizeField.GetValue(Game1.options);
+                // Read item's slot size via reflection (Android-only field, defaults to 64 when -1)
+                int slotSize = 64;
+                if (_itemSlotSizeField != null)
+                {
+                    object raw = _itemSlotSizeField.GetValue(__instance);
+                    if (raw is int val && val > 0)
+                        slotSize = val;
+                }
+                _toolbarSlotSizeField.SetValue(Game1.options, slotSize);
+            }
+            catch { }
+        }
+
+        /// <summary>Postfix for WateringCan.drawInMenu — restores original toolbarSlotSize.</summary>
+        private static void WateringCan_drawInMenu_Postfix()
+        {
+            try
+            {
+                if (_savedToolbarSlotSize != null)
+                {
+                    _toolbarSlotSizeField.SetValue(Game1.options, _savedToolbarSlotSize);
+                    _savedToolbarSlotSize = null;
+                }
+            }
+            catch { }
         }
     }
 }
