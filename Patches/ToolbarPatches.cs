@@ -18,6 +18,9 @@ namespace AndroidConsolizer.Patches
         private const int SlotSize = 64;
         private const int SlotSpacing = 4;
 
+        /// <summary>Cached reflection accessor for Android-only Options.toolbarSlotSize field.</summary>
+        private static System.Reflection.FieldInfo _toolbarSlotSizeField;
+
         /// <summary>Apply Harmony patches.</summary>
         public static void Apply(Harmony harmony, IMonitor monitor)
         {
@@ -30,6 +33,9 @@ namespace AndroidConsolizer.Patches
                     original: AccessTools.Method(typeof(Toolbar), nameof(Toolbar.draw), new Type[] { typeof(SpriteBatch) }),
                     prefix: new HarmonyMethod(typeof(ToolbarPatches), nameof(Toolbar_Draw_Prefix))
                 );
+
+                // Cache reflection accessor for Android-only toolbarSlotSize field
+                _toolbarSlotSizeField = AccessTools.Field(typeof(StardewValley.Options), "toolbarSlotSize");
 
                 Monitor.Log("Toolbar patches applied successfully.", LogLevel.Trace);
             }
@@ -99,6 +105,18 @@ namespace AndroidConsolizer.Patches
                     false
                 );
 
+                // Temporarily override toolbarSlotSize so items like WateringCan
+                // position their gauge correctly for our 64px slots instead of
+                // the user's configured (potentially much larger) slot size.
+                object savedToolbarSlotSize = null;
+                if (_toolbarSlotSizeField != null)
+                {
+                    savedToolbarSlotSize = _toolbarSlotSizeField.GetValue(Game1.options);
+                    _toolbarSlotSizeField.SetValue(Game1.options, SlotSize);
+                }
+
+                try
+                {
                 // Draw each slot
                 for (int i = 0; i < 12; i++)
                 {
@@ -148,6 +166,13 @@ namespace AndroidConsolizer.Patches
                             true
                         );
                     }
+                }
+                }
+                finally
+                {
+                    // Restore original toolbarSlotSize
+                    if (_toolbarSlotSizeField != null && savedToolbarSlotSize != null)
+                        _toolbarSlotSizeField.SetValue(Game1.options, savedToolbarSlotSize);
                 }
             }
             catch (Exception ex)
