@@ -52,8 +52,6 @@ namespace AndroidConsolizer.Patches
         private static int _enteredPageTick = -100;
         private static bool _weInitiatedClick;
 
-        // Diagnostic: only log once per overview entry to avoid log spam
-        private static bool _loggedOverviewDiag;
 
         public static void Apply(Harmony harmony, IMonitor monitor)
         {
@@ -484,15 +482,10 @@ namespace AndroidConsolizer.Patches
                     if (InitOverviewNavigation(__instance))
                     {
                         _onOverviewPage = true;
-                        _loggedOverviewDiag = false;
                         __instance.inventory.descriptionText = "";
                         // Sync highlightedBundle so the initial bundle animates immediately
                         if (__instance.currentlySnappedComponent != null)
                             SyncHighlightedBundle(__instance, __instance.currentlySnappedComponent);
-
-                        // Log what we just set
-                        var hb = _highlightedBundleField?.GetValue(__instance);
-                        Monitor.Log($"[OverviewInit] highlightedBundle={hb}, snapped={__instance.currentlySnappedComponent?.myID}, descText='{__instance.inventory.descriptionText}'", LogLevel.Debug);
                     }
                 }
 
@@ -580,6 +573,16 @@ namespace AndroidConsolizer.Patches
                 else if (_onOverviewPage)
                 {
                     target = __instance.currentlySnappedComponent;
+
+                    // Re-sync highlightedBundle if leftClickHeld clobbered it (sets -1
+                    // unconditionally). This happens on the frame the menu opens because
+                    // Android touch-sim fires leftClickHeld between update and draw.
+                    if (target != null && _highlightedBundleField != null)
+                    {
+                        var hb = _highlightedBundleField.GetValue(__instance);
+                        if (hb is int hbVal && hbVal == -1)
+                            SyncHighlightedBundle(__instance, target);
+                    }
                 }
 
                 if (target == null) return;
@@ -632,18 +635,6 @@ namespace AndroidConsolizer.Patches
                         SpriteEffects.None,
                         1f
                     );
-                }
-
-                // Diagnostic: log bundle tooltip conditions on first draw after overview entry
-                if (_onOverviewPage && !_loggedOverviewDiag)
-                {
-                    _loggedOverviewDiag = true;
-                    bool specificBundle = GetSpecificBundlePage(__instance);
-                    var hbVal = _highlightedBundleField?.GetValue(__instance);
-                    var bundlesList = _bundlesField?.GetValue(__instance) as System.Collections.IList;
-                    int bundleCount = bundlesList?.Count ?? -1;
-                    string descText = __instance.inventory?.descriptionText ?? "(null)";
-                    Monitor.Log($"[OverviewDraw] specificBundle={specificBundle}, highlightedBundle={hbVal}, bundles.Count={bundleCount}, descText.Length={descText.Length}, descText='{descText}'", LogLevel.Debug);
                 }
 
                 // Draw tooltip when hovering an ingredient
