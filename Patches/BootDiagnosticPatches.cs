@@ -23,6 +23,7 @@ namespace AndroidConsolizer.Patches
         private static IMonitor Monitor;
         private static FieldInfo _fadeField;
         private static FieldInfo _pauseField;
+        private static FieldInfo _logoFadeField;
         private static bool _resolved;
         private static bool _done;
         private static int _lastFadeValue = int.MinValue;
@@ -62,6 +63,7 @@ namespace AndroidConsolizer.Patches
                 _resolved = true;
                 _fadeField = AccessTools.Field(typeof(TitleMenu), "fadeFromWhiteTimer");
                 _pauseField = AccessTools.Field(typeof(TitleMenu), "pauseBeforeViewportRiseTimer");
+                _logoFadeField = AccessTools.Field(typeof(TitleMenu), "logoFadeTimer");
             }
 
             if (_fadeField == null) return;
@@ -74,6 +76,16 @@ namespace AndroidConsolizer.Patches
                 {
                     _done = true;
                     return;
+                }
+
+                // fadeFromWhiteTimer legitimately stays at 2000 while logoFadeTimer
+                // counts down from 5000 (cascading if-else in TitleMenu.update).
+                // Only start stuck detection after logoFadeTimer has finished.
+                if (_logoFadeField != null)
+                {
+                    int logoFade = (int)_logoFadeField.GetValue(__instance);
+                    if (logoFade > 0)
+                        return;
                 }
 
                 if (fadeValue == _lastFadeValue)
