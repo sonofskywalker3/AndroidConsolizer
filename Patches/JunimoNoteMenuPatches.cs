@@ -479,7 +479,12 @@ namespace AndroidConsolizer.Patches
                 if (!specificBundle && !_onOverviewPage)
                 {
                     if (InitOverviewNavigation(__instance))
+                    {
                         _onOverviewPage = true;
+                        // Sync highlightedBundle so the initial bundle animates immediately
+                        if (__instance.currentlySnappedComponent != null)
+                            SyncHighlightedBundle(__instance, __instance.currentlySnappedComponent);
+                    }
                 }
 
                 // Keep currentlySnappedComponent alive on overview (game may reset it)
@@ -531,16 +536,10 @@ namespace AndroidConsolizer.Patches
                     }
                 }
 
-                // Keep GetMouseState override active on overview so game's hover detection
-                // highlights the correct bundle (not the last-touched one)
-                if (_onOverviewPage && __instance.currentlySnappedComponent != null)
-                {
-                    var center = __instance.currentlySnappedComponent.bounds.Center;
-                    float zoom = Game1.options.zoomLevel;
-                    _overrideRawX = (int)(center.X * zoom);
-                    _overrideRawY = (int)(center.Y * zoom);
-                    _overridingMouse = true;
-                }
+                // Note: GetMouseState override is NOT active continuously on overview.
+                // highlightedBundle + tryHoverAction handle hover animation (synced in
+                // NavigateOverview). Draw_Prefix/Postfix handle draw-phase override for
+                // tooltip rendering. Continuous override here blocked touch input (#40).
             }
             catch (Exception ex)
             {
@@ -643,8 +642,7 @@ namespace AndroidConsolizer.Patches
             catch { }
             finally
             {
-                if (!_onOverviewPage)
-                    _overridingMouse = false;
+                _overridingMouse = false;
             }
         }
 
