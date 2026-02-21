@@ -169,23 +169,6 @@ namespace AndroidConsolizer.Patches
                 if (menu.shippingBin)
                     return;
 
-                // Diagnostic: log values affecting WateringCan water gauge positioning (Android-only fields via reflection)
-                try
-                {
-                    var tssField = AccessTools.Field(typeof(StardewValley.Options), "toolbarSlotSize");
-                    var missField = AccessTools.Field(typeof(Game1), "maxItemSlotSize");
-                    var sqField = AccessTools.Field(typeof(InventoryMenu), "squareSide");
-                    object tss = tssField?.GetValue(Game1.options);
-                    object miss = missField?.GetValue(null);
-                    object invSq = sqField?.GetValue(menu.inventory);
-                    object chestSq = sqField?.GetValue(menu.ItemsToGrabMenu);
-                    Monitor.Log($"[WaterGaugeDiag] toolbarSlotSize={tss}, maxItemSlotSize={miss}, inv.squareSide={invSq}, chestInv.squareSide={chestSq}, uiViewport={Game1.uiViewport.Width}x{Game1.uiViewport.Height}, zoomLevel={Game1.options.zoomLevel}", LogLevel.Debug);
-                }
-                catch (Exception diagEx)
-                {
-                    Monitor.Log($"[WaterGaugeDiag] Error: {diagEx.Message}", LogLevel.Debug);
-                }
-
                 _sideButtonObjects.Clear();
                 _colorPickerOpen = false;
                 bool verbose = ModEntry.Config.VerboseLogging;
