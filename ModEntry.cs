@@ -143,6 +143,17 @@ namespace AndroidConsolizer
                 lastToolIndex = original;
 
                 this.Monitor.Log($"Save loaded - forced tool re-equip at index {original}, row {currentToolbarRow}", LogLevel.Trace);
+
+                // Diagnostic: log values affecting WateringCan water gauge positioning
+                try
+                {
+                    var tssField = HarmonyLib.AccessTools.Field(typeof(StardewValley.Options), "toolbarSlotSize");
+                    var missField = HarmonyLib.AccessTools.Field(typeof(Game1), "maxItemSlotSize");
+                    object tss = tssField?.GetValue(Game1.options);
+                    object miss = missField?.GetValue(null);
+                    this.Monitor.Log($"[WaterGaugeDiag] toolbarSlotSize={tss}, maxItemSlotSize={miss}, viewport={Game1.uiViewport.Width}x{Game1.uiViewport.Height}, zoom={Game1.options.zoomLevel}", LogLevel.Debug);
+                }
+                catch { }
             }
         }
 
