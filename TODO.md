@@ -119,6 +119,12 @@ For completed features and their technical reference, see `DONE.md`.
 - **Fix:** Store A-button state in a static bool from `OnUpdateTicked`, read in draw postfix.
 - **File:** `Patches/InventoryManagementPatches.cs`
 
+### 37. Make Button Remapping Optional
+- Button remapping (layout/style) is currently always active. Every other feature in the mod is toggleable via GMCM, but remapping isn't — violates the "every feature toggleable" principle.
+- Users who want menu fixes but prefer default Android button layout have no way to opt out.
+- **Fix:** Add a master toggle (e.g. `EnableButtonRemapping`) in ModConfig, defaulting to true. When disabled, ButtonRemapper passes through all inputs unmodified. Grey out or hide layout/style dropdowns in GMCM when toggle is off.
+- **File:** `ModConfig.cs`, `ButtonRemapper.cs`, `ModEntry.cs`
+
 ---
 
 ## Milestone 3: Overworld Cursor & Accessibility (v3.6)
@@ -231,6 +237,17 @@ For completed features and their technical reference, see `DONE.md`.
 - GMCM toggle to disable all touch/mouse input when using controller.
 - **Deprioritized:** Touch provides useful fallback. Off by default.
 - Risk: some vanilla Android controller code may internally simulate mouse clicks.
+
+### 38. GMCM Two-Tier Config (Simple Page + Granular File)
+- GMCM currently has a flat list of toggles. With 20+ features, this is heading toward a 68-item checklist nobody wants to scroll through.
+- **Goal:** "Easy mode" for most users (streamlined GMCM page with grouped presets/categories) and "picky mode" for power users (full per-feature granularity in `config.json`).
+- **Approaches to investigate:**
+  1. **GMCM categories/sections:** Group related toggles under collapsible headers (Menu Fixes, Button Remapping, Inventory, Combat). Fewer top-level items visible.
+  2. **Preset profiles:** "Console Parity" (everything on), "Minimal" (just menu fixes), "Custom" (unlocks all toggles). Preset selector at top, individual toggles only show in Custom mode.
+  3. **GMCM simple + config.json granular:** GMCM shows only category-level toggles (e.g. "Enable Menu Fixes"). Per-feature overrides live in `config.json` only — power users edit the file directly.
+  4. **Two GMCM pages:** "Quick Setup" page with presets/categories, "Advanced" page with every individual toggle. Check if GMCM API supports multiple pages per mod.
+- **Investigation needed:** What does the GMCM API support? Section headers? Multiple pages? Conditional visibility (show/hide based on another toggle)?
+- **File:** `ModEntry.cs` (GMCM registration), `ModConfig.cs`
 
 ---
 
