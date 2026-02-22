@@ -105,7 +105,9 @@ namespace AndroidConsolizer.Patches
         private static FieldInfo OnBottomButtonsField;
 
         // --- Shop screen cursor navigation (#34) ---
-        private static int _shopRow = 2;  // 0=arrows, 1=appearance (if visible), 2=bottom buttons
+        // Row 0: [back, appearance (if visible), forward]
+        // Row 1: [move, build (skipped if unaffordable), demolish, paint]
+        private static int _shopRow = 1;  // 0=arrows+appearance, 1=bottom buttons
         private static int _shopCol = 0;  // column within row
         private static FieldInfo BackButtonField;
         private static FieldInfo ForwardButtonField;
@@ -119,6 +121,13 @@ namespace AndroidConsolizer.Patches
         private static MethodInfo OnReleaseBuildMethod;
         private static MethodInfo OnReleaseDemolishMethod;
         private static MethodInfo OnReleasePaintMethod;
+
+        // --- BuildingSkinMenu cursor ---
+        private static int _skinNavIndex = 1;  // 0=prev, 1=ok, 2=next
+        private static int _lastSkinMenuHash = 0;
+        private static FieldInfo SkinLeftButtonField;
+        private static FieldInfo SkinRightButtonField;
+        private static FieldInfo SkinOkButtonField;
 
         /// <summary>Apply Harmony patches.</summary>
         public static void Apply(Harmony harmony, IMonitor monitor)
@@ -218,6 +227,36 @@ namespace AndroidConsolizer.Patches
                 Monitor.Log($"Failed to apply CarpenterMenu patches: {ex.Message}", LogLevel.Error);
             }
 
+            // BuildingSkinMenu cursor patches (#34)
+            try
+            {
+                var skinMenuType = AccessTools.TypeByName("StardewValley.Menus.BuildingSkinMenu");
+                if (skinMenuType != null)
+                {
+                    SkinLeftButtonField = AccessTools.Field(skinMenuType, "leftButton");
+                    SkinRightButtonField = AccessTools.Field(skinMenuType, "rightButton");
+                    SkinOkButtonField = AccessTools.Field(skinMenuType, "okButton");
+
+                    harmony.Patch(
+                        original: AccessTools.Method(skinMenuType, "receiveGamePadButton"),
+                        prefix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(SkinMenu_ReceiveGamePadButton_Prefix))
+                    );
+                    harmony.Patch(
+                        original: AccessTools.Method(skinMenuType, "draw", new[] { typeof(SpriteBatch) }),
+                        postfix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(SkinMenu_Draw_Postfix))
+                    );
+                    Monitor.Log($"BuildingSkinMenu patches applied. leftBtn={SkinLeftButtonField != null} rightBtn={SkinRightButtonField != null} okBtn={SkinOkButtonField != null}", LogLevel.Trace);
+                }
+                else
+                {
+                    Monitor.Log("BuildingSkinMenu type not found — skin picker cursor disabled.", LogLevel.Trace);
+                }
+            }
+            catch (Exception ex)
+            {
+                Monitor.Log($"Failed to apply BuildingSkinMenu patches: {ex.Message}", LogLevel.Error);
+            }
+
             // GetMouseState patches — receiveLeftClick reads mouse position internally instead of
             // using its x,y parameters. We override GetMouseState momentarily during the call so
             // the game reads our cursor position for building placement.
@@ -292,7 +331,7 @@ namespace AndroidConsolizer.Patches
             _ghostPlaced = false;
             _buildPressHandled = false;
             _demolishSelectedBuilding = null;
-            _shopRow = 2;
+            _shopRow = 1;
             _shopCol = 0;
             if (ModEntry.Config.VerboseLogging)
                 Monitor.Log($"CarpenterMenu opened at tick {MenuOpenTick}. Grace period: {GracePeriodTicks} ticks.", LogLevel.Debug);
@@ -315,7 +354,7 @@ namespace AndroidConsolizer.Patches
             _buildPressHandled = false;
             _demolishSelectedBuilding = null;
             _blockShopClicks = false;
-            _shopRow = 2;
+            _shopRow = 1;
             _shopCol = 0;
         }
 
@@ -378,8 +417,35 @@ namespace AndroidConsolizer.Patches
             return appBtn != null && appBtn.visible;
         }
 
-        /// <summary>Get the list of visible bottom buttons in display order.</summary>
-        private static List<ClickableComponent> GetVisibleBottomButtons(CarpenterMenu menu)
+        /// <summary>Check if the current blueprint's Build is affordable.</summary>
+        private static bool IsBuildAffordable(CarpenterMenu menu)
+        {
+            int price = PriceField != null ? (int)PriceField.GetValue(menu) : 0;
+            bool canAfford = price >= 0 && Game1.player.Money >= price;
+            if (!canAfford) return false;
+            if (DoesFarmerHaveEnoughResourcesToBuildMethod != null)
+                return (bool)DoesFarmerHaveEnoughResourcesToBuildMethod.Invoke(menu, null);
+            return true;
+        }
+
+        /// <summary>Get the list of components in row 0: [back, appearance (if visible), forward].</summary>
+        private static List<ClickableComponent> GetRow0Components(CarpenterMenu menu)
+        {
+            var list = new List<ClickableComponent>();
+            var back = BackButtonField?.GetValue(menu) as ClickableComponent;
+            if (back != null) list.Add(back);
+            if (IsAppearanceVisible(menu))
+            {
+                var app = AppearanceButtonField?.GetValue(menu) as ClickableComponent;
+                if (app != null) list.Add(app);
+            }
+            var forward = ForwardButtonField?.GetValue(menu) as ClickableComponent;
+            if (forward != null) list.Add(forward);
+            return list;
+        }
+
+        /// <summary>Get the list of navigable bottom buttons (skips unaffordable Build).</summary>
+        private static List<ClickableComponent> GetNavigableBottomButtons(CarpenterMenu menu)
         {
             var list = new List<ClickableComponent>();
             var move = MoveButtonField?.GetValue(menu) as ClickableComponent;
@@ -387,7 +453,7 @@ namespace AndroidConsolizer.Patches
             var demolish = DemolishButtonField?.GetValue(menu) as ClickableComponent;
             var paint = PaintButtonField?.GetValue(menu) as ClickableComponent;
             if (move?.visible == true) list.Add(move);
-            if (build?.visible == true) list.Add(build);
+            if (build?.visible == true && IsBuildAffordable(menu)) list.Add(build);
             if (demolish?.visible == true) list.Add(demolish);
             if (paint?.visible == true) list.Add(paint);
             return list;
@@ -398,46 +464,32 @@ namespace AndroidConsolizer.Patches
         {
             if (_shopRow == 0)
             {
-                if (_shopCol == 0)
-                    return BackButtonField?.GetValue(menu) as ClickableComponent;
-                else
-                    return ForwardButtonField?.GetValue(menu) as ClickableComponent;
+                var row = GetRow0Components(menu);
+                return _shopCol < row.Count ? row[_shopCol] : null;
             }
             if (_shopRow == 1)
             {
-                var appBtn = AppearanceButtonField?.GetValue(menu) as ClickableTextureComponent;
-                return (appBtn?.visible == true) ? appBtn : null;
-            }
-            if (_shopRow == 2)
-            {
-                var btns = GetVisibleBottomButtons(menu);
+                var btns = GetNavigableBottomButtons(menu);
                 return _shopCol < btns.Count ? btns[_shopCol] : null;
             }
             return null;
         }
 
-        /// <summary>Ensure the shop cursor is on a valid component after state changes (e.g. building cycled).</summary>
+        /// <summary>Ensure the shop cursor is on a valid component after state changes.</summary>
         private static void ValidateShopCursor(CarpenterMenu menu)
         {
-            // If on appearance row but appearance not visible, move to bottom buttons
-            if (_shopRow == 1 && !IsAppearanceVisible(menu))
-                _shopRow = 2;
-
-            // Clamp column for bottom buttons
-            if (_shopRow == 2)
+            if (_shopRow == 0)
             {
-                var btns = GetVisibleBottomButtons(menu);
+                var row = GetRow0Components(menu);
+                if (row.Count == 0) _shopCol = 0;
+                else if (_shopCol >= row.Count) _shopCol = row.Count - 1;
+            }
+            else if (_shopRow == 1)
+            {
+                var btns = GetNavigableBottomButtons(menu);
                 if (btns.Count == 0) _shopCol = 0;
                 else if (_shopCol >= btns.Count) _shopCol = btns.Count - 1;
             }
-
-            // Clamp column for arrows (always 0 or 1)
-            if (_shopRow == 0 && _shopCol > 1)
-                _shopCol = 1;
-
-            // Appearance is single item
-            if (_shopRow == 1)
-                _shopCol = 0;
         }
 
         /// <summary>Handle all gamepad input on the shop screen (not on farm).</summary>
@@ -483,44 +535,31 @@ namespace AndroidConsolizer.Patches
         /// <summary>Handle D-pad/thumbstick navigation on the shop screen.</summary>
         private static void HandleShopNav(CarpenterMenu menu, bool left, bool right, bool up, bool down)
         {
-            bool appVisible = IsAppearanceVisible(menu);
-
             if (up)
             {
-                if (_shopRow == 2)
-                    _shopRow = appVisible ? 1 : 0;
-                else if (_shopRow == 1)
-                    _shopRow = 0;
+                if (_shopRow == 1) _shopRow = 0;
                 // Row 0: already at top
             }
             else if (down)
             {
-                if (_shopRow == 0)
-                    _shopRow = appVisible ? 1 : 2;
-                else if (_shopRow == 1)
-                    _shopRow = 2;
-                // Row 2: already at bottom
+                if (_shopRow == 0) _shopRow = 1;
+                // Row 1: already at bottom
             }
             else if (left)
             {
                 if (_shopRow == 0)
                 {
+                    var row = GetRow0Components(menu);
                     if (_shopCol > 0)
-                        _shopCol = 0;
+                        _shopCol--;
                     else
                     {
-                        // At left arrow already — cycle to previous building
+                        // At back arrow — cycle to previous building
                         OnTapLeftArrowMethod?.Invoke(menu, null);
                         ValidateShopCursor(menu);
                     }
                 }
                 else if (_shopRow == 1)
-                {
-                    // Single item — cycle building
-                    OnTapLeftArrowMethod?.Invoke(menu, null);
-                    ValidateShopCursor(menu);
-                }
-                else if (_shopRow == 2)
                 {
                     if (_shopCol > 0) _shopCol--;
                 }
@@ -529,24 +568,19 @@ namespace AndroidConsolizer.Patches
             {
                 if (_shopRow == 0)
                 {
-                    if (_shopCol < 1)
-                        _shopCol = 1;
+                    var row = GetRow0Components(menu);
+                    if (_shopCol < row.Count - 1)
+                        _shopCol++;
                     else
                     {
-                        // At right arrow already — cycle to next building
+                        // At forward arrow — cycle to next building
                         OnTapRightArrowMethod?.Invoke(menu, null);
                         ValidateShopCursor(menu);
                     }
                 }
                 else if (_shopRow == 1)
                 {
-                    // Single item — cycle building
-                    OnTapRightArrowMethod?.Invoke(menu, null);
-                    ValidateShopCursor(menu);
-                }
-                else if (_shopRow == 2)
-                {
-                    var btns = GetVisibleBottomButtons(menu);
+                    var btns = GetNavigableBottomButtons(menu);
                     if (_shopCol < btns.Count - 1) _shopCol++;
                 }
             }
@@ -560,26 +594,37 @@ namespace AndroidConsolizer.Patches
         {
             if (_shopRow == 0)
             {
-                // Arrows: cycle buildings
-                if (_shopCol == 0)
+                // Row 0: back, appearance (if visible), forward
+                var row = GetRow0Components(menu);
+                if (_shopCol >= row.Count) return false;
+                var comp = row[_shopCol];
+
+                var back = BackButtonField?.GetValue(menu) as ClickableComponent;
+                var forward = ForwardButtonField?.GetValue(menu) as ClickableComponent;
+
+                if (comp == back)
+                {
                     OnTapLeftArrowMethod?.Invoke(menu, null);
-                else
+                    ValidateShopCursor(menu);
+                }
+                else if (comp == forward)
+                {
                     OnTapRightArrowMethod?.Invoke(menu, null);
-                ValidateShopCursor(menu);
+                    ValidateShopCursor(menu);
+                }
+                else
+                {
+                    // Appearance button — open BuildingSkinMenu
+                    var appBtn = AppearanceButtonField?.GetValue(menu) as ClickableTextureComponent;
+                    if (appBtn != null && appBtn.visible)
+                        menu.receiveLeftClick(appBtn.bounds.Center.X, appBtn.bounds.Center.Y);
+                }
                 return false;
             }
             else if (_shopRow == 1)
             {
-                // Appearance: open BuildingSkinMenu
-                var appBtn = AppearanceButtonField?.GetValue(menu) as ClickableTextureComponent;
-                if (appBtn != null && appBtn.visible)
-                    menu.receiveLeftClick(appBtn.bounds.Center.X, appBtn.bounds.Center.Y);
-                return false;
-            }
-            else if (_shopRow == 2)
-            {
                 // Bottom buttons: activate the selected one
-                var btns = GetVisibleBottomButtons(menu);
+                var btns = GetNavigableBottomButtons(menu);
                 if (_shopCol >= btns.Count) return false;
                 var btn = btns[_shopCol];
 
@@ -590,21 +635,6 @@ namespace AndroidConsolizer.Patches
 
                 if (btn == buildBtn)
                 {
-                    // Check affordability first
-                    int price = PriceField != null ? (int)PriceField.GetValue(menu) : 0;
-                    bool canAfford = price >= 0 && Game1.player.Money >= price;
-                    bool hasResources = true;
-                    if (canAfford && DoesFarmerHaveEnoughResourcesToBuildMethod != null)
-                        hasResources = (bool)DoesFarmerHaveEnoughResourcesToBuildMethod.Invoke(menu, null);
-
-                    if (!canAfford || !hasResources)
-                    {
-                        Game1.playSound("cancel");
-                        _blockShopClicks = true;
-                        if (ModEntry.Config.VerboseLogging)
-                            Monitor.Log($"[CarpenterMenu] Blocked unaffordable Build: price={price} money={Game1.player.Money} hasResources={hasResources}", LogLevel.Debug);
-                        return false;
-                    }
                     _blockShopClicks = true;
                     OnReleaseBuildMethod?.Invoke(menu, null);
                 }
@@ -1129,7 +1159,7 @@ namespace AndroidConsolizer.Patches
                     b.Draw(
                         Game1.mouseCursors,
                         new Vector2(center.X, center.Y),
-                        Game1.getSourceRectForStandardTileSheet(Game1.mouseCursors, 0, 16, 16),
+                        Game1.getSourceRectForStandardTileSheet(Game1.mouseCursors, 44, 16, 16),
                         Color.White,
                         0f,
                         Vector2.Zero,
@@ -1164,6 +1194,107 @@ namespace AndroidConsolizer.Patches
                 Game1.mouseCursors,
                 new Vector2(_cursorX, _cursorY),
                 Game1.getSourceRectForStandardTileSheet(Game1.mouseCursors, 0, 16, 16),
+                Color.White,
+                0f,
+                Vector2.Zero,
+                4f + Game1.dialogueButtonScale / 150f,
+                SpriteEffects.None,
+                1f
+            );
+        }
+
+        // ====================================================================
+        // BuildingSkinMenu cursor patches (#34)
+        // ====================================================================
+
+        /// <summary>Prefix for BuildingSkinMenu.receiveGamePadButton — cursor navigation.</summary>
+        private static bool SkinMenu_ReceiveGamePadButton_Prefix(IClickableMenu __instance, Buttons b)
+        {
+            // Reset nav index when a new skin menu opens
+            int hash = __instance.GetHashCode();
+            if (hash != _lastSkinMenuHash)
+            {
+                _lastSkinMenuHash = hash;
+                _skinNavIndex = 1; // default to OK
+            }
+
+            // B, LT/RT/LB/RB: let game handle
+            if (b == Buttons.B || b == Buttons.LeftTrigger || b == Buttons.RightTrigger
+                || b == Buttons.LeftShoulder || b == Buttons.RightShoulder)
+                return true;
+
+            bool isLeft = b == Buttons.DPadLeft || b == Buttons.LeftThumbstickLeft;
+            bool isRight = b == Buttons.DPadRight || b == Buttons.LeftThumbstickRight;
+
+            if (isLeft)
+            {
+                if (_skinNavIndex > 0)
+                {
+                    _skinNavIndex--;
+                    Game1.playSound("smallSelect");
+                }
+                else
+                {
+                    // At prev button — cycle to previous skin
+                    var leftBtn = SkinLeftButtonField?.GetValue(__instance) as ClickableComponent;
+                    if (leftBtn != null)
+                        __instance.receiveLeftClick(leftBtn.bounds.Center.X, leftBtn.bounds.Center.Y);
+                }
+                return false;
+            }
+
+            if (isRight)
+            {
+                if (_skinNavIndex < 2)
+                {
+                    _skinNavIndex++;
+                    Game1.playSound("smallSelect");
+                }
+                else
+                {
+                    // At next button — cycle to next skin
+                    var rightBtn = SkinRightButtonField?.GetValue(__instance) as ClickableComponent;
+                    if (rightBtn != null)
+                        __instance.receiveLeftClick(rightBtn.bounds.Center.X, rightBtn.bounds.Center.Y);
+                }
+                return false;
+            }
+
+            if (b == Buttons.A)
+            {
+                ClickableComponent btn = null;
+                if (_skinNavIndex == 0) btn = SkinLeftButtonField?.GetValue(__instance) as ClickableComponent;
+                else if (_skinNavIndex == 1) btn = SkinOkButtonField?.GetValue(__instance) as ClickableComponent;
+                else if (_skinNavIndex == 2) btn = SkinRightButtonField?.GetValue(__instance) as ClickableComponent;
+
+                if (btn != null)
+                    __instance.receiveLeftClick(btn.bounds.Center.X, btn.bounds.Center.Y);
+                return false;
+            }
+
+            // Block up/down (no vertical navigation in skin menu)
+            if (b == Buttons.DPadUp || b == Buttons.LeftThumbstickUp
+                || b == Buttons.DPadDown || b == Buttons.LeftThumbstickDown)
+                return false;
+
+            return true;
+        }
+
+        /// <summary>Postfix for BuildingSkinMenu.draw — draws finger cursor at current component.</summary>
+        private static void SkinMenu_Draw_Postfix(IClickableMenu __instance, SpriteBatch b)
+        {
+            ClickableComponent btn = null;
+            if (_skinNavIndex == 0) btn = SkinLeftButtonField?.GetValue(__instance) as ClickableComponent;
+            else if (_skinNavIndex == 1) btn = SkinOkButtonField?.GetValue(__instance) as ClickableComponent;
+            else if (_skinNavIndex == 2) btn = SkinRightButtonField?.GetValue(__instance) as ClickableComponent;
+
+            if (btn == null) return;
+
+            var center = btn.bounds.Center;
+            b.Draw(
+                Game1.mouseCursors,
+                new Vector2(center.X, center.Y),
+                Game1.getSourceRectForStandardTileSheet(Game1.mouseCursors, 44, 16, 16),
                 Color.White,
                 0f,
                 Vector2.Zero,
