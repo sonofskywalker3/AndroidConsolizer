@@ -233,3 +233,14 @@ See `CONTROLLER_MATRIX.md` for full testing details by device.
 - **LB/RB unchanged** — continue switching CC rooms via vanilla `doFromGameMenuJoystick`.
 - **Full wrap cycle works:** Inventory →RT→ ... →RT→ Options →RT→ CC →RT→ Inventory, and reverse with LT.
 - **File:** `Patches/JunimoNoteMenuPatches.cs`
+
+### Tooltip Positioning — v3.4.30-v3.4.33
+- **Root cause:** `drawToolTip` positions at `mouse+32`, bottom-edge clamping pushes tooltip over cursor on different screen sizes (Tab S8, G Cloud, Ayaneo).
+- **Fix:** Replaced `drawToolTip` with `drawHoverText` using `overrideX`/`overrideY`. Tooltip placed below slot (cursor clearance + 8px gap) or above if insufficient room, using measured height.
+- v3.4.30: positioned right of slot — covered rightmost column.
+- v3.4.31: positioned below/above with 300px height estimate — too small for weapons.
+- v3.4.32: 450px estimate — too aggressive, tooltip "way too high" for simple items.
+- v3.4.33: `MeasureTooltipHeight()` computes actual height from font metrics, buff icons, category line, edibility bars, attachment slots, and item-specific overrides (`getExtraSpaceNeededForTooltipSpecialIcons`). Confirmed working on Tab S8.
+- Uses reflection for `GetBuffIcons` (Android-only method).
+- **Lesson:** Don't estimate tooltip heights — measure them. The game's tooltip code has many conditional sections (buffs, edibility, attachments, weapon stats) that vary wildly by item type.
+- **Files:** `Patches/InventoryManagementPatches.cs`, `Patches/ItemGrabMenuPatches.cs`
