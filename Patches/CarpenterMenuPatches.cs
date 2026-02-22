@@ -99,6 +99,11 @@ namespace AndroidConsolizer.Patches
         /// receiveLeftClick/releaseLeftClick at (-39,-39) from hitting cancelButton.</summary>
         private static bool _blockShopClicks = false;
 
+        // --- Appearance button (building skin picker) ---
+        private static FieldInfo AppearanceButtonField;
+        private static FieldInfo OnBottomButtonsField;
+        private static bool _onAppearanceButton = false;
+
         /// <summary>Apply Harmony patches.</summary>
         public static void Apply(Harmony harmony, IMonitor monitor)
         {
@@ -154,6 +159,8 @@ namespace AndroidConsolizer.Patches
                 PriceField = AccessTools.Field(typeof(CarpenterMenu), "price");
                 SelectedBottomButtonField = AccessTools.Field(typeof(CarpenterMenu), "_selectedBottomButton");
                 DoesFarmerHaveEnoughResourcesToBuildMethod = AccessTools.Method(typeof(CarpenterMenu), "DoesFarmerHaveEnoughResourcesToBuild");
+                AppearanceButtonField = AccessTools.Field(typeof(CarpenterMenu), "appearanceButton");
+                OnBottomButtonsField = AccessTools.Field(typeof(CarpenterMenu), "_onBottomButtons");
                 Monitor.Log($"CarpenterMenu fields: Action={ActionField != null}, moving={MovingField != null}, demolishing={DemolishingField != null}, price={PriceField != null}, selectedBtn={SelectedBottomButtonField != null}, hasResources={DoesFarmerHaveEnoughResourcesToBuildMethod != null}", LogLevel.Trace);
 
                 // Block touch-sim receiveLeftClick after unaffordable Build intercept (#14e fix)
@@ -257,6 +264,7 @@ namespace AndroidConsolizer.Patches
             _ghostPlaced = false;
             _buildPressHandled = false;
             _demolishSelectedBuilding = null;
+            _onAppearanceButton = false;
             if (ModEntry.Config.VerboseLogging)
                 Monitor.Log($"CarpenterMenu opened at tick {MenuOpenTick}. Grace period: {GracePeriodTicks} ticks.", LogLevel.Debug);
         }
@@ -278,6 +286,7 @@ namespace AndroidConsolizer.Patches
             _buildPressHandled = false;
             _demolishSelectedBuilding = null;
             _blockShopClicks = false;
+            _onAppearanceButton = false;
         }
 
         /// <summary>Check if we're within the grace period after menu open.</summary>
@@ -390,6 +399,83 @@ namespace AndroidConsolizer.Patches
                     if (ModEntry.Config.VerboseLogging)
                         Monitor.Log($"[CarpenterMenu] Shop screen A: onFarm={onFarm} selectedBtn={selectedBtn}", LogLevel.Debug);
                 }
+
+                // --- Appearance button navigation (#34) ---
+                // The appearance button (building skin picker) is disconnected from
+                // the game's nav graph. Wire it in: Down from blueprints → appearance,
+                // Down from appearance → bottom buttons, Up from bottom → appearance,
+                // Up from appearance → blueprints, A on appearance → open skin picker.
+                bool onFarmForAppearance = OnFarmField != null && (bool)OnFarmField.GetValue(__instance);
+                if (!onFarmForAppearance && AppearanceButtonField != null && OnBottomButtonsField != null)
+                {
+                    var appBtn = AppearanceButtonField.GetValue(__instance) as ClickableTextureComponent;
+                    bool appVisible = appBtn != null && appBtn.visible;
+                    bool onBottom = (bool)OnBottomButtonsField.GetValue(__instance);
+
+                    if (_onAppearanceButton && appVisible)
+                    {
+                        switch (b)
+                        {
+                            case Buttons.A:
+                                // Open BuildingSkinMenu by clicking the appearance button
+                                __instance.receiveLeftClick(appBtn.bounds.Center.X, appBtn.bounds.Center.Y);
+                                _onAppearanceButton = false;
+                                return false;
+                            case Buttons.DPadDown:
+                            case Buttons.LeftThumbstickDown:
+                                // Move to bottom buttons
+                                _onAppearanceButton = false;
+                                OnBottomButtonsField.SetValue(__instance, true);
+                                // BottomButton enum: None=0, Move=1
+                                if (SelectedBottomButtonField != null)
+                                {
+                                    var enumType = SelectedBottomButtonField.FieldType;
+                                    SelectedBottomButtonField.SetValue(__instance, Enum.ToObject(enumType, 1));
+                                }
+                                Game1.playSound("smallSelect");
+                                return false;
+                            case Buttons.DPadUp:
+                            case Buttons.LeftThumbstickUp:
+                                // Back to blueprint browsing
+                                _onAppearanceButton = false;
+                                Game1.playSound("smallSelect");
+                                return false;
+                            case Buttons.DPadLeft:
+                            case Buttons.LeftThumbstickLeft:
+                                // Cycle blueprints left while on appearance button
+                                return true;
+                            case Buttons.DPadRight:
+                            case Buttons.LeftThumbstickRight:
+                                // Cycle blueprints right while on appearance button
+                                return true;
+                        }
+                    }
+                    else if (appVisible)
+                    {
+                        // Down from blueprint browsing (not on bottom buttons) → appearance button
+                        if (!onBottom && (b == Buttons.DPadDown || b == Buttons.LeftThumbstickDown))
+                        {
+                            _onAppearanceButton = true;
+                            Game1.playSound("smallSelect");
+                            return false;
+                        }
+                        // Up from bottom buttons → appearance button (instead of blueprints)
+                        if (onBottom && (b == Buttons.DPadUp || b == Buttons.LeftThumbstickUp))
+                        {
+                            _onAppearanceButton = true;
+                            OnBottomButtonsField.SetValue(__instance, false);
+                            // BottomButton enum: None=0
+                            if (SelectedBottomButtonField != null)
+                            {
+                                var enumType = SelectedBottomButtonField.FieldType;
+                                SelectedBottomButtonField.SetValue(__instance, Enum.ToObject(enumType, 0));
+                            }
+                            Game1.playSound("smallSelect");
+                            return false;
+                        }
+                    }
+                }
+
                 return true;
             }
 
@@ -601,6 +687,15 @@ namespace AndroidConsolizer.Patches
                 _cursorCentered = false;
                 _overridingMousePosition = false;
                 _demolishSelectedBuilding = null;
+
+                // Appearance button hover — call performHoverAction so it scales up
+                if (_onAppearanceButton && AppearanceButtonField != null)
+                {
+                    var appBtn = AppearanceButtonField.GetValue(__instance) as ClickableTextureComponent;
+                    if (appBtn != null && appBtn.visible)
+                        __instance.performHoverAction(appBtn.bounds.Center.X, appBtn.bounds.Center.Y);
+                }
+
                 return;
             }
 
