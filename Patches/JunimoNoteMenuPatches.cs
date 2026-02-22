@@ -28,6 +28,7 @@ namespace AndroidConsolizer.Patches
         private static FieldInfo _bundlesField;
         private static FieldInfo _highlightedBundleField;
         private static FieldInfo _invCurrentlySelectedItemField;
+        private static FieldInfo _heldItemField;
         private static MethodInfo _tryDepositItemMethod;
 
         // Overview page state
@@ -65,6 +66,7 @@ namespace AndroidConsolizer.Patches
             _bundlesField = AccessTools.Field(typeof(JunimoNoteMenu), "bundles");
             _highlightedBundleField = AccessTools.Field(typeof(JunimoNoteMenu), "highlightedBundle");
             _invCurrentlySelectedItemField = AccessTools.Field(typeof(InventoryMenu), "currentlySelectedItem");
+            _heldItemField = AccessTools.Field(typeof(JunimoNoteMenu), "heldItem");
             _tryDepositItemMethod = AccessTools.Method(typeof(JunimoNoteMenu), "tryDepositItem");
 
             // Patch GetMouseState — both input wrapper and XNA Mouse paths
@@ -449,8 +451,11 @@ namespace AndroidConsolizer.Patches
             // Use the game's built-in one-press gamepad deposit (Android-only):
             // set currentlySelectedItem and call tryDepositItem() which finds the
             // first empty ingredient slot and calls releaseLeftClick to donate.
-            if (_invCurrentlySelectedItemField != null && _tryDepositItemMethod != null)
+            if (_invCurrentlySelectedItemField != null && _tryDepositItemMethod != null && _heldItemField != null)
             {
+                // Save heldItem so we can restore it if deposit fails
+                var savedHeldItem = _heldItemField.GetValue(menu);
+
                 _invCurrentlySelectedItemField.SetValue(menu.inventory, _trackedSlotIndex);
 
                 // Override GetMouseState so releaseLeftClick (called inside tryDepositItem)
@@ -480,6 +485,16 @@ namespace AndroidConsolizer.Patches
                 {
                     _weInitiatedClick = false;
                     _overridingMouse = false;
+
+                    // tryDepositItem unconditionally sets heldItem before checking if the
+                    // deposit succeeds. If the item wasn't consumed (wrong item for bundle),
+                    // heldItem stays set and renders as a floating cursor item. Clean it up.
+                    var currentHeldItem = _heldItemField.GetValue(menu);
+                    if (currentHeldItem != null)
+                    {
+                        _heldItemField.SetValue(menu, savedHeldItem);
+                        _invCurrentlySelectedItemField.SetValue(menu.inventory, -1);
+                    }
                 }
             }
             else
