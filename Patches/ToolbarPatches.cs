@@ -28,6 +28,21 @@ namespace AndroidConsolizer.Patches
         /// <summary>Saved toolbarSlotSize value, restored in WateringCan postfix.</summary>
         [ThreadStatic] private static object _savedToolbarSlotSize;
 
+        /// <summary>Cached reflection for Toolbar._toolbarPaddingX (Android-only).</summary>
+        private static System.Reflection.FieldInfo _toolbar_toolbarPaddingXField;
+
+        /// <summary>Cached reflection for Game1.toolbarPaddingX (Android-only).</summary>
+        private static System.Reflection.FieldInfo _game1_toolbarPaddingXField;
+
+        /// <summary>Cached reflection for Game1.maxItemSlotSize (Android-only).</summary>
+        private static System.Reflection.FieldInfo _maxItemSlotSizeField;
+
+        /// <summary>Cached reflection for Toolbar._itemSlotSize (Android-only).</summary>
+        private static System.Reflection.FieldInfo _toolbar_itemSlotSizeField;
+
+        /// <summary>Cached reflection for Toolbar.resetToolbar() (Android-only).</summary>
+        private static System.Reflection.MethodInfo _resetToolbarMethod;
+
         /// <summary>Apply Harmony patches.</summary>
         public static void Apply(Harmony harmony, IMonitor monitor)
         {
@@ -44,6 +59,11 @@ namespace AndroidConsolizer.Patches
                 // Cache reflection accessors for Android-only fields
                 _toolbarSlotSizeField = AccessTools.Field(typeof(StardewValley.Options), "toolbarSlotSize");
                 _itemSlotSizeField = AccessTools.Field(typeof(Item), "_itemSlotSize");
+                _toolbar_toolbarPaddingXField = AccessTools.Field(typeof(Toolbar), "_toolbarPaddingX");
+                _game1_toolbarPaddingXField = AccessTools.Field(typeof(Game1), "toolbarPaddingX");
+                _maxItemSlotSizeField = AccessTools.Field(typeof(Game1), "maxItemSlotSize");
+                _toolbar_itemSlotSizeField = AccessTools.Field(typeof(Toolbar), "_itemSlotSize");
+                _resetToolbarMethod = AccessTools.Method(typeof(Toolbar), "resetToolbar");
 
                 // Patch WateringCan.drawInMenu to fix water gauge position in ALL contexts.
                 // The gauge formula uses toolbarSlotSize (a user preference, e.g. 200) which
@@ -78,6 +98,37 @@ namespace AndroidConsolizer.Patches
                 // If feature is disabled, let original run
                 if (!(ModEntry.Config?.EnableConsoleToolbar ?? false))
                     return true;
+
+                // Keep Toolbar.Instance state in sync — the original draw calls
+                // resetToolbar() when padding or slot size changes. Since we skip
+                // the original draw, we must do this ourselves. Without it,
+                // Toolbar.Instance.itemSlotSize stays at 200 (user pref) instead
+                // of being capped to maxItemSlotSize, which breaks DialogueBox
+                // width calculations on small screens.
+                if (_resetToolbarMethod != null)
+                {
+                    try
+                    {
+                        bool needsReset = false;
+                        if (_toolbar_toolbarPaddingXField != null && _game1_toolbarPaddingXField != null)
+                        {
+                            object tbPad = _toolbar_toolbarPaddingXField.GetValue(__instance);
+                            object g1Pad = _game1_toolbarPaddingXField.GetValue(null);
+                            if (tbPad != null && g1Pad != null && !tbPad.Equals(g1Pad))
+                                needsReset = true;
+                        }
+                        if (!needsReset && _maxItemSlotSizeField != null && _toolbar_itemSlotSizeField != null)
+                        {
+                            object maxSlot = _maxItemSlotSizeField.GetValue(null);
+                            object tbSlot = _toolbar_itemSlotSizeField.GetValue(__instance);
+                            if (maxSlot is int maxVal && tbSlot is int tbVal && tbVal != maxVal)
+                                needsReset = true;
+                        }
+                        if (needsReset)
+                            _resetToolbarMethod.Invoke(__instance, null);
+                    }
+                    catch { }
+                }
 
                 var player = Game1.player;
                 if (player == null)
