@@ -233,9 +233,9 @@ namespace AndroidConsolizer.Patches
                 var skinMenuType = AccessTools.TypeByName("StardewValley.Menus.BuildingSkinMenu");
                 if (skinMenuType != null)
                 {
-                    SkinLeftButtonField = AccessTools.Field(skinMenuType, "leftButton");
-                    SkinRightButtonField = AccessTools.Field(skinMenuType, "rightButton");
-                    SkinOkButtonField = AccessTools.Field(skinMenuType, "okButton");
+                    SkinLeftButtonField = AccessTools.Field(skinMenuType, "PreviousSkinButton");
+                    SkinRightButtonField = AccessTools.Field(skinMenuType, "NextSkinButton");
+                    SkinOkButtonField = AccessTools.Field(skinMenuType, "OkButton");
 
                     harmony.Patch(
                         original: AccessTools.Method(skinMenuType, "receiveGamePadButton"),
@@ -566,12 +566,40 @@ namespace AndroidConsolizer.Patches
         {
             if (up)
             {
-                if (_shopRow == 1) _shopRow = 0;
+                if (_shopRow == 1)
+                {
+                    _shopRow = 0;
+                    // If appearance is visible, land on it first
+                    if (IsAppearanceVisible(menu))
+                    {
+                        var row = GetRow0Components(menu);
+                        var app = AppearanceButtonField?.GetValue(menu) as ClickableComponent;
+                        int appIdx = row.IndexOf(app);
+                        if (appIdx >= 0) _shopCol = appIdx;
+                    }
+                }
                 // Row 0: already at top
             }
             else if (down)
             {
-                if (_shopRow == 0) _shopRow = 1;
+                if (_shopRow == 0)
+                {
+                    // If on an arrow and appearance is visible, go to appearance first
+                    var row = GetRow0Components(menu);
+                    var currentComp = _shopCol < row.Count ? row[_shopCol] : null;
+                    var app = AppearanceButtonField?.GetValue(menu) as ClickableComponent;
+                    if (IsAppearanceVisible(menu) && currentComp != app)
+                    {
+                        // On back or forward arrow → stop at appearance
+                        int appIdx = row.IndexOf(app);
+                        if (appIdx >= 0) _shopCol = appIdx;
+                    }
+                    else
+                    {
+                        // On appearance (or no appearance) → go to buttons
+                        _shopRow = 1;
+                    }
+                }
                 // Row 1: already at bottom
             }
             else if (left)
