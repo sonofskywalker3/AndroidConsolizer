@@ -14,12 +14,6 @@ All items done. See `DONE.md` and `.planning/STATE.md` quick tasks table.
 
 ## Milestone 2: Chest & Item Interaction Polish (v3.5) ← ACTIVE
 
-### 13c. Color Picker Cursor Position Slightly Off
-- Visible cursor doesn't align perfectly with swatch grid during navigation. Functionality correct (A selects right color).
-- Likely caused by gap between relocated component bounds and actual rendered swatch visuals.
-- **Not blocking.** Cosmetic only.
-- **File:** `Patches/ItemGrabMenuPatches.cs`
-
 ### 34. Building Style Picker Controller Support
 - The "Choose cabin style" dialog (`BuildingSkinMenu`) in the carpenter menu has no controller navigation. B closes it but no way to browse/select building skins without touch.
 - **File:** `Patches/CarpenterMenuPatches.cs`
@@ -136,6 +130,12 @@ All items done. See `DONE.md` and `.planning/STATE.md` quick tasks table.
 - GMCM toggle to disable all touch/mouse input when using controller.
 - **Deprioritized:** Touch provides useful fallback. Off by default.
 - Risk: some vanilla Android controller code may internally simulate mouse clicks.
+
+### 13c. Color Picker Cursor Position Slightly Off
+- Visible cursor doesn't align perfectly with swatch grid during navigation. Functionality correct (A selects right color).
+- Likely caused by gap between relocated component bounds and actual rendered swatch visuals.
+- **Not blocking.** Cosmetic only.
+- **File:** `Patches/ItemGrabMenuPatches.cs`
 
 ### 38. GMCM Two-Tier Config (Simple Page + Granular File)
 - GMCM currently has a flat list of toggles. With 20+ features, this is heading toward a 68-item checklist nobody wants to scroll through.
