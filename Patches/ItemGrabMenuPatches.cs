@@ -1879,12 +1879,14 @@ namespace AndroidConsolizer.Patches
                     // screen sizes. Positioning vertically avoids covering slots.
                     var safeArea = Utility.getSafeArea();
                     int overrideX = snapped.bounds.Left;
-                    int belowY = snapped.bounds.Bottom + 16;
+                    // Cursor sprite extends ~32px below slot; 48px clears it.
+                    // 450px covers tall tooltips (weapons, food with buffs).
+                    int belowY = snapped.bounds.Bottom + 48;
                     int overrideY;
-                    if (belowY + 300 <= safeArea.Bottom)
+                    if (belowY + 450 <= safeArea.Bottom)
                         overrideY = belowY;
                     else
-                        overrideY = Math.Max(safeArea.Top, snapped.bounds.Top - 300 - 16);
+                        overrideY = Math.Max(safeArea.Top, snapped.bounds.Top - 450 - 16);
 
                     // Replicate drawToolTip's edibility/buff preprocessing
                     int healAmount = -1;
