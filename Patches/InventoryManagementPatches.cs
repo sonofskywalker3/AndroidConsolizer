@@ -188,21 +188,6 @@ namespace AndroidConsolizer.Patches
 
                             if (shouldDrawTooltip)
                             {
-                                // Position tooltip below the slot (or above if no room below).
-                                // Default drawToolTip uses mouse+32 which causes bottom-edge
-                                // clamping to push the tooltip over the cursor on different
-                                // screen sizes. Positioning vertically avoids covering slots.
-                                var safeArea = Utility.getSafeArea();
-                                int overrideX = snapped.bounds.Left;
-                                // Cursor sprite extends ~32px below slot; 48px clears it.
-                                // 450px covers tall tooltips (weapons, food with buffs).
-                                int belowY = snapped.bounds.Bottom + 48;
-                                int overrideY;
-                                if (belowY + 450 <= safeArea.Bottom)
-                                    overrideY = belowY;
-                                else
-                                    overrideY = Math.Max(safeArea.Top, snapped.bounds.Top - 450 - 16);
-
                                 // Replicate drawToolTip's edibility/buff preprocessing
                                 int healAmount = -1;
                                 string[] buffIcons = null;
@@ -214,23 +199,36 @@ namespace AndroidConsolizer.Patches
                                     {
                                         if (Game1.objectData.TryGetValue(hoveredItem.ItemId, out var rawData))
                                         {
-                                            // GetBuffIcons is Android-only, use reflection
                                             var getBuffIcons = typeof(IClickableMenu).GetMethod("GetBuffIcons",
                                                 System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
                                             if (getBuffIcons != null)
                                                 buffIcons = (string[])getBuffIcons.Invoke(null, new object[] { hoveredItem, rawData });
                                         }
                                     }
-                                    catch { /* PC build or method not found — skip buff icons */ }
+                                    catch { }
                                 }
+
+                                // Measure actual tooltip height to position below or above slot
+                                string desc = hoveredItem.getDescription();
+                                string title = hoveredItem.DisplayName;
+                                int tooltipH = MeasureTooltipHeight(hoveredItem, desc, title, healAmount, buffIcons);
+
+                                var safeArea = Utility.getSafeArea();
+                                int overrideX = snapped.bounds.Left;
+                                int cursorBottom = snapped.bounds.Bottom + 32; // cursor extends 32px below slot
+                                int overrideY;
+                                if (cursorBottom + 8 + tooltipH <= safeArea.Bottom)
+                                    overrideY = cursorBottom + 8;
+                                else
+                                    overrideY = Math.Max(safeArea.Top, snapped.bounds.Top - tooltipH - 8);
 
                                 IClickableMenu.drawHoverText(
                                     b,
-                                    hoveredItem.getDescription(),
+                                    desc,
                                     Game1.smallFont,
                                     overrideX: overrideX,
                                     overrideY: overrideY,
-                                    boldTitleText: hoveredItem.DisplayName,
+                                    boldTitleText: title,
                                     healAmountToDisplay: healAmount,
                                     buffIconsToDisplay: buffIcons,
                                     hoveredItem: hoveredItem);
@@ -481,6 +479,68 @@ namespace AndroidConsolizer.Patches
                 if (ModEntry.Config.VerboseLogging)
                     Monitor?.Log($"InventoryManagement: EnsureDropZoneComponent error: {ex.Message}", LogLevel.Debug);
             }
+        }
+
+        /// <summary>
+        /// Measure tooltip height using the same logic as drawHoverText.
+        /// For weapons/boots/rings, getExtraSpaceNeededForTooltipSpecialIcons provides accurate height.
+        /// For regular items, computed from text + title + category + edibility + buffs.
+        /// </summary>
+        private static int MeasureTooltipHeight(Item item, string description, string title, int healAmount, string[] buffIcons)
+        {
+            var font = Game1.smallFont;
+            int lineH = (int)font.MeasureString("T").Y;
+
+            // Base: text + padding + optional title (matches drawHoverText lines 1227-1229)
+            int textH = (int)font.MeasureString(description).Y;
+            int titleH = title != null ? (int)(Game1.dialogueFont.MeasureString(title).Y + 16f) : 0;
+            int height = Math.Max(60, textH + 32 + titleH);
+
+            // Buff icons (added before item-specific, lines 1239-1249)
+            if (buffIcons != null)
+            {
+                foreach (string buff in buffIcons)
+                    if (buff != "0" && buff != "")
+                        height += 39;
+                height += 4;
+            }
+
+            // Category line (lines 1272-1277)
+            if (item.getCategoryName().Length > 0)
+                height += lineH;
+
+            // Item-specific height via virtual method (lines 1280-1282)
+            // Weapons, boots, rings override this to return full height
+            try
+            {
+                var sb = new System.Text.StringBuilder(description);
+                Point extra = item.getExtraSpaceNeededForTooltipSpecialIcons(font, 300, 92, height, sb, title, -1);
+                if (extra.Y != 0)
+                    height = extra.Y;
+            }
+            catch { }
+
+            // Edibility — energy/health bars (lines 1285-1294, non-weapons only)
+            if (healAmount != -1 && !(item is Tool))
+            {
+                if (item is StardewValley.Object obj)
+                {
+                    int stamina = obj.staminaRecoveredOnConsumption();
+                    height += (stamina > 0 && obj.healthRecoveredOnConsumption() > 0) ? 80 : 40;
+                }
+            }
+
+            // Attachment slots — fishing rod, etc. (lines 1257-1271)
+            if (item.attachmentSlots() > 0)
+            {
+                if (item.attachmentSlots() == 1)
+                    height += 68;
+                else
+                    height += 144;
+                height += 8;
+            }
+
+            return height + 16; // small safety padding
         }
 
         /// <summary>
