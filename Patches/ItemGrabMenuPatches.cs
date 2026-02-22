@@ -1873,13 +1873,44 @@ namespace AndroidConsolizer.Patches
 
                 if (tooltipItem != null)
                 {
-                    IClickableMenu.drawToolTip(
+                    // Position tooltip to the right of the slot, top-aligned.
+                    // Default drawToolTip uses mouse+32 which causes bottom-edge
+                    // clamping to push the tooltip over the cursor on different
+                    // screen sizes (Tab S8, G Cloud bottom rows, etc).
+                    int overrideX = snapped.bounds.Right + 24;
+                    int overrideY = snapped.bounds.Top;
+
+                    // Replicate drawToolTip's edibility/buff preprocessing
+                    int healAmount = -1;
+                    string[] buffIcons = null;
+                    if (tooltipItem is StardewValley.Object edibleObj
+                        && edibleObj.Edibility != -300)
+                    {
+                        healAmount = edibleObj.Edibility;
+                        try
+                        {
+                            if (Game1.objectData.TryGetValue(tooltipItem.ItemId, out var rawData))
+                            {
+                                // GetBuffIcons is Android-only, use reflection
+                                var getBuffIcons = typeof(IClickableMenu).GetMethod("GetBuffIcons",
+                                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+                                if (getBuffIcons != null)
+                                    buffIcons = (string[])getBuffIcons.Invoke(null, new object[] { tooltipItem, rawData });
+                            }
+                        }
+                        catch { /* PC build or method not found — skip buff icons */ }
+                    }
+
+                    IClickableMenu.drawHoverText(
                         b,
                         tooltipItem.getDescription(),
-                        tooltipItem.DisplayName,
-                        tooltipItem,
-                        false, -1, 0, null, -1, null, -1
-                    );
+                        Game1.smallFont,
+                        overrideX: overrideX,
+                        overrideY: overrideY,
+                        boldTitleText: tooltipItem.DisplayName,
+                        healAmountToDisplay: healAmount,
+                        buffIconsToDisplay: buffIcons,
+                        hoveredItem: tooltipItem);
                 }
             }
             catch (Exception ex)
