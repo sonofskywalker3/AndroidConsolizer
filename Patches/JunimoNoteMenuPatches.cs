@@ -27,6 +27,8 @@ namespace AndroidConsolizer.Patches
         private static FieldInfo _ingredientListField;
         private static FieldInfo _bundlesField;
         private static FieldInfo _highlightedBundleField;
+        private static FieldInfo _invCurrentlySelectedItemField;
+        private static MethodInfo _tryDepositItemMethod;
 
         // Overview page state
         private static bool _onOverviewPage;
@@ -62,6 +64,8 @@ namespace AndroidConsolizer.Patches
             _ingredientListField = AccessTools.Field(typeof(JunimoNoteMenu), "ingredientList");
             _bundlesField = AccessTools.Field(typeof(JunimoNoteMenu), "bundles");
             _highlightedBundleField = AccessTools.Field(typeof(JunimoNoteMenu), "highlightedBundle");
+            _invCurrentlySelectedItemField = AccessTools.Field(typeof(InventoryMenu), "currentlySelectedItem");
+            _tryDepositItemMethod = AccessTools.Method(typeof(JunimoNoteMenu), "tryDepositItem");
 
             // Patch GetMouseState — both input wrapper and XNA Mouse paths
             var inputType = Game1.input.GetType();
@@ -442,23 +446,61 @@ namespace AndroidConsolizer.Patches
             if (menu.inventory?.inventory == null || _trackedSlotIndex >= menu.inventory.inventory.Count)
                 return;
 
-            var slot = menu.inventory.inventory[_trackedSlotIndex];
-            var center = slot.bounds.Center;
-
-            float zoom = Game1.options.zoomLevel;
-            _overrideRawX = (int)(center.X * zoom);
-            _overrideRawY = (int)(center.Y * zoom);
-            _overridingMouse = true;
-
-            _weInitiatedClick = true;
-            try
+            // Use the game's built-in one-press gamepad deposit (Android-only):
+            // set currentlySelectedItem and call tryDepositItem() which finds the
+            // first empty ingredient slot and calls releaseLeftClick to donate.
+            if (_invCurrentlySelectedItemField != null && _tryDepositItemMethod != null)
             {
-                menu.receiveLeftClick(center.X, center.Y);
+                _invCurrentlySelectedItemField.SetValue(menu.inventory, _trackedSlotIndex);
+
+                // Override GetMouseState so releaseLeftClick (called inside tryDepositItem)
+                // reads the ingredient slot position correctly
+                var ingredientSlots = menu.ingredientSlots;
+                if (ingredientSlots != null)
+                {
+                    for (int i = 0; i < ingredientSlots.Count; i++)
+                    {
+                        if (ingredientSlots[i]?.item == null)
+                        {
+                            float zoom = Game1.options.zoomLevel;
+                            _overrideRawX = (int)(ingredientSlots[i].bounds.X * zoom);
+                            _overrideRawY = (int)(ingredientSlots[i].bounds.Y * zoom);
+                            _overridingMouse = true;
+                            break;
+                        }
+                    }
+                }
+
+                _weInitiatedClick = true;
+                try
+                {
+                    _tryDepositItemMethod.Invoke(menu, null);
+                }
+                finally
+                {
+                    _weInitiatedClick = false;
+                    _overridingMouse = false;
+                }
             }
-            finally
+            else
             {
-                _weInitiatedClick = false;
-                _overridingMouse = false;
+                // Fallback: use receiveLeftClick directly (PC or reflection failed)
+                var slot = menu.inventory.inventory[_trackedSlotIndex];
+                var center = slot.bounds.Center;
+                float zoom = Game1.options.zoomLevel;
+                _overrideRawX = (int)(center.X * zoom);
+                _overrideRawY = (int)(center.Y * zoom);
+                _overridingMouse = true;
+                _weInitiatedClick = true;
+                try
+                {
+                    menu.receiveLeftClick(center.X, center.Y);
+                }
+                finally
+                {
+                    _weInitiatedClick = false;
+                    _overridingMouse = false;
+                }
             }
         }
 
