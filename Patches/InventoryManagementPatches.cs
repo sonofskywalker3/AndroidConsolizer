@@ -188,20 +188,44 @@ namespace AndroidConsolizer.Patches
 
                             if (shouldDrawTooltip)
                             {
-                                // Draw tooltip using game's built-in method
-                                IClickableMenu.drawToolTip(
+                                // Position tooltip to the right of the slot, top-aligned.
+                                // Default drawToolTip uses mouse+32 which causes bottom-edge
+                                // clamping to push the tooltip over the cursor on different
+                                // screen sizes (Tab S8, G Cloud bottom rows, etc).
+                                int overrideX = snapped.bounds.Right + 24;
+                                int overrideY = snapped.bounds.Top;
+
+                                // Replicate drawToolTip's edibility/buff preprocessing
+                                int healAmount = -1;
+                                string[] buffIcons = null;
+                                if (hoveredItem is StardewValley.Object edibleObj
+                                    && edibleObj.Edibility != -300)
+                                {
+                                    healAmount = edibleObj.Edibility;
+                                    try
+                                    {
+                                        if (Game1.objectData.TryGetValue(hoveredItem.ItemId, out var rawData))
+                                        {
+                                            // GetBuffIcons is Android-only, use reflection
+                                            var getBuffIcons = typeof(IClickableMenu).GetMethod("GetBuffIcons",
+                                                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+                                            if (getBuffIcons != null)
+                                                buffIcons = (string[])getBuffIcons.Invoke(null, new object[] { hoveredItem, rawData });
+                                        }
+                                    }
+                                    catch { /* PC build or method not found — skip buff icons */ }
+                                }
+
+                                IClickableMenu.drawHoverText(
                                     b,
                                     hoveredItem.getDescription(),
-                                    hoveredItem.DisplayName,
-                                    hoveredItem,
-                                    false,  // heldItem
-                                    -1,     // currencySymbol
-                                    0,      // extraItemToShowIndex
-                                    null,   // extraItemToShowAmount
-                                    -1,     // moneyAmountToDisplayAtBottom
-                                    null,   // boldTitleText
-                                    -1      // healAmountToDisplay
-                                );
+                                    Game1.smallFont,
+                                    overrideX: overrideX,
+                                    overrideY: overrideY,
+                                    boldTitleText: hoveredItem.DisplayName,
+                                    healAmountToDisplay: healAmount,
+                                    buffIconsToDisplay: buffIcons,
+                                    hoveredItem: hoveredItem);
                             }
                         }
                     }
