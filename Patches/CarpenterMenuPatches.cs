@@ -492,6 +492,37 @@ namespace AndroidConsolizer.Patches
             }
         }
 
+        /// <summary>Cycle buildings while preserving cursor on the same logical component (back/forward arrow).</summary>
+        private static void CycleBuilding(CarpenterMenu menu, bool forward)
+        {
+            // Capture which logical component we're on before cycling
+            bool wasOnForward = false;
+            if (_shopRow == 0)
+            {
+                var oldRow = GetRow0Components(menu);
+                if (oldRow.Count > 0 && _shopCol == oldRow.Count - 1)
+                    wasOnForward = true;
+                // wasOnBack is always _shopCol == 0, which is preserved automatically
+            }
+
+            if (forward)
+                OnTapRightArrowMethod?.Invoke(menu, null);
+            else
+                OnTapLeftArrowMethod?.Invoke(menu, null);
+
+            // Restore cursor to same logical component
+            if (_shopRow == 0 && wasOnForward)
+            {
+                var newRow = GetRow0Components(menu);
+                if (newRow.Count > 0)
+                    _shopCol = newRow.Count - 1; // forward arrow is always last
+            }
+            else
+            {
+                ValidateShopCursor(menu);
+            }
+        }
+
         /// <summary>Handle all gamepad input on the shop screen (not on farm).</summary>
         private static bool HandleShopInput(CarpenterMenu menu, Buttons b)
         {
@@ -502,14 +533,12 @@ namespace AndroidConsolizer.Patches
             // LT/RT/LB/RB: cycle buildings
             if (b == Buttons.LeftTrigger || b == Buttons.LeftShoulder)
             {
-                OnTapLeftArrowMethod?.Invoke(menu, null);
-                ValidateShopCursor(menu);
+                CycleBuilding(menu, false);
                 return false;
             }
             if (b == Buttons.RightTrigger || b == Buttons.RightShoulder)
             {
-                OnTapRightArrowMethod?.Invoke(menu, null);
-                ValidateShopCursor(menu);
+                CycleBuilding(menu, true);
                 return false;
             }
 
@@ -549,14 +578,12 @@ namespace AndroidConsolizer.Patches
             {
                 if (_shopRow == 0)
                 {
-                    var row = GetRow0Components(menu);
                     if (_shopCol > 0)
                         _shopCol--;
                     else
                     {
-                        // At back arrow — cycle to previous building
-                        OnTapLeftArrowMethod?.Invoke(menu, null);
-                        ValidateShopCursor(menu);
+                        // At back arrow — cycle to previous building (stays on back arrow)
+                        CycleBuilding(menu, false);
                     }
                 }
                 else if (_shopRow == 1)
@@ -573,9 +600,8 @@ namespace AndroidConsolizer.Patches
                         _shopCol++;
                     else
                     {
-                        // At forward arrow — cycle to next building
-                        OnTapRightArrowMethod?.Invoke(menu, null);
-                        ValidateShopCursor(menu);
+                        // At forward arrow — cycle to next building (stays on forward arrow)
+                        CycleBuilding(menu, true);
                     }
                 }
                 else if (_shopRow == 1)
@@ -604,13 +630,11 @@ namespace AndroidConsolizer.Patches
 
                 if (comp == back)
                 {
-                    OnTapLeftArrowMethod?.Invoke(menu, null);
-                    ValidateShopCursor(menu);
+                    CycleBuilding(menu, false);
                 }
                 else if (comp == forward)
                 {
-                    OnTapRightArrowMethod?.Invoke(menu, null);
-                    ValidateShopCursor(menu);
+                    CycleBuilding(menu, true);
                 }
                 else
                 {
@@ -1208,7 +1232,7 @@ namespace AndroidConsolizer.Patches
         // ====================================================================
 
         /// <summary>Prefix for BuildingSkinMenu.receiveGamePadButton — cursor navigation.</summary>
-        private static bool SkinMenu_ReceiveGamePadButton_Prefix(IClickableMenu __instance, Buttons b)
+        private static bool SkinMenu_ReceiveGamePadButton_Prefix(IClickableMenu __instance, Buttons button)
         {
             // Reset nav index when a new skin menu opens
             int hash = __instance.GetHashCode();
@@ -1219,12 +1243,12 @@ namespace AndroidConsolizer.Patches
             }
 
             // B, LT/RT/LB/RB: let game handle
-            if (b == Buttons.B || b == Buttons.LeftTrigger || b == Buttons.RightTrigger
-                || b == Buttons.LeftShoulder || b == Buttons.RightShoulder)
+            if (button == Buttons.B || button == Buttons.LeftTrigger || button == Buttons.RightTrigger
+                || button == Buttons.LeftShoulder || button == Buttons.RightShoulder)
                 return true;
 
-            bool isLeft = b == Buttons.DPadLeft || b == Buttons.LeftThumbstickLeft;
-            bool isRight = b == Buttons.DPadRight || b == Buttons.LeftThumbstickRight;
+            bool isLeft = button == Buttons.DPadLeft || button == Buttons.LeftThumbstickLeft;
+            bool isRight = button == Buttons.DPadRight || button == Buttons.LeftThumbstickRight;
 
             if (isLeft)
             {
@@ -1260,7 +1284,7 @@ namespace AndroidConsolizer.Patches
                 return false;
             }
 
-            if (b == Buttons.A)
+            if (button == Buttons.A)
             {
                 ClickableComponent btn = null;
                 if (_skinNavIndex == 0) btn = SkinLeftButtonField?.GetValue(__instance) as ClickableComponent;
@@ -1273,8 +1297,8 @@ namespace AndroidConsolizer.Patches
             }
 
             // Block up/down (no vertical navigation in skin menu)
-            if (b == Buttons.DPadUp || b == Buttons.LeftThumbstickUp
-                || b == Buttons.DPadDown || b == Buttons.LeftThumbstickDown)
+            if (button == Buttons.DPadUp || button == Buttons.LeftThumbstickUp
+                || button == Buttons.DPadDown || button == Buttons.LeftThumbstickDown)
                 return false;
 
             return true;
