@@ -244,3 +244,10 @@ See `CONTROLLER_MATRIX.md` for full testing details by device.
 - Uses reflection for `GetBuffIcons` (Android-only method).
 - **Lesson:** Don't estimate tooltip heights — measure them. The game's tooltip code has many conditional sections (buffs, edibility, attachments, weapon stats) that vary wildly by item type.
 - **Files:** `Patches/InventoryManagementPatches.cs`, `Patches/ItemGrabMenuPatches.cs`
+
+### 36. CC Bundle Donation Fix — v3.4.34-v3.4.36
+- **Root cause:** Holding A on the donation page triggered touch-sim `leftClickHeld` every frame, which ran `InventoryMenu.leftClickHeld` (dragScale *= 1.075 = item swell) and `JunimoNoteMenu.leftClickHeld` ingredient slot highlighting (sourceRect = green).
+- **v3.4.34:** Prefix patch on `leftClickHeld` blocks when A is physically pressed. Fixed green slots and item swell.
+- **v3.4.35:** Replaced `receiveLeftClick` with `tryDepositItem()` (via reflection, Android-only) for one-press A donation instead of pick-up-then-deposit.
+- **v3.4.36:** `tryDepositItem` unconditionally sets `heldItem` before checking slots. If deposit fails (wrong item), phantom cursor appeared. Fixed by saving/restoring `heldItem` in finally block.
+- **File:** `Patches/JunimoNoteMenuPatches.cs`

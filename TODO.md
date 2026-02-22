@@ -24,12 +24,6 @@ All items done. See `DONE.md` and `.planning/STATE.md` quick tasks table.
 - The "Choose cabin style" dialog (`BuildingSkinMenu`) in the carpenter menu has no controller navigation. B closes it but no way to browse/select building skins without touch.
 - **File:** `Patches/CarpenterMenuPatches.cs`
 
-### 36. CC Bundle Donation A-Hold — Green Slot / Item Swell
-- When adding items to a Community Center bundle, holding A (or pressing slightly longer than a tap) causes the ingredient slot to turn green and the item to swell/enlarge.
-- Likely touch simulation issue — held A triggers `leftClickHeld` which the bundle page interprets as a long-press/drag interaction.
-- **Investigation needed:** Check `JunimoNoteMenu.leftClickHeld()` in decompiled source. May need same-frame guard or held-click suppression similar to other menu patches.
-- **File:** `Patches/JunimoNoteMenuPatches.cs`
-
 ---
 
 ## Milestone 3: Overworld Cursor & Accessibility (v3.6)
