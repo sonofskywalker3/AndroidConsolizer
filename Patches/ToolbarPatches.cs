@@ -28,20 +28,8 @@ namespace AndroidConsolizer.Patches
         /// <summary>Saved toolbarSlotSize value, restored in WateringCan postfix.</summary>
         [ThreadStatic] private static object _savedToolbarSlotSize;
 
-        /// <summary>Cached reflection for Toolbar._toolbarPaddingX (Android-only).</summary>
-        private static System.Reflection.FieldInfo _toolbar_toolbarPaddingXField;
-
-        /// <summary>Cached reflection for Game1.toolbarPaddingX (Android-only).</summary>
-        private static System.Reflection.FieldInfo _game1_toolbarPaddingXField;
-
-        /// <summary>Cached reflection for Game1.maxItemSlotSize (Android-only).</summary>
-        private static System.Reflection.FieldInfo _maxItemSlotSizeField;
-
         /// <summary>Cached reflection for Toolbar._itemSlotSize (Android-only).</summary>
         private static System.Reflection.FieldInfo _toolbar_itemSlotSizeField;
-
-        /// <summary>Cached reflection for Toolbar.resetToolbar() (Android-only).</summary>
-        private static System.Reflection.MethodInfo _resetToolbarMethod;
 
         /// <summary>Apply Harmony patches.</summary>
         public static void Apply(Harmony harmony, IMonitor monitor)
@@ -59,11 +47,7 @@ namespace AndroidConsolizer.Patches
                 // Cache reflection accessors for Android-only fields
                 _toolbarSlotSizeField = AccessTools.Field(typeof(StardewValley.Options), "toolbarSlotSize");
                 _itemSlotSizeField = AccessTools.Field(typeof(Item), "_itemSlotSize");
-                _toolbar_toolbarPaddingXField = AccessTools.Field(typeof(Toolbar), "_toolbarPaddingX");
-                _game1_toolbarPaddingXField = AccessTools.Field(typeof(Game1), "toolbarPaddingX");
-                _maxItemSlotSizeField = AccessTools.Field(typeof(Game1), "maxItemSlotSize");
                 _toolbar_itemSlotSizeField = AccessTools.Field(typeof(Toolbar), "_itemSlotSize");
-                _resetToolbarMethod = AccessTools.Method(typeof(Toolbar), "resetToolbar");
 
                 // Patch WateringCan.drawInMenu to fix water gauge position in ALL contexts.
                 // The gauge formula uses toolbarSlotSize (a user preference, e.g. 200) which

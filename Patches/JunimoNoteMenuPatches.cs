@@ -31,8 +31,6 @@ namespace AndroidConsolizer.Patches
         // Overview page state
         private static bool _onOverviewPage;
         private static int _savedOverviewComponentId = -1;
-        private static bool _loggedDrawDiag;
-        private static bool _loggedDrawPostDiag;
 
         // Donation page state
         private static bool _onDonationPage;
@@ -484,8 +482,6 @@ namespace AndroidConsolizer.Patches
                     if (InitOverviewNavigation(__instance))
                     {
                         _onOverviewPage = true;
-                        _loggedDrawDiag = false;
-                        _loggedDrawPostDiag = false;
                         __instance.inventory.descriptionText = "";
                         // Sync highlightedBundle so the initial bundle animates immediately
                         if (__instance.currentlySnappedComponent != null)
@@ -587,23 +583,7 @@ namespace AndroidConsolizer.Patches
                         if (hbBefore is int hbVal && hbVal == -1)
                         {
                             SyncHighlightedBundle(__instance, target);
-                            var hbAfter = _highlightedBundleField.GetValue(__instance);
-                            if (!_loggedDrawDiag)
-                            {
-                                Monitor.Log($"[DrawPrefix] Re-sync fired: hbBefore={hbBefore}, hbAfter={hbAfter}, target.myID={target.myID}, target.name={target.name}", LogLevel.Debug);
-                                _loggedDrawDiag = true;
-                            }
                         }
-                        else if (!_loggedDrawDiag)
-                        {
-                            Monitor.Log($"[DrawPrefix] No re-sync needed: hb={hbBefore}, target.myID={target?.myID}, target.name={target?.name}", LogLevel.Debug);
-                            _loggedDrawDiag = true;
-                        }
-                    }
-                    else if (!_loggedDrawDiag)
-                    {
-                        Monitor.Log($"[DrawPrefix] Overview but target={target != null}, _highlightedBundleField={_highlightedBundleField != null}", LogLevel.Debug);
-                        _loggedDrawDiag = true;
                     }
                 }
 
@@ -641,16 +621,6 @@ namespace AndroidConsolizer.Patches
                 else if (_onOverviewPage)
                 {
                     target = __instance.currentlySnappedComponent;
-
-                    // Diagnostic: check highlightedBundle after game's draw ran
-                    if (_highlightedBundleField != null && !_loggedDrawPostDiag)
-                    {
-                        var hbPost = _highlightedBundleField.GetValue(__instance);
-                        bool specificBundle = GetSpecificBundlePage(__instance);
-                        var bundlesList = _bundlesField?.GetValue(__instance) as System.Collections.IList;
-                        Monitor.Log($"[DrawPostfix] hb={hbPost}, specificBundle={specificBundle}, bundleCount={bundlesList?.Count}, descText.Len={__instance.inventory?.descriptionText?.Length}", LogLevel.Debug);
-                        _loggedDrawPostDiag = true;
-                    }
                 }
 
                 if (target != null)
