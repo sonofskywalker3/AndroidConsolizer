@@ -20,9 +20,9 @@ All items done. See `DONE.md` and `.planning/STATE.md` quick tasks table.
 - **Not blocking.** Cosmetic only.
 - **File:** `Patches/ItemGrabMenuPatches.cs`
 
-### 34. Chest Style Picker Snap Point
-- The chest style/appearance picker has no snap point for controller navigation. Add a snap-navigable component so the style picker is reachable without touch.
-- **File:** `Patches/ItemGrabMenuPatches.cs`
+### 34. Building Style Picker Controller Support
+- The "Choose cabin style" dialog (`BuildingSkinMenu`) in the carpenter menu has no controller navigation. B closes it but no way to browse/select building skins without touch.
+- **File:** `Patches/CarpenterMenuPatches.cs`
 
 ### Tooltip Positioning (NEW) — IN TESTING (v3.4.30-v3.4.32)
 - Controller tooltip position varies across screen sizes (Tab S8, G Cloud, Ayaneo).
