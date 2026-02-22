@@ -68,6 +68,11 @@ namespace AndroidConsolizer.Patches
         private static FieldInfo InvPage_HoveredItemField;
         private static FieldInfo InvMenu_HoveredItemField;
 
+        // For InventoryMenu.draw finger cursor — save/restore currentlySelectedItem
+        // currentlySelectedItem is Android-only (not in PC DLL), must use reflection
+        private static FieldInfo InvMenu_CurrentlySelectedItemField;
+        private static int _savedSelectedItem = -1;
+
         /// <summary>Apply Harmony patches for cursor item rendering.</summary>
         public static void Apply(Harmony harmony, IMonitor monitor)
         {
@@ -78,6 +83,7 @@ namespace AndroidConsolizer.Patches
             InvPage_HoverTitleField = AccessTools.Field(typeof(InventoryPage), "hoverTitle");
             InvPage_HoveredItemField = AccessTools.Field(typeof(InventoryPage), "hoveredItem");
             InvMenu_HoveredItemField = AccessTools.Field(typeof(InventoryMenu), "hoveredItem");
+            InvMenu_CurrentlySelectedItemField = AccessTools.Field(typeof(InventoryMenu), "currentlySelectedItem");
 
             try
             {
@@ -85,6 +91,14 @@ namespace AndroidConsolizer.Patches
                 harmony.Patch(
                     original: AccessTools.Method(typeof(InventoryPage), nameof(InventoryPage.draw), new[] { typeof(SpriteBatch) }),
                     postfix: new HarmonyMethod(typeof(InventoryManagementPatches), nameof(InventoryPage_Draw_Postfix))
+                );
+
+                // Patch InventoryMenu.draw to replace red selection box (tile 56) with finger cursor
+                harmony.Patch(
+                    original: AccessTools.Method(typeof(InventoryMenu), nameof(InventoryMenu.draw),
+                        new[] { typeof(SpriteBatch), typeof(int), typeof(int), typeof(int) }),
+                    prefix: new HarmonyMethod(typeof(InventoryManagementPatches), nameof(InventoryMenu_Draw_Prefix)),
+                    postfix: new HarmonyMethod(typeof(InventoryManagementPatches), nameof(InventoryMenu_Draw_Postfix))
                 );
 
                 // Note: A button blocking is handled in InventoryPagePatches to avoid duplicate patches
@@ -1223,6 +1237,49 @@ namespace AndroidConsolizer.Patches
             {
                 SourceSlotId = -1;
             }
+        }
+
+        /// <summary>
+        /// Prefix on InventoryMenu.draw — suppress the red selection box (tile 56) by temporarily
+        /// clearing currentlySelectedItem. The draw method uses this only for the slot background
+        /// tile choice (56=red vs 10=normal). We save the value and restore in postfix.
+        /// currentlySelectedItem is Android-only, so we use reflection.
+        /// </summary>
+        private static void InventoryMenu_Draw_Prefix(InventoryMenu __instance)
+        {
+            if (InvMenu_CurrentlySelectedItemField == null)
+            {
+                _savedSelectedItem = -1;
+                return;
+            }
+
+            _savedSelectedItem = (int)InvMenu_CurrentlySelectedItemField.GetValue(__instance);
+            if (_savedSelectedItem >= 0)
+                InvMenu_CurrentlySelectedItemField.SetValue(__instance, -1);
+        }
+
+        /// <summary>
+        /// Postfix on InventoryMenu.draw — restore currentlySelectedItem and draw finger cursor
+        /// at the selected slot position (replacing the red box visual).
+        /// </summary>
+        private static void InventoryMenu_Draw_Postfix(InventoryMenu __instance, SpriteBatch b)
+        {
+            if (InvMenu_CurrentlySelectedItemField != null)
+                InvMenu_CurrentlySelectedItemField.SetValue(__instance, _savedSelectedItem);
+
+            if (_savedSelectedItem < 0 || _savedSelectedItem >= __instance.inventory.Count)
+                return;
+
+            var slot = __instance.inventory[_savedSelectedItem];
+            if (slot == null)
+                return;
+
+            b.Draw(Game1.mouseCursors,
+                new Vector2(slot.bounds.X, slot.bounds.Y),
+                Game1.getSourceRectForStandardTileSheet(Game1.mouseCursors, 44, 16, 16),
+                Color.White, 0f, Vector2.Zero,
+                4f + Game1.dialogueButtonScale / 150f,
+                SpriteEffects.None, 1f);
         }
     }
 }
