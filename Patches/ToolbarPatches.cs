@@ -99,34 +99,15 @@ namespace AndroidConsolizer.Patches
                 if (!(ModEntry.Config?.EnableConsoleToolbar ?? false))
                     return true;
 
-                // Keep Toolbar.Instance state in sync — the original draw calls
-                // resetToolbar() when padding or slot size changes. Since we skip
-                // the original draw, we must do this ourselves. Without it,
-                // Toolbar.Instance.itemSlotSize stays at 200 (user pref) instead
-                // of being capped to maxItemSlotSize, which breaks DialogueBox
-                // width calculations on small screens.
-                if (_resetToolbarMethod != null)
+                // Our toolbar is horizontal (bottom of screen), not vertical. But
+                // DialogueBox.GetWidth() reads Toolbar.Instance.itemSlotSize and
+                // subtracts (toolbarPaddingX + itemSlotSize + 28) * 2 from viewport
+                // width for vertical toolbar space. With itemSlotSize=200 on small
+                // screens, portrait dialogue gets ~1px for text. Set to 0 so the
+                // game knows our toolbar takes no horizontal/vertical side space.
+                if (_toolbar_itemSlotSizeField != null)
                 {
-                    try
-                    {
-                        bool needsReset = false;
-                        if (_toolbar_toolbarPaddingXField != null && _game1_toolbarPaddingXField != null)
-                        {
-                            object tbPad = _toolbar_toolbarPaddingXField.GetValue(__instance);
-                            object g1Pad = _game1_toolbarPaddingXField.GetValue(null);
-                            if (tbPad != null && g1Pad != null && !tbPad.Equals(g1Pad))
-                                needsReset = true;
-                        }
-                        if (!needsReset && _maxItemSlotSizeField != null && _toolbar_itemSlotSizeField != null)
-                        {
-                            object maxSlot = _maxItemSlotSizeField.GetValue(null);
-                            object tbSlot = _toolbar_itemSlotSizeField.GetValue(__instance);
-                            if (maxSlot is int maxVal && tbSlot is int tbVal && tbVal != maxVal)
-                                needsReset = true;
-                        }
-                        if (needsReset)
-                            _resetToolbarMethod.Invoke(__instance, null);
-                    }
+                    try { _toolbar_itemSlotSizeField.SetValue(__instance, 0); }
                     catch { }
                 }
 
