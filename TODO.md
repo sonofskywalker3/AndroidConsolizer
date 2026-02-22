@@ -6,99 +6,13 @@ For completed features and their technical reference, see `DONE.md`.
 
 ---
 
-## Milestone 1: GameMenu Tabs (v3.4) ← ACTIVE
+## Milestone 1: GameMenu Tabs (v3.4) — COMPLETE
 
-### 14. Social Tab Cursor Fix — IN TESTING
-- Cursor doesn't follow when switching tabs with LB/RB.
-- **Confirmed persists** on Logitech G Cloud.
-- Symptoms: (1) Switch to social tab, cursor stays visually on inventory tab icon. (2) D-pad scrolls villager list but no visual indicator. (3) B from gift log puts cursor back on inventory tab visually. (4) Right from social tab skips straight to map tab.
-- Log analysis: After tab switch, mod correctly stops intercepting (only fires on inventoryTab). All social tab input passes through to vanilla game.
-- Possible root cause: `GameMenu.changeTab()` doesn't call `snapToDefaultClickableComponent()` on the new page.
-- Navigation implemented (v3.3.18) with scroll support. Awaiting device testing.
-- **Part of the Main Menu Overhaul project — see #14c.**
-- **File:** `Patches/GameMenuPatches.cs`
-
-### 14. Social Tab — Right Stick Scrolling
-- Right stick still scrolls like vanilla (smooth MobileScrollBox scroll) instead of our 3-at-a-time slot navigation.
-- **Root cause (v3.3.43 logs):** Game NEVER sends `RightThumbstickDown`/`Up` button events through `receiveGamePadButton` on the social page. It reads right stick directly from `GetState()` to drive `MobileScrollBox`.
-- **Fix:** Poll right stick in `SocialUpdate_Prefix` to detect initial press ourselves (track neutral→engaged transition). Suppress right stick Y at GetState level while social page is active so vanilla scrollbox doesn't also scroll.
-- **File:** `Patches/GameMenuPatches.cs`, `Patches/GameplayButtonPatches.cs`
-
-### 14. Social Tab — Scrollbar Doesn't Track Left Stick
-- Visual scrollbar doesn't update when using left stick/D-pad to navigate the villager list.
-- We set `slotPosition` and `yOffsetForScroll` via reflection, but the scrollbar visual may be tied to a separate field or need an explicit update call.
-- **Investigation needed:** Check how `MobileScrollBox` renders its scrollbar. May need to call a scrollbar update method or set a scrollbar position field after changing `yOffsetForScroll`.
-- **File:** `Patches/GameMenuPatches.cs`
-
-### 14a. Gift Log Improvements
-- **Visible cursor:** No visible cursor/selection indicator when viewing a villager's gift log (ProfileMenu). Need to investigate what components exist and add cursor support.
-- **Bumper-switch return position:** Using LB/RB to switch villagers inside the gift log doesn't update the saved return index. Pressing B returns to the villager you originally pressed A on, not the one you switched to. Fix: patch ProfileMenu's `ChangeCharacter` to update `_savedSocialReturnIndex`, or detect the current villager on ProfileMenu exit.
-- **Scroll-to-top on return (cosmetic, non-blocking):** Returning from gift log for villagers 5+ scrolls them to the top of the screen. Villagers 1-4 stay in place since they're already visible at `slotPosition=0`. Cause: restore sets `slotPosition = snapTargetIndex` which puts the villager at the top. Could save original `slotPosition` alongside the slot index for a more natural return position.
-- **Log evidence (v3.3.42):** `FixSocialPage` is called twice on gift log exit (ChangeTab_Postfix + OnGameMenuOpened). Fix: don't clear `_savedSocialReturnIndex` in FixSocialPage; clear on next user input instead.
-- **File:** `Patches/GameMenuPatches.cs`
-
-### 14b. Collections/Shipping Tab — Vertical Sub-Tabs Unreachable
-- No way to switch between vertical sub-tabs (Crops, Fish, Recipes, Achievements, etc.) using controller. Only first sub-tab accessible.
-- **On console:** LT/RT swap between vertical sub-tabs, LB/RB swap main tabs.
-- **Fix approaches:**
-  1. **Triggers for sub-tab switching (console parity):** LT/RT cycle through vertical sub-tabs. Check if triggers already used on this tab.
-  2. **Replace red-box selector with visible cursor:** More work but fixes underlying navigation model.
-- **File:** `Patches/GameMenuPatches.cs` (new patches needed)
-
-### 20. Settings Menu Controller Navigation
-- Options menu uses free cursor, not snap-based.
-- Left joystick moves free cursor anywhere, right joystick scrolls options list.
-- Can reach GMCM "Mod Options" button by moving cursor below visible area (1px visible at bottom).
-- Full fix: inject snap navigation for sliders, checkboxes, dropdowns. Complex.
-- **File:** Would need new `Patches/OptionsPagePatches.cs` or extend `GameMenuPatches.cs`
-
-### 28. GMCM Controls Handoff — DONE (v3.3.81)
-- ~~When clicking the "Mod Options" button on the Options tab to open GMCM, controls should revert to default.~~
-- **Fixed:** GmcmPatches.Update() disabled — GMCM uses vanilla controls. OptionsPagePatches backs off when GMCM child menu is active (left stick no longer suppressed, Update_Postfix skips).
-- **Remaining:** Button remapping (A/B swap, X/Y swap) may still need disabling while GMCM is active — untested.
-
-### 29. Remove Red Square Highlight from Remaining Tabs — PARTIAL
-- Collections tab and Crafting tab fixed (v3.3.53-v3.3.57). **Powers tab fixed (v3.3.82).**
-- **Remaining:** Check Social, Options, Animals, Exit tabs in-game for red highlight.
-- **File:** `Patches/GameMenuPatches.cs`
-
-### 30. Social Menu Cell Content Alignment
-- The content inside the social page character cells (portrait, name, etc.) needs to shift down ~8-10px so it doesn't overlap the cell bounds at the top.
-- **File:** `Patches/GameMenuPatches.cs` (SocialPage draw or slot layout)
-
-### 31. Player Levels Navigation Broken
-- The player levels/skills page navigation with controller is broken. Needs investigation and fix.
-- **Investigation needed:** Check what class handles the levels page, what's broken about controller nav.
-- **File:** TBD
-
-### 32. CC View Trigger/Bumper Navigation — DONE (v3.3.94-v3.3.95)
-- Moved to DONE.md
-
-### 14e. CarpenterMenu "Build" Button Unaffordable — TO INVESTIGATE
-- Clicking "Build" for a building you can't afford dumps back to shop. Console greys out the button.
-- Need to check: vanilla Android behavior? Our bug or theirs?
-- Desired: grey out Build button (console parity) or show error message.
-- **File:** `Patches/CarpenterMenuPatches.cs`
+All items done. See `DONE.md` and `.planning/STATE.md` quick tasks table.
 
 ---
 
-## Milestone 2: Chest & Item Interaction Polish (v3.5)
-
-### 11b. Touch-Interrupt Side Effects — PARTIALLY FIXED
-- **Cursor resets to slot 0 after touch (CHESTS):** `Game1.CheckGamepadMode()` detects touch→controller transition, calls `populateClickableComponentList()` (wipes our custom IDs) then `snapToDefaultClickableComponent()` (hard-resets to slot 0/53910). Confirmed via v3.4.1 diagnostic: caller chain `Game1.CheckGamepadMode → Game1._update`. Fix: block snap in prefix, save position, restore after self-healing re-runs FixSnapNavigation.
-- **Touch on chest breaks sidebar navigation — FIXED (v3.2.16):** Self-healing check in `Update_Postfix` detects missing `ID_SORT_CHEST` and re-runs `FixSnapNavigation()`.
-- **File:** `Patches/ItemGrabMenuPatches.cs`
-
-### 11b-tooltip. Inventory Tooltip Follows Finger After Touch
-- In the **inventory page** (not chests — chests have no tooltip), touching the screen causes the item tooltip to render at the finger position instead of the snapped slot.
-- `hoveredItem` persists from controller navigation. `drawToolTip` renders at `getMouseX()/getMouseY()` (which is now the touch position). Not an issue in chests because `hoveredItem` is always null there.
-- **Fix approach:** Clear `hoveredItem` on touch, or override tooltip position to use snapped component bounds.
-- **File:** `Patches/InventoryPagePatches.cs` or `Patches/InventoryManagementPatches.cs`
-
-### 36. Chest Item Tooltips (Console Parity)
-- On Switch, hovering over items in a chest shows item name/description tooltip. Android doesn't show any tooltip — `hoveredItem` is always null in `ItemGrabMenu`.
-- **Fix approach:** Set `hoveredItem` based on `currentlySnappedComponent` during controller navigation so tooltip renders like console.
-- **File:** `Patches/ItemGrabMenuPatches.cs`
+## Milestone 2: Chest & Item Interaction Polish (v3.5) ← ACTIVE
 
 ### 13c. Color Picker Cursor Position Slightly Off
 - Visible cursor doesn't align perfectly with swatch grid during navigation. Functionality correct (A selects right color).
@@ -106,24 +20,16 @@ For completed features and their technical reference, see `DONE.md`.
 - **Not blocking.** Cosmetic only.
 - **File:** `Patches/ItemGrabMenuPatches.cs`
 
-### 33. Replace Red Square Selector with Finger Cursor in Chests
-- The chest menu uses the red square highlight for the selected slot. Replace with a finger/hand cursor for visual consistency with other menus.
-- **File:** `Patches/ItemGrabMenuPatches.cs`
-
 ### 34. Chest Style Picker Snap Point
 - The chest style/appearance picker has no snap point for controller navigation. Add a snap-navigable component so the style picker is reachable without touch.
 - **File:** `Patches/ItemGrabMenuPatches.cs`
 
-### O2. Remove GamePad.GetState() from Draw Postfix
-- `InventoryManagementPatches.InventoryPage_Draw_Postfix` calls `GamePad.GetState()` every frame to check if A is pressed. On Android, this is a JNI call through MonoGame.
-- **Fix:** Store A-button state in a static bool from `OnUpdateTicked`, read in draw postfix.
-- **File:** `Patches/InventoryManagementPatches.cs`
-
-### 37. Make Button Remapping Optional
-- Button remapping (layout/style) is currently always active. Every other feature in the mod is toggleable via GMCM, but remapping isn't — violates the "every feature toggleable" principle.
-- Users who want menu fixes but prefer default Android button layout have no way to opt out.
-- **Fix:** Add a master toggle (e.g. `EnableButtonRemapping`) in ModConfig, defaulting to true. When disabled, ButtonRemapper passes through all inputs unmodified. Grey out or hide layout/style dropdowns in GMCM when toggle is off.
-- **File:** `ModConfig.cs`, `ButtonRemapper.cs`, `ModEntry.cs`
+### Tooltip Positioning (NEW) — IN TESTING (v3.4.30-v3.4.32)
+- Controller tooltip position varies across screen sizes (Tab S8, G Cloud, Ayaneo).
+- **Root cause:** `drawToolTip` positions at `mouse+32`, bottom-edge clamping pushes tooltip over cursor.
+- **Fix:** Replaced `drawToolTip` with `drawHoverText` using `overrideX`/`overrideY`. Tooltip placed below slot (with 48px cursor clearance) or above (with 450px height buffer) depending on available space.
+- Uses reflection for `GetBuffIcons` (Android-only method).
+- **Files:** `Patches/InventoryManagementPatches.cs`, `Patches/ItemGrabMenuPatches.cs`
 
 ---
 
