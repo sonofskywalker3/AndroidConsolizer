@@ -24,12 +24,20 @@ All items done. See `DONE.md` and `.planning/STATE.md` quick tasks table.
 - The "Choose cabin style" dialog (`BuildingSkinMenu`) in the carpenter menu has no controller navigation. B closes it but no way to browse/select building skins without touch.
 - **File:** `Patches/CarpenterMenuPatches.cs`
 
-### Tooltip Positioning (NEW) — IN TESTING (v3.4.30-v3.4.32)
+### Tooltip Positioning (NEW) — IN TESTING (v3.4.30-v3.4.33)
 - Controller tooltip position varies across screen sizes (Tab S8, G Cloud, Ayaneo).
 - **Root cause:** `drawToolTip` positions at `mouse+32`, bottom-edge clamping pushes tooltip over cursor.
-- **Fix:** Replaced `drawToolTip` with `drawHoverText` using `overrideX`/`overrideY`. Tooltip placed below slot (with 48px cursor clearance) or above (with 450px height buffer) depending on available space.
+- **Fix:** Replaced `drawToolTip` with `drawHoverText` using `overrideX`/`overrideY`. Tooltip placed below slot or above depending on measured height via `MeasureTooltipHeight`.
+- v3.4.30-v3.4.32: estimated height (300px, then 450px) — too aggressive, tooltip "way too high".
+- v3.4.33: measures actual tooltip height (font metrics, buff icons, category, edibility bars, attachment slots, item-specific overrides).
 - Uses reflection for `GetBuffIcons` (Android-only method).
 - **Files:** `Patches/InventoryManagementPatches.cs`, `Patches/ItemGrabMenuPatches.cs`
+
+### 36. CC Bundle Donation A-Hold — Green Slot / Item Swell
+- When adding items to a Community Center bundle, holding A (or pressing slightly longer than a tap) causes the ingredient slot to turn green and the item to swell/enlarge.
+- Likely touch simulation issue — held A triggers `leftClickHeld` which the bundle page interprets as a long-press/drag interaction.
+- **Investigation needed:** Check `JunimoNoteMenu.leftClickHeld()` in decompiled source. May need same-frame guard or held-click suppression similar to other menu patches.
+- **File:** `Patches/JunimoNoteMenuPatches.cs`
 
 ---
 
