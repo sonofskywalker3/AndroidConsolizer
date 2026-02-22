@@ -89,6 +89,12 @@ namespace AndroidConsolizer.Patches
                 prefix: new HarmonyMethod(typeof(JunimoNoteMenuPatches), nameof(ReceiveLeftClick_Prefix))
             );
 
+            // leftClickHeld — block touch-sim drag feedback (green slots, item swell) when A is held
+            harmony.Patch(
+                original: AccessTools.Method(typeof(JunimoNoteMenu), nameof(JunimoNoteMenu.leftClickHeld)),
+                prefix: new HarmonyMethod(typeof(JunimoNoteMenuPatches), nameof(LeftClickHeld_Prefix))
+            );
+
             // receiveGamePadButton — handle navigation and A press
             harmony.Patch(
                 original: AccessTools.Method(typeof(JunimoNoteMenu), nameof(JunimoNoteMenu.receiveGamePadButton)),
@@ -152,6 +158,19 @@ namespace AndroidConsolizer.Patches
 
             // Block stale click when A opens the donation page from overview
             if (_onDonationPage && Game1.ticks - _enteredPageTick <= 3)
+                return false;
+
+            return true;
+        }
+
+        // ===== leftClickHeld prefix — block touch-sim drag feedback while A is held =====
+
+        private static bool LeftClickHeld_Prefix()
+        {
+            if (!_onDonationPage) return true;
+
+            var gpState = GamePad.GetState(Microsoft.Xna.Framework.PlayerIndex.One);
+            if (gpState.Buttons.A == ButtonState.Pressed)
                 return false;
 
             return true;
