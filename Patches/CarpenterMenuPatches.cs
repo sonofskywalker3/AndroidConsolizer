@@ -526,6 +526,14 @@ namespace AndroidConsolizer.Patches
         /// <summary>Handle all gamepad input on the shop screen (not on farm).</summary>
         private static bool HandleShopInput(CarpenterMenu menu, Buttons b)
         {
+            // If a child menu is open (e.g. BuildingSkinMenu), forward input to it
+            var childMenu = menu.GetChildMenu();
+            if (childMenu != null)
+            {
+                childMenu.receiveGamePadButton(b);
+                return false;
+            }
+
             // B: always pass through (exit menu)
             if (b == Buttons.B)
                 return true;
