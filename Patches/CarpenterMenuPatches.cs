@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
 using Microsoft.Xna.Framework;
@@ -102,7 +103,22 @@ namespace AndroidConsolizer.Patches
         // --- Appearance button (building skin picker) ---
         private static FieldInfo AppearanceButtonField;
         private static FieldInfo OnBottomButtonsField;
-        private static bool _onAppearanceButton = false;
+
+        // --- Shop screen cursor navigation (#34) ---
+        private static int _shopRow = 2;  // 0=arrows, 1=appearance (if visible), 2=bottom buttons
+        private static int _shopCol = 0;  // column within row
+        private static FieldInfo BackButtonField;
+        private static FieldInfo ForwardButtonField;
+        private static FieldInfo MoveButtonField;
+        private static FieldInfo BuildButtonField;
+        private static FieldInfo DemolishButtonField;
+        private static FieldInfo PaintButtonField;
+        private static MethodInfo OnTapLeftArrowMethod;
+        private static MethodInfo OnTapRightArrowMethod;
+        private static MethodInfo OnReleaseMoveMethod;
+        private static MethodInfo OnReleaseBuildMethod;
+        private static MethodInfo OnReleaseDemolishMethod;
+        private static MethodInfo OnReleasePaintMethod;
 
         /// <summary>Apply Harmony patches.</summary>
         public static void Apply(Harmony harmony, IMonitor monitor)
@@ -161,7 +177,19 @@ namespace AndroidConsolizer.Patches
                 DoesFarmerHaveEnoughResourcesToBuildMethod = AccessTools.Method(typeof(CarpenterMenu), "DoesFarmerHaveEnoughResourcesToBuild");
                 AppearanceButtonField = AccessTools.Field(typeof(CarpenterMenu), "appearanceButton");
                 OnBottomButtonsField = AccessTools.Field(typeof(CarpenterMenu), "_onBottomButtons");
-                Monitor.Log($"CarpenterMenu fields: Action={ActionField != null}, moving={MovingField != null}, demolishing={DemolishingField != null}, price={PriceField != null}, selectedBtn={SelectedBottomButtonField != null}, hasResources={DoesFarmerHaveEnoughResourcesToBuildMethod != null}", LogLevel.Trace);
+                BackButtonField = AccessTools.Field(typeof(CarpenterMenu), "backButton");
+                ForwardButtonField = AccessTools.Field(typeof(CarpenterMenu), "forwardButton");
+                MoveButtonField = AccessTools.Field(typeof(CarpenterMenu), "moveButton");
+                BuildButtonField = AccessTools.Field(typeof(CarpenterMenu), "buildButton");
+                DemolishButtonField = AccessTools.Field(typeof(CarpenterMenu), "demolishButton");
+                PaintButtonField = AccessTools.Field(typeof(CarpenterMenu), "paintButton");
+                OnTapLeftArrowMethod = AccessTools.Method(typeof(CarpenterMenu), "OnTapButtonLeftArrow");
+                OnTapRightArrowMethod = AccessTools.Method(typeof(CarpenterMenu), "OnTapButtonRightArrow");
+                OnReleaseMoveMethod = AccessTools.Method(typeof(CarpenterMenu), "OnReleaseMoveButton");
+                OnReleaseBuildMethod = AccessTools.Method(typeof(CarpenterMenu), "OnReleaseBuildButton");
+                OnReleaseDemolishMethod = AccessTools.Method(typeof(CarpenterMenu), "OnReleaseDemolishButton");
+                OnReleasePaintMethod = AccessTools.Method(typeof(CarpenterMenu), "OnReleasePaintButton");
+                Monitor.Log($"CarpenterMenu fields: Action={ActionField != null}, moving={MovingField != null}, demolishing={DemolishingField != null}, price={PriceField != null}, selectedBtn={SelectedBottomButtonField != null}, hasResources={DoesFarmerHaveEnoughResourcesToBuildMethod != null}, tapArrows={OnTapLeftArrowMethod != null}", LogLevel.Trace);
 
                 // Block touch-sim receiveLeftClick after unaffordable Build intercept (#14e fix)
                 harmony.Patch(
@@ -264,7 +292,8 @@ namespace AndroidConsolizer.Patches
             _ghostPlaced = false;
             _buildPressHandled = false;
             _demolishSelectedBuilding = null;
-            _onAppearanceButton = false;
+            _shopRow = 2;
+            _shopCol = 0;
             if (ModEntry.Config.VerboseLogging)
                 Monitor.Log($"CarpenterMenu opened at tick {MenuOpenTick}. Grace period: {GracePeriodTicks} ticks.", LogLevel.Debug);
         }
@@ -286,7 +315,8 @@ namespace AndroidConsolizer.Patches
             _buildPressHandled = false;
             _demolishSelectedBuilding = null;
             _blockShopClicks = false;
-            _onAppearanceButton = false;
+            _shopRow = 2;
+            _shopCol = 0;
         }
 
         /// <summary>Check if we're within the grace period after menu open.</summary>
@@ -336,6 +366,272 @@ namespace AndroidConsolizer.Patches
             return null;
         }
 
+        // ====================================================================
+        // Shop screen cursor navigation helpers (#34)
+        // ====================================================================
+
+        /// <summary>Check if the appearance button is visible for the current blueprint.</summary>
+        private static bool IsAppearanceVisible(CarpenterMenu menu)
+        {
+            if (AppearanceButtonField == null) return false;
+            var appBtn = AppearanceButtonField.GetValue(menu) as ClickableTextureComponent;
+            return appBtn != null && appBtn.visible;
+        }
+
+        /// <summary>Get the list of visible bottom buttons in display order.</summary>
+        private static List<ClickableComponent> GetVisibleBottomButtons(CarpenterMenu menu)
+        {
+            var list = new List<ClickableComponent>();
+            var move = MoveButtonField?.GetValue(menu) as ClickableComponent;
+            var build = BuildButtonField?.GetValue(menu) as ClickableComponent;
+            var demolish = DemolishButtonField?.GetValue(menu) as ClickableComponent;
+            var paint = PaintButtonField?.GetValue(menu) as ClickableComponent;
+            if (move?.visible == true) list.Add(move);
+            if (build?.visible == true) list.Add(build);
+            if (demolish?.visible == true) list.Add(demolish);
+            if (paint?.visible == true) list.Add(paint);
+            return list;
+        }
+
+        /// <summary>Get the component currently focused by the shop cursor.</summary>
+        private static ClickableComponent GetShopCurrentComponent(CarpenterMenu menu)
+        {
+            if (_shopRow == 0)
+            {
+                if (_shopCol == 0)
+                    return BackButtonField?.GetValue(menu) as ClickableComponent;
+                else
+                    return ForwardButtonField?.GetValue(menu) as ClickableComponent;
+            }
+            if (_shopRow == 1)
+            {
+                var appBtn = AppearanceButtonField?.GetValue(menu) as ClickableTextureComponent;
+                return (appBtn?.visible == true) ? appBtn : null;
+            }
+            if (_shopRow == 2)
+            {
+                var btns = GetVisibleBottomButtons(menu);
+                return _shopCol < btns.Count ? btns[_shopCol] : null;
+            }
+            return null;
+        }
+
+        /// <summary>Ensure the shop cursor is on a valid component after state changes (e.g. building cycled).</summary>
+        private static void ValidateShopCursor(CarpenterMenu menu)
+        {
+            // If on appearance row but appearance not visible, move to bottom buttons
+            if (_shopRow == 1 && !IsAppearanceVisible(menu))
+                _shopRow = 2;
+
+            // Clamp column for bottom buttons
+            if (_shopRow == 2)
+            {
+                var btns = GetVisibleBottomButtons(menu);
+                if (btns.Count == 0) _shopCol = 0;
+                else if (_shopCol >= btns.Count) _shopCol = btns.Count - 1;
+            }
+
+            // Clamp column for arrows (always 0 or 1)
+            if (_shopRow == 0 && _shopCol > 1)
+                _shopCol = 1;
+
+            // Appearance is single item
+            if (_shopRow == 1)
+                _shopCol = 0;
+        }
+
+        /// <summary>Handle all gamepad input on the shop screen (not on farm).</summary>
+        private static bool HandleShopInput(CarpenterMenu menu, Buttons b)
+        {
+            // B: always pass through (exit menu)
+            if (b == Buttons.B)
+                return true;
+
+            // LT/RT/LB/RB: cycle buildings
+            if (b == Buttons.LeftTrigger || b == Buttons.LeftShoulder)
+            {
+                OnTapLeftArrowMethod?.Invoke(menu, null);
+                ValidateShopCursor(menu);
+                return false;
+            }
+            if (b == Buttons.RightTrigger || b == Buttons.RightShoulder)
+            {
+                OnTapRightArrowMethod?.Invoke(menu, null);
+                ValidateShopCursor(menu);
+                return false;
+            }
+
+            // D-pad / thumbstick navigation
+            bool isLeft = b == Buttons.DPadLeft || b == Buttons.LeftThumbstickLeft;
+            bool isRight = b == Buttons.DPadRight || b == Buttons.LeftThumbstickRight;
+            bool isUp = b == Buttons.DPadUp || b == Buttons.LeftThumbstickUp;
+            bool isDown = b == Buttons.DPadDown || b == Buttons.LeftThumbstickDown;
+
+            if (isLeft || isRight || isUp || isDown)
+            {
+                HandleShopNav(menu, isLeft, isRight, isUp, isDown);
+                return false;
+            }
+
+            // A: activate current component
+            if (b == Buttons.A)
+                return HandleShopAPress(menu);
+
+            return true;
+        }
+
+        /// <summary>Handle D-pad/thumbstick navigation on the shop screen.</summary>
+        private static void HandleShopNav(CarpenterMenu menu, bool left, bool right, bool up, bool down)
+        {
+            bool appVisible = IsAppearanceVisible(menu);
+
+            if (up)
+            {
+                if (_shopRow == 2)
+                    _shopRow = appVisible ? 1 : 0;
+                else if (_shopRow == 1)
+                    _shopRow = 0;
+                // Row 0: already at top
+            }
+            else if (down)
+            {
+                if (_shopRow == 0)
+                    _shopRow = appVisible ? 1 : 2;
+                else if (_shopRow == 1)
+                    _shopRow = 2;
+                // Row 2: already at bottom
+            }
+            else if (left)
+            {
+                if (_shopRow == 0)
+                {
+                    if (_shopCol > 0)
+                        _shopCol = 0;
+                    else
+                    {
+                        // At left arrow already — cycle to previous building
+                        OnTapLeftArrowMethod?.Invoke(menu, null);
+                        ValidateShopCursor(menu);
+                    }
+                }
+                else if (_shopRow == 1)
+                {
+                    // Single item — cycle building
+                    OnTapLeftArrowMethod?.Invoke(menu, null);
+                    ValidateShopCursor(menu);
+                }
+                else if (_shopRow == 2)
+                {
+                    if (_shopCol > 0) _shopCol--;
+                }
+            }
+            else if (right)
+            {
+                if (_shopRow == 0)
+                {
+                    if (_shopCol < 1)
+                        _shopCol = 1;
+                    else
+                    {
+                        // At right arrow already — cycle to next building
+                        OnTapRightArrowMethod?.Invoke(menu, null);
+                        ValidateShopCursor(menu);
+                    }
+                }
+                else if (_shopRow == 1)
+                {
+                    // Single item — cycle building
+                    OnTapRightArrowMethod?.Invoke(menu, null);
+                    ValidateShopCursor(menu);
+                }
+                else if (_shopRow == 2)
+                {
+                    var btns = GetVisibleBottomButtons(menu);
+                    if (_shopCol < btns.Count - 1) _shopCol++;
+                }
+            }
+
+            ValidateShopCursor(menu);
+            Game1.playSound("smallSelect");
+        }
+
+        /// <summary>Handle A press on the shop screen. Returns false to block game handler, true to let through.</summary>
+        private static bool HandleShopAPress(CarpenterMenu menu)
+        {
+            if (_shopRow == 0)
+            {
+                // Arrows: cycle buildings
+                if (_shopCol == 0)
+                    OnTapLeftArrowMethod?.Invoke(menu, null);
+                else
+                    OnTapRightArrowMethod?.Invoke(menu, null);
+                ValidateShopCursor(menu);
+                return false;
+            }
+            else if (_shopRow == 1)
+            {
+                // Appearance: open BuildingSkinMenu
+                var appBtn = AppearanceButtonField?.GetValue(menu) as ClickableTextureComponent;
+                if (appBtn != null && appBtn.visible)
+                    menu.receiveLeftClick(appBtn.bounds.Center.X, appBtn.bounds.Center.Y);
+                return false;
+            }
+            else if (_shopRow == 2)
+            {
+                // Bottom buttons: activate the selected one
+                var btns = GetVisibleBottomButtons(menu);
+                if (_shopCol >= btns.Count) return false;
+                var btn = btns[_shopCol];
+
+                var buildBtn = BuildButtonField?.GetValue(menu) as ClickableComponent;
+                var moveBtn = MoveButtonField?.GetValue(menu) as ClickableComponent;
+                var demolishBtn = DemolishButtonField?.GetValue(menu) as ClickableComponent;
+                var paintBtn = PaintButtonField?.GetValue(menu) as ClickableComponent;
+
+                if (btn == buildBtn)
+                {
+                    // Check affordability first
+                    int price = PriceField != null ? (int)PriceField.GetValue(menu) : 0;
+                    bool canAfford = price >= 0 && Game1.player.Money >= price;
+                    bool hasResources = true;
+                    if (canAfford && DoesFarmerHaveEnoughResourcesToBuildMethod != null)
+                        hasResources = (bool)DoesFarmerHaveEnoughResourcesToBuildMethod.Invoke(menu, null);
+
+                    if (!canAfford || !hasResources)
+                    {
+                        Game1.playSound("cancel");
+                        _blockShopClicks = true;
+                        if (ModEntry.Config.VerboseLogging)
+                            Monitor.Log($"[CarpenterMenu] Blocked unaffordable Build: price={price} money={Game1.player.Money} hasResources={hasResources}", LogLevel.Debug);
+                        return false;
+                    }
+                    _blockShopClicks = true;
+                    OnReleaseBuildMethod?.Invoke(menu, null);
+                }
+                else if (btn == moveBtn)
+                {
+                    _blockShopClicks = true;
+                    OnReleaseMoveMethod?.Invoke(menu, null);
+                }
+                else if (btn == demolishBtn)
+                {
+                    _blockShopClicks = true;
+                    OnReleaseDemolishMethod?.Invoke(menu, null);
+                }
+                else if (btn == paintBtn)
+                {
+                    _blockShopClicks = true;
+                    OnReleasePaintMethod?.Invoke(menu, null);
+                }
+
+                if (ModEntry.Config.VerboseLogging)
+                    Monitor.Log($"[CarpenterMenu] Shop A: activated {btn?.name ?? "?"}", LogLevel.Debug);
+                return false;
+            }
+
+            return false;
+        }
+
         /// <summary>Prefix for receiveLeftClick — blocks touch-sim clicks after unaffordable Build intercept (#14e).</summary>
         private static bool ReceiveLeftClick_Prefix(CarpenterMenu __instance, int x, int y)
         {
@@ -356,128 +652,23 @@ namespace AndroidConsolizer.Patches
         }
 
         /// <summary>
-        /// Prefix for CarpenterMenu.receiveGamePadButton — two-press A button system.
-        /// First A press: block here so Update_Postfix can position the ghost via receiveLeftClick.
-        /// Second A press (ghost already placed): let through so the game builds at the ghost position.
-        /// Other buttons (B for cancel) always pass through.
+        /// Prefix for CarpenterMenu.receiveGamePadButton — handles both shop screen
+        /// cursor navigation (#34) and farm view two-press A system.
         /// </summary>
         private static bool ReceiveGamePadButton_Prefix(CarpenterMenu __instance, Buttons b)
         {
             if (!ModEntry.Config.EnableCarpenterMenuFix)
                 return true;
 
+            bool onFarm = OnFarmField != null && (bool)OnFarmField.GetValue(__instance);
+
+            // === SHOP SCREEN: full cursor navigation (#34) ===
+            if (!onFarm)
+                return HandleShopInput(__instance, b);
+
+            // === FARM VIEW: joystick cursor + two-press A ===
             if (!_cursorActive)
-            {
-                // #14e fix: When A is pressed on the shop screen for "Build" and the player
-                // can't afford, the game's OnReleaseBuildButton plays "cancel" but doesn't exit.
-                // However, Android touch-sim then fires receiveLeftClick/releaseLeftClick at
-                // (-39,-39), which hits cancelButton's off-screen bounds (-100,-100,80,80) and
-                // closes the menu via OnReleaseCancelButton. Intercept unaffordable Build presses.
-                if (b == Buttons.A)
-                {
-                    bool onFarm = OnFarmField != null && (bool)OnFarmField.GetValue(__instance);
-                    int selectedBtn = SelectedBottomButtonField != null ? (int)SelectedBottomButtonField.GetValue(__instance) : -1;
-
-                    if (!onFarm && selectedBtn == 2) // 2 = BottomButton.BuildOrUpgrade
-                    {
-                        int price = PriceField != null ? (int)PriceField.GetValue(__instance) : 0;
-                        bool canAfford = price >= 0 && Game1.player.Money >= price;
-                        bool hasResources = true;
-                        if (canAfford && DoesFarmerHaveEnoughResourcesToBuildMethod != null)
-                            hasResources = (bool)DoesFarmerHaveEnoughResourcesToBuildMethod.Invoke(__instance, null);
-
-                        if (!canAfford || !hasResources)
-                        {
-                            Game1.playSound("cancel");
-                            _blockShopClicks = true;
-                            if (ModEntry.Config.VerboseLogging)
-                                Monitor.Log($"[CarpenterMenu] Blocked unaffordable Build: price={price} money={Game1.player.Money} hasResources={hasResources}", LogLevel.Debug);
-                            return false;
-                        }
-                    }
-
-                    if (ModEntry.Config.VerboseLogging)
-                        Monitor.Log($"[CarpenterMenu] Shop screen A: onFarm={onFarm} selectedBtn={selectedBtn}", LogLevel.Debug);
-                }
-
-                // --- Appearance button navigation (#34) ---
-                // The appearance button (building skin picker) is disconnected from
-                // the game's nav graph. Wire it in: Down from blueprints → appearance,
-                // Down from appearance → bottom buttons, Up from bottom → appearance,
-                // Up from appearance → blueprints, A on appearance → open skin picker.
-                bool onFarmForAppearance = OnFarmField != null && (bool)OnFarmField.GetValue(__instance);
-                if (!onFarmForAppearance && AppearanceButtonField != null && OnBottomButtonsField != null)
-                {
-                    var appBtn = AppearanceButtonField.GetValue(__instance) as ClickableTextureComponent;
-                    bool appVisible = appBtn != null && appBtn.visible;
-                    bool onBottom = (bool)OnBottomButtonsField.GetValue(__instance);
-
-                    if (_onAppearanceButton && appVisible)
-                    {
-                        switch (b)
-                        {
-                            case Buttons.A:
-                                // Open BuildingSkinMenu by clicking the appearance button
-                                __instance.receiveLeftClick(appBtn.bounds.Center.X, appBtn.bounds.Center.Y);
-                                _onAppearanceButton = false;
-                                return false;
-                            case Buttons.DPadDown:
-                            case Buttons.LeftThumbstickDown:
-                                // Move to bottom buttons
-                                _onAppearanceButton = false;
-                                OnBottomButtonsField.SetValue(__instance, true);
-                                // BottomButton enum: None=0, Move=1
-                                if (SelectedBottomButtonField != null)
-                                {
-                                    var enumType = SelectedBottomButtonField.FieldType;
-                                    SelectedBottomButtonField.SetValue(__instance, Enum.ToObject(enumType, 1));
-                                }
-                                Game1.playSound("smallSelect");
-                                return false;
-                            case Buttons.DPadUp:
-                            case Buttons.LeftThumbstickUp:
-                                // Back to blueprint browsing
-                                _onAppearanceButton = false;
-                                Game1.playSound("smallSelect");
-                                return false;
-                            case Buttons.DPadLeft:
-                            case Buttons.LeftThumbstickLeft:
-                                // Cycle blueprints left while on appearance button
-                                return true;
-                            case Buttons.DPadRight:
-                            case Buttons.LeftThumbstickRight:
-                                // Cycle blueprints right while on appearance button
-                                return true;
-                        }
-                    }
-                    else if (appVisible)
-                    {
-                        // Down from blueprint browsing (not on bottom buttons) → appearance button
-                        if (!onBottom && (b == Buttons.DPadDown || b == Buttons.LeftThumbstickDown))
-                        {
-                            _onAppearanceButton = true;
-                            Game1.playSound("smallSelect");
-                            return false;
-                        }
-                        // Up from bottom buttons → appearance button (instead of blueprints)
-                        if (onBottom && (b == Buttons.DPadUp || b == Buttons.LeftThumbstickUp))
-                        {
-                            _onAppearanceButton = true;
-                            OnBottomButtonsField.SetValue(__instance, false);
-                            // BottomButton enum: None=0
-                            if (SelectedBottomButtonField != null)
-                            {
-                                var enumType = SelectedBottomButtonField.FieldType;
-                                SelectedBottomButtonField.SetValue(__instance, Enum.ToObject(enumType, 0));
-                            }
-                            Game1.playSound("smallSelect");
-                            return false;
-                        }
-                    }
-                }
-
                 return true;
-            }
 
             if (b == Buttons.A)
             {
@@ -506,9 +697,6 @@ namespace AndroidConsolizer.Patches
                     {
                         if (_demolishSelectedBuilding == null)
                         {
-                            // No building selected → let A through for selection.
-                            // Double-fire guard: if we already let one through this
-                            // frame (postfix hasn't consumed it yet), block duplicate.
                             if (_buildPressHandled)
                                 return false;
                             _buildPressHandled = true;
@@ -517,10 +705,8 @@ namespace AndroidConsolizer.Patches
                             return true;
                         }
 
-                        // Building selected. Check cursor position.
                         if (_ghostPlaced || GetBuildingAtCursor() == _demolishSelectedBuilding)
                         {
-                            // Same building or cursor unmoved → confirm demolish
                             _demolishSelectedBuilding = null;
                             _ghostPlaced = false;
                             _buildPressHandled = true;
@@ -529,23 +715,11 @@ namespace AndroidConsolizer.Patches
                             return true;
                         }
 
-                        // Different building or empty → deselect via receiveLeftClick at
-                        // cursor position. GetMouseState override is active and returns our
-                        // off-building cursor coords, so the game deselects the highlight.
                         if (ModEntry.Config.VerboseLogging)
                             Monitor.Log($"[CarpenterMenu] Demolish: off building → receiveLeftClick({(int)_cursorX},{(int)_cursorY}) to deselect", LogLevel.Debug);
                         _demolishSelectedBuilding = null;
                         _ghostPlaced = false;
                         __instance.receiveLeftClick((int)_cursorX, (int)_cursorY);
-                        // Log game state AFTER our deselect
-                        if (ModEntry.Config.VerboseLogging)
-                        {
-                            var btmAfter = BuildingToMoveField?.GetValue(__instance) as Building;
-                            bool stillDemolishing = DemolishingField != null && (bool)DemolishingField.GetValue(__instance);
-                            bool frozen = FreezeField != null && (bool)FreezeField.GetValue(__instance);
-                            bool onFarm = OnFarmField != null && (bool)OnFarmField.GetValue(__instance);
-                            Monitor.Log($"[CarpenterMenu] After deselect: demolishing={stillDemolishing} freeze={frozen} onFarm={onFarm} buildingToMove={btmAfter?.buildingType.Value ?? "none"}", LogLevel.Debug);
-                        }
                         return false;
                     }
 
@@ -555,13 +729,13 @@ namespace AndroidConsolizer.Patches
                         _ghostPlaced = false;
                         _buildPressHandled = true;
                         if (ModEntry.Config.VerboseLogging)
-                            Monitor.Log("[CarpenterMenu] Move/demolish: cursor unchanged → letting A through to CONFIRM", LogLevel.Debug);
+                            Monitor.Log("[CarpenterMenu] Move: cursor unchanged → letting A through to CONFIRM", LogLevel.Debug);
                         return true;
                     }
                     else
                     {
                         if (ModEntry.Config.VerboseLogging)
-                            Monitor.Log("[CarpenterMenu] Move/demolish: BLOCKED A → positioning first", LogLevel.Trace);
+                            Monitor.Log("[CarpenterMenu] Move: BLOCKED A → positioning first", LogLevel.Trace);
                         return false;
                     }
                 }
@@ -569,18 +743,16 @@ namespace AndroidConsolizer.Patches
                 // Build mode: two-press system
                 if (_ghostPlaced)
                 {
-                    // Ghost is at cursor position from previous A press — let game build
                     _ghostPlaced = false;
                     _buildPressHandled = true;
                     if (ModEntry.Config.VerboseLogging)
-                        Monitor.Log("[CarpenterMenu] Ghost placed → letting receiveGamePadButton(A) through to BUILD", LogLevel.Debug);
+                        Monitor.Log("[CarpenterMenu] Ghost placed → letting A through to BUILD", LogLevel.Debug);
                     return true;
                 }
                 else
                 {
-                    // Ghost needs positioning — block A so our postfix can call receiveLeftClick
                     if (ModEntry.Config.VerboseLogging)
-                        Monitor.Log("[CarpenterMenu] BLOCKED receiveGamePadButton(A) — positioning ghost first", LogLevel.Trace);
+                        Monitor.Log("[CarpenterMenu] BLOCKED A — positioning ghost first", LogLevel.Trace);
                     return false;
                 }
             }
@@ -688,13 +860,19 @@ namespace AndroidConsolizer.Patches
                 _overridingMousePosition = false;
                 _demolishSelectedBuilding = null;
 
-                // Appearance button hover — call performHoverAction so it scales up
-                if (_onAppearanceButton && AppearanceButtonField != null)
+                // Suppress red highlight box — set _selectedBottomButton to None (0)
+                if (SelectedBottomButtonField != null)
                 {
-                    var appBtn = AppearanceButtonField.GetValue(__instance) as ClickableTextureComponent;
-                    if (appBtn != null && appBtn.visible)
-                        __instance.performHoverAction(appBtn.bounds.Center.X, appBtn.bounds.Center.Y);
+                    var enumType = SelectedBottomButtonField.FieldType;
+                    SelectedBottomButtonField.SetValue(__instance, Enum.ToObject(enumType, 0));
                 }
+                if (OnBottomButtonsField != null)
+                    OnBottomButtonsField.SetValue(__instance, false);
+
+                // Shop cursor hover — call performHoverAction at current component
+                var shopComp = GetShopCurrentComponent(__instance);
+                if (shopComp != null)
+                    __instance.performHoverAction(shopComp.bounds.Center.X, shopComp.bounds.Center.Y);
 
                 return;
             }
@@ -933,11 +1111,52 @@ namespace AndroidConsolizer.Patches
         }
 
         /// <summary>
-        /// Postfix for CarpenterMenu.draw — draws a visible cursor at the joystick
-        /// position when on the farm view. Shows where A button will click.
+        /// Postfix for CarpenterMenu.draw — draws cursor on both shop screen and farm view.
+        /// Shop screen: finger cursor at current nav component + grey out unaffordable Build.
+        /// Farm view: arrow cursor at joystick position.
         /// </summary>
         private static void Draw_Postfix(CarpenterMenu __instance, SpriteBatch b)
         {
+            bool onFarm = OnFarmField != null && (bool)OnFarmField.GetValue(__instance);
+
+            // Shop screen cursor
+            if (!onFarm)
+            {
+                var component = GetShopCurrentComponent(__instance);
+                if (component != null)
+                {
+                    var center = component.bounds.Center;
+                    b.Draw(
+                        Game1.mouseCursors,
+                        new Vector2(center.X, center.Y),
+                        Game1.getSourceRectForStandardTileSheet(Game1.mouseCursors, 0, 16, 16),
+                        Color.White,
+                        0f,
+                        Vector2.Zero,
+                        4f + Game1.dialogueButtonScale / 150f,
+                        SpriteEffects.None,
+                        1f
+                    );
+                }
+
+                // Grey out Build button if player can't afford
+                var buildBtn = BuildButtonField?.GetValue(__instance) as ClickableComponent;
+                if (buildBtn?.visible == true)
+                {
+                    int price = PriceField != null ? (int)PriceField.GetValue(__instance) : 0;
+                    bool canAfford = price >= 0 && Game1.player.Money >= price;
+                    bool hasResources = true;
+                    if (canAfford && DoesFarmerHaveEnoughResourcesToBuildMethod != null)
+                        hasResources = (bool)DoesFarmerHaveEnoughResourcesToBuildMethod.Invoke(__instance, null);
+
+                    if (!canAfford || !hasResources)
+                        b.Draw(Game1.staminaRect, buildBtn.bounds, Color.Black * 0.4f);
+                }
+
+                return;
+            }
+
+            // Farm view cursor
             if (!_cursorActive)
                 return;
 
