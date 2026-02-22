@@ -188,12 +188,18 @@ namespace AndroidConsolizer.Patches
 
                             if (shouldDrawTooltip)
                             {
-                                // Position tooltip to the right of the slot, top-aligned.
+                                // Position tooltip below the slot (or above if no room below).
                                 // Default drawToolTip uses mouse+32 which causes bottom-edge
                                 // clamping to push the tooltip over the cursor on different
-                                // screen sizes (Tab S8, G Cloud bottom rows, etc).
-                                int overrideX = snapped.bounds.Right + 24;
-                                int overrideY = snapped.bounds.Top;
+                                // screen sizes. Positioning vertically avoids covering slots.
+                                var safeArea = Utility.getSafeArea();
+                                int overrideX = snapped.bounds.Left;
+                                int belowY = snapped.bounds.Bottom + 16;
+                                int overrideY;
+                                if (belowY + 300 <= safeArea.Bottom)
+                                    overrideY = belowY;
+                                else
+                                    overrideY = Math.Max(safeArea.Top, snapped.bounds.Top - 300 - 16);
 
                                 // Replicate drawToolTip's edibility/buff preprocessing
                                 int healAmount = -1;
