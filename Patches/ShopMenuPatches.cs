@@ -282,33 +282,26 @@ namespace AndroidConsolizer.Patches
                         Monitor.Log($"Reduced quantity to {quantity} (affordable)", LogLevel.Debug);
                 }
 
-                // Limit quantity by available trade items (Desert Trader, etc.)
+                // Limit quantity by available trade items (Desert Trader, tool upgrades, etc.)
+                // Delegate to ShopMenu.HasTradeItem so other mods (e.g. ChestCheck) can
+                // augment the check with items from farm chests or other sources.
                 if (!string.IsNullOrEmpty(tradeItem) && tradeItemCost > 0)
                 {
-                    int playerTradeItems = 0;
-                    foreach (Item invItem in Game1.player.Items)
+                    // Reduce quantity until we have enough trade items
+                    while (quantity > 0 && !__instance.HasTradeItem(tradeItem, tradeItemCost * quantity))
                     {
-                        if (invItem != null && (invItem.QualifiedItemId == tradeItem || invItem.ItemId == tradeItem))
-                            playerTradeItems += invItem.Stack;
+                        quantity--;
                     }
 
-                    int maxByTradeItems = playerTradeItems / tradeItemCost;
-                    if (maxByTradeItems <= 0)
+                    if (quantity <= 0)
                     {
                         Game1.playSound("cancel");
                         if (ModEntry.Config.VerboseLogging)
-                            Monitor.Log($"Not enough trade items ({tradeItem}): need {tradeItemCost}, have {playerTradeItems}", LogLevel.Debug);
+                            Monitor.Log($"Not enough trade items ({tradeItem}): need {tradeItemCost} per unit", LogLevel.Debug);
                         return false;
                     }
 
-                    if (quantity > maxByTradeItems)
-                    {
-                        quantity = maxByTradeItems;
-                        totalCost = unitPrice * quantity;
-                        if (ModEntry.Config.VerboseLogging)
-                            Monitor.Log($"Reduced quantity to {quantity} (limited by trade items)", LogLevel.Debug);
-                    }
-
+                    totalCost = unitPrice * quantity;
                     totalTradeItems = tradeItemCost * quantity;
                 }
 
@@ -325,26 +318,11 @@ namespace AndroidConsolizer.Patches
                 ShopMenu.chargePlayer(Game1.player, __instance.currency, totalCost);
 
                 // Consume trade items if required
+                // Delegate to ShopMenu.ConsumeTradeItem so other mods (e.g. ChestCheck)
+                // can pull from farm chests when inventory is insufficient.
                 if (totalTradeItems > 0)
                 {
-                    int toConsume = totalTradeItems;
-                    for (int i = 0; i < Game1.player.Items.Count && toConsume > 0; i++)
-                    {
-                        Item invItem = Game1.player.Items[i];
-                        if (invItem != null && (invItem.QualifiedItemId == tradeItem || invItem.ItemId == tradeItem))
-                        {
-                            if (invItem.Stack <= toConsume)
-                            {
-                                toConsume -= invItem.Stack;
-                                Game1.player.Items[i] = null;
-                            }
-                            else
-                            {
-                                invItem.Stack -= toConsume;
-                                toConsume = 0;
-                            }
-                        }
-                    }
+                    __instance.ConsumeTradeItem(tradeItem, totalTradeItems);
                     if (ModEntry.Config.VerboseLogging)
                         Monitor.Log($"Consumed {totalTradeItems}x {tradeItem}", LogLevel.Debug);
                 }
