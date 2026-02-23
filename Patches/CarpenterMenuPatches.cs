@@ -1182,8 +1182,11 @@ namespace AndroidConsolizer.Patches
             if (!_overridingMousePosition)
                 return;
 
-            // Cursor coords are in game units (viewport space). On Android, GetMouseState
-            // coordinates are used directly as game units — no zoom scaling needed.
+            // DIAGNOSTIC: Log real mouse coords vs our cursor to find the coordinate transform
+            if (ModEntry.Config.VerboseLogging)
+            {
+                Monitor.Log($"[CarpenterMenu] GetMouseState override: real=({__result.X},{__result.Y}) cursor=({(int)_cursorX},{(int)_cursorY}) viewport=({Game1.viewport.X},{Game1.viewport.Y},{Game1.viewport.Width},{Game1.viewport.Height}) zoom={Game1.options.zoomLevel} nativeZoom={Game1.options.desiredBaseZoomLevel} pixelZoom={Game1.pixelZoom} uiMode={Game1.uiMode}", LogLevel.Trace);
+            }
             __result = new MouseState(
                 (int)_cursorX, (int)_cursorY,
                 __result.ScrollWheelValue,
