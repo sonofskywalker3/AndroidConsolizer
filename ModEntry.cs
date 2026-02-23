@@ -99,6 +99,19 @@ namespace AndroidConsolizer
             Patches.BootDiagnosticPatches.Apply(harmony, this.Monitor);
             Patches.BootDiagnosticPatches.ApplyAdditionalPatches(harmony, this.Monitor);
 
+            // DIAGNOSTIC #39: Patch LetterViewerMenu to log gamepad input
+            try
+            {
+                harmony.Patch(
+                    original: AccessTools.Method(typeof(LetterViewerMenu), nameof(LetterViewerMenu.receiveGamePadButton)),
+                    prefix: new HarmonyMethod(typeof(ModEntry), nameof(LetterViewerMenu_GamePadButton_Diag))
+                );
+            }
+            catch (Exception ex)
+            {
+                this.Monitor.Log($"Failed to apply LetterViewerMenu diagnostic patch: {ex.Message}", LogLevel.Warn);
+            }
+
             // Register events
             helper.Events.GameLoop.GameLaunched += this.OnGameLaunched;
             helper.Events.GameLoop.SaveLoaded += this.OnSaveLoaded;
@@ -193,6 +206,42 @@ namespace AndroidConsolizer
                 Patches.GameMenuPatches.OnGameMenuOpened(newGameMenu);
             }
 
+            // DIAGNOSTIC #39: Log LetterViewerMenu state on open
+            if (e.NewMenu is LetterViewerMenu letterMenu)
+            {
+                try
+                {
+                    var mailMsgField = AccessTools.Field(typeof(LetterViewerMenu), "mailMessage");
+                    var mailMessage = mailMsgField?.GetValue(letterMenu) as System.Collections.IList;
+                    var pageField = AccessTools.Field(typeof(LetterViewerMenu), "page");
+                    int page = pageField != null ? (int)pageField.GetValue(letterMenu) : -1;
+                    var fwdButton = AccessTools.Field(typeof(LetterViewerMenu), "forwardButton")?.GetValue(letterMenu) as ClickableComponent;
+                    var backButton = AccessTools.Field(typeof(LetterViewerMenu), "backButton")?.GetValue(letterMenu) as ClickableComponent;
+                    this.Monitor.Log($"[DIAG-39] LetterViewerMenu opened: pages={mailMessage?.Count ?? 0} page={page} snappyMenus={Game1.options.SnappyMenus} snapped={letterMenu.currentlySnappedComponent?.myID}", LogLevel.Info);
+                    this.Monitor.Log($"[DIAG-39]   forwardButton: visible={fwdButton?.visible} ID={fwdButton?.myID} bounds={fwdButton?.bounds}", LogLevel.Info);
+                    this.Monitor.Log($"[DIAG-39]   backButton: visible={backButton?.visible} ID={backButton?.myID} bounds={backButton?.bounds}", LogLevel.Info);
+                    this.Monitor.Log($"[DIAG-39]   allClickableComponents: {letterMenu.allClickableComponents?.Count ?? 0}", LogLevel.Info);
+                }
+                catch (Exception ex)
+                {
+                    this.Monitor.Log($"[DIAG-39] Error logging LetterViewerMenu: {ex.Message}", LogLevel.Warn);
+                }
+            }
+
+        }
+
+        // DIAGNOSTIC #39: Log LetterViewerMenu gamepad button presses
+        private static void LetterViewerMenu_GamePadButton_Diag(LetterViewerMenu __instance, Buttons b)
+        {
+            try
+            {
+                var pageField = AccessTools.Field(typeof(LetterViewerMenu), "page");
+                var mailMsgField = AccessTools.Field(typeof(LetterViewerMenu), "mailMessage");
+                int page = pageField != null ? (int)pageField.GetValue(__instance) : -1;
+                var mailMsg = mailMsgField?.GetValue(__instance) as System.Collections.IList;
+                ModMonitor.Log($"[DIAG-39] receiveGamePadButton({b}) page={page}/{mailMsg?.Count ?? 0} snapped={__instance.currentlySnappedComponent?.myID}", LogLevel.Info);
+            }
+            catch { }
         }
 
         /// <summary>Raised at start of each tick, BEFORE Game.Update(). Enforces our trigger

@@ -59,6 +59,8 @@ namespace AndroidConsolizer.Patches
         private const float RStickThreshold = 0.5f;
         private const int RStickJumpCount = 5;
 
+        // DIAGNOSTIC #40
+        private static bool _sellTabDiagLogged;
 
         /// <summary>Apply Harmony patches.</summary>
         public static void Apply(Harmony harmony, IMonitor monitor)
@@ -739,6 +741,30 @@ namespace AndroidConsolizer.Patches
                     {
                         QuantityToBuyField.SetValue(__instance, 1);
                     }
+                }
+            }
+
+            // DIAGNOSTIC #40: Log sell tab cursor state
+            {
+                bool sellTabActive = InvVisibleField != null && (bool)InvVisibleField.GetValue(__instance);
+                if (sellTabActive)
+                {
+                    if (!_sellTabDiagLogged)
+                    {
+                        _sellTabDiagLogged = true;
+                        var snapped = __instance.currentlySnappedComponent;
+                        int slotIdx = snapped != null ? __instance.inventory.inventory.IndexOf(snapped) : -1;
+                        Monitor.Log($"[DIAG-40] Entered sell tab. snapped={snapped?.name}(ID:{snapped?.myID}) slotIdx={slotIdx} bounds={snapped?.bounds} mouseXY=({Game1.getMouseX()},{Game1.getMouseY()}) snappyMenus={Game1.options.SnappyMenus}", LogLevel.Info);
+                    }
+                    if (Game1.ticks % 120 == 0)
+                    {
+                        var snapped = __instance.currentlySnappedComponent;
+                        Monitor.Log($"[DIAG-40] Sell: snapped=ID:{snapped?.myID} bounds={snapped?.bounds} mouse=({Game1.getMouseX()},{Game1.getMouseY()})", LogLevel.Info);
+                    }
+                }
+                else
+                {
+                    _sellTabDiagLogged = false;
                 }
             }
 
