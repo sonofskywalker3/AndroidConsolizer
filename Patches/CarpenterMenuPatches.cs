@@ -357,6 +357,7 @@ namespace AndroidConsolizer.Patches
             _buildPressHandled = false;
             _demolishSelectedBuilding = null;
             _blockShopClicks = false;
+            _overridingMousePosition = false;
             _shopRow = 1;
             _shopCol = 0;
         }
