@@ -14,9 +14,36 @@ All items done. See `DONE.md` and `.planning/STATE.md` quick tasks table.
 
 ## Milestone 2: Chest & Item Interaction Polish (v3.5) ← ACTIVE
 
-### 34. Building Style Picker Controller Support
-- The "Choose cabin style" dialog (`BuildingSkinMenu`) in the carpenter menu has no controller navigation. B closes it but no way to browse/select building skins without touch.
+### 34. CarpenterMenu — Remaining Issues
+- **34a. FIXED (v3.4.48)** — Style picker A on arrows now cycles skins instead of exiting.
+- **34b. FIXED (v3.4.49)** — Ghost now centers on cursor (offset by half building dimensions in GetMouseState).
+- **34c. Dead zone in bottom-right corner** — An area in the bottom-right of the farm view can't be clicked/selected. Likely cursor bounds issue with viewport dimensions.
+- **34d. FIXED (v3.4.47)** — `_overridingMousePosition` now cleared in OnMenuClosed(). Chest interface works after build menu.
+- **34e. Building placement needs user verification** — v3.4.50 deployed, user reports "better" but hasn't done a full build cycle yet.
 - **File:** `Patches/CarpenterMenuPatches.cs`
+
+### 39. Monster Eradication Tracking Page
+- No cursor visible on the monster eradication goals page (Adventurer's Guild tracking).
+- Can't switch pages with controller.
+- **Investigation needed:** Check which menu class this is, how pages are structured, what navigation exists.
+
+### 40. Shop "Sell" Interface — No Cursor
+- Selling works functionally (Adventurer's Guild confirmed working, Clint also works) but there's no visible cursor in sell mode.
+- **Log finding:** Zero AndroidConsolizer sell-mode log lines — the mod has no sell-mode awareness or patches.
+- **Investigation needed:** Check if sell mode is a different ShopMenu state. Our ShopMenuPatches likely only handle the buy side.
+- **File:** `Patches/ShopMenuPatches.cs`
+
+### 41. Community Center Bundle — Completed Bundle Issues
+- **41a. Completed bundle icon doesn't update** — After completing a bundle, the icon on the room overview doesn't change to the completed state until you exit and re-enter the room screen.
+- **41b. Completed bundle gift redeemable multiple times** — The reward item at the bottom of a completed bundle can be redeemed multiple times via touch. Required exiting and re-entering (sometimes twice) for the gift to finally disappear.
+- **41c. Can't navigate to completed bundle gift** — Gift is not in the navigation array. Touch works (see 41b) but controller can't reach it.
+- **Log finding:** `junimoNoteIcon` is **always null** across 19 observations.
+- **File:** `Patches/JunimoNoteMenuPatches.cs`
+
+### 42. Equipment Slot Tooltips Missing
+- No tooltips shown when hovering over equipment slots (hat, rings, boots) in the inventory page.
+- **Log finding:** Equipment slot components exist at correct positions (IDs 101-104). `highlightEquipmentIcon = -1`.
+- **File:** `Patches/InventoryPagePatches.cs`
 
 ---
 
@@ -74,16 +101,14 @@ All items done. See `DONE.md` and `.planning/STATE.md` quick tasks table.
 - Ghost only moves via touch/click, not joystick. Seven versions tried (v3.1.14-v3.1.20). Current A-button-tap approach works.
 - **Hypothesis:** Android stores ghost position from last touch event in internal field, bypassing all mouse APIs.
 - **To investigate someday:** Decompile `CarpenterMenu.draw()` on Android, find ghost position field.
-- Also: "Choose cabin style" dialog (`BuildingSkinMenu`) — no controller support. B closes it.
 
 ### 17. Title/Main Menu Cursor Fix
-- Cursor reportedly invisible on main menu with controller.
-- **UNVERIFIED** — Not reproducible on Odin Pro. May be device/controller-specific.
+- Cursor should be visible on the Load button by default when the main menu loads, instead of being invisible until the player moves the stick or presses a button.
+- **Investigation needed:** Check `TitleMenu` class, initial `currentlySnappedComponent`, cursor visibility logic.
 
 ### 35. Load Game Screen Cursor/Navigation
-- After pressing Load on the main menu, cursor appears near the bottom right instead of on the first save slot.
+- Cursor should start on the top save slot when the Load Game menu opens, instead of in the free space below the saves.
 - Navigation has issues (details TBD — needs investigation).
-- **Minor.** Low priority.
 - **Investigation needed:** Check `LoadGameMenu` class, initial snap position, navigation wiring.
 
 ---

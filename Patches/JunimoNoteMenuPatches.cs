@@ -30,6 +30,7 @@ namespace AndroidConsolizer.Patches
         private static FieldInfo _invCurrentlySelectedItemField;
         private static FieldInfo _heldItemField;
         private static MethodInfo _tryDepositItemMethod;
+        private static FieldInfo _presentButtonField;
 
         // Overview page state
         private static bool _onOverviewPage;
@@ -68,6 +69,7 @@ namespace AndroidConsolizer.Patches
             _invCurrentlySelectedItemField = AccessTools.Field(typeof(InventoryMenu), "currentlySelectedItem");
             _heldItemField = AccessTools.Field(typeof(JunimoNoteMenu), "heldItem");
             _tryDepositItemMethod = AccessTools.Method(typeof(JunimoNoteMenu), "tryDepositItem");
+            _presentButtonField = AccessTools.Field(typeof(JunimoNoteMenu), "presentButton");
 
             // Patch GetMouseState — both input wrapper and XNA Mouse paths
             var inputType = Game1.input.GetType();
@@ -562,6 +564,9 @@ namespace AndroidConsolizer.Patches
                         // Sync highlightedBundle so the initial bundle animates immediately
                         if (__instance.currentlySnappedComponent != null)
                             SyncHighlightedBundle(__instance, __instance.currentlySnappedComponent);
+
+                        // DIAGNOSTIC #41: Log bundle state on overview entry
+                        LogBundleState(__instance, "entered overview");
                     }
                 }
 
@@ -596,6 +601,9 @@ namespace AndroidConsolizer.Patches
                     _overridingMouse = false;
                     _inIngredientZone = false;
                     _ingredientRows = null;
+
+                    // DIAGNOSTIC #41: Log bundle state when returning to overview from donation
+                    LogBundleState(__instance, "returned to overview from donation");
                 }
 
                 // Keep currentlySnappedComponent in sync (game may reset it)
@@ -939,6 +947,69 @@ namespace AndroidConsolizer.Patches
             {
                 _weInitiatedClick = false;
                 _overridingMouse = false;
+            }
+        }
+
+        // ===== DIAGNOSTIC #41: Bundle state logging =====
+
+        private static void LogBundleState(JunimoNoteMenu menu, string context)
+        {
+            try
+            {
+                var bundlesList = _bundlesField?.GetValue(menu) as System.Collections.IList;
+                int bundleCount = bundlesList?.Count ?? 0;
+                Monitor.Log($"[DIAG-41] {context}: {bundleCount} bundles", LogLevel.Info);
+
+                if (bundlesList != null)
+                {
+                    for (int i = 0; i < bundlesList.Count; i++)
+                    {
+                        var bundle = bundlesList[i] as Bundle;
+                        if (bundle == null) continue;
+                        Monitor.Log($"[DIAG-41]   bundle[{i}] ID:{bundle.myID} complete={bundle.complete} srcRect={bundle.sprite?.sourceRect}", LogLevel.Info);
+                    }
+                }
+
+                var present = _presentButtonField?.GetValue(menu);
+                bool presentInComponents = false;
+                if (present != null && menu.allClickableComponents != null)
+                {
+                    foreach (var c in menu.allClickableComponents)
+                        if (c == present) { presentInComponents = true; break; }
+                }
+                Monitor.Log($"[DIAG-41]   presentButton exists={present != null} inAllClickable={presentInComponents}", LogLevel.Info);
+
+                // Try logging bundleRewards from CommunityCenter
+                var cc = Game1.getLocationFromName("CommunityCenter");
+                if (cc != null)
+                {
+                    var rewardsField = AccessTools.Field(cc.GetType(), "bundleRewards");
+                    var rewards = rewardsField?.GetValue(cc);
+                    if (rewards is System.Collections.IList rewardsList)
+                    {
+                        var pending = new List<string>();
+                        for (int i = 0; i < rewardsList.Count; i++)
+                        {
+                            try
+                            {
+                                // NetArray<bool,NetBool> elements have a .Value property
+                                var val = rewardsList[i];
+                                bool boolVal = val is bool b ? b : (bool)AccessTools.Property(val.GetType(), "Value").GetValue(val);
+                                if (boolVal) pending.Add(i.ToString());
+                            }
+                            catch { }
+                        }
+                        Monitor.Log($"[DIAG-41]   bundleRewards pending indices: [{string.Join(",", pending)}] (total={rewardsList.Count})", LogLevel.Info);
+                    }
+                    else
+                    {
+                        Monitor.Log($"[DIAG-41]   bundleRewards type={rewards?.GetType().Name ?? "null"}", LogLevel.Info);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Monitor.Log($"[DIAG-41] LogBundleState error: {ex.Message}", LogLevel.Warn);
             }
         }
 

@@ -58,6 +58,12 @@ namespace AndroidConsolizer.Patches
                     prefix: new HarmonyMethod(typeof(InventoryPagePatches), nameof(InventoryMenu_ReceiveLeftClick_Prefix))
                 );
 
+                // DIAGNOSTIC #42: Patch performHoverAction to log equipment tooltip coords
+                harmony.Patch(
+                    original: AccessTools.Method(typeof(InventoryPage), nameof(InventoryPage.performHoverAction)),
+                    prefix: new HarmonyMethod(typeof(InventoryPagePatches), nameof(InventoryPage_PerformHoverAction_Diag))
+                );
+
                 Monitor.Log("InventoryPage patches applied successfully.", LogLevel.Trace);
             }
             catch (Exception ex)
@@ -335,6 +341,27 @@ namespace AndroidConsolizer.Patches
                 }
             }
             return true;
+        }
+
+        // DIAGNOSTIC #42: Equipment tooltip hover tracking
+        private static int _lastEquipDiagTick = -1;
+
+        private static void InventoryPage_PerformHoverAction_Diag(InventoryPage __instance, int x, int y)
+        {
+            if (Game1.ticks - _lastEquipDiagTick < 120) return;
+
+            var snapped = __instance.currentlySnappedComponent;
+            if (snapped == null) return;
+
+            bool isEquipSlot = snapped.myID >= 101 && snapped.myID <= 120;
+            if (!isEquipSlot) return;
+
+            _lastEquipDiagTick = Game1.ticks;
+            Monitor.Log($"[DIAG-42] performHoverAction({x},{y}) snapped={snapped.name}(ID:{snapped.myID}) bounds={snapped.bounds} containsPoint={snapped.containsPoint(x, y)} mouseXY=({Game1.getMouseX()},{Game1.getMouseY()})", LogLevel.Info);
+            foreach (var icon in __instance.equipmentIcons)
+            {
+                Monitor.Log($"[DIAG-42]   equip '{icon.name}' ID:{icon.myID} bounds={icon.bounds} contains({x},{y})={icon.containsPoint(x, y)}", LogLevel.Info);
+            }
         }
 
         /// <summary>Sort the player's inventory.</summary>
