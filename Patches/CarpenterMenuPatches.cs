@@ -1200,8 +1200,14 @@ namespace AndroidConsolizer.Patches
             {
                 Monitor.Log($"[CarpenterMenu] GetMouseState override: real=({__result.X},{__result.Y}) cursor=({(int)_cursorX},{(int)_cursorY}) viewport=({Game1.viewport.X},{Game1.viewport.Y},{Game1.viewport.Width},{Game1.viewport.Height}) zoom={Game1.options.zoomLevel} nativeZoom={Game1.options.desiredBaseZoomLevel} pixelZoom={Game1.pixelZoom} uiMode={Game1.uiMode}", LogLevel.Trace);
             }
+            // Offset by half building dimensions so the ghost centers on the cursor.
+            // TestToPan sets _drawAtX = GetMouseState().X / zoom, which becomes the
+            // ghost's top-left corner. Subtracting half the building size here makes
+            // the ghost's center align with our cursor position.
+            int centerOffsetX = _buildingTileWidth * 32;
+            int centerOffsetY = _buildingTileHeight * 32;
             __result = new MouseState(
-                (int)_cursorX, (int)_cursorY,
+                (int)_cursorX - centerOffsetX, (int)_cursorY - centerOffsetY,
                 __result.ScrollWheelValue,
                 __result.LeftButton,
                 __result.MiddleButton,
