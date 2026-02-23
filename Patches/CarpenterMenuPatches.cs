@@ -123,7 +123,10 @@ namespace AndroidConsolizer.Patches
         private static MethodInfo OnReleasePaintMethod;
 
         // --- BuildingSkinMenu cursor ---
-        private static int _skinNavIndex = 1;  // 0=prev, 1=ok, 2=next
+        // Layout:  Row 0: [Prev (col 0), Next (col 1)]
+        //          Row 1: [OK (col 0, visually under Next)]
+        private static int _skinRow = 1;   // 0=arrows, 1=OK
+        private static int _skinCol = 0;   // row 0: 0=prev, 1=next; row 1: 0=ok
         private static int _lastSkinMenuHash = 0;
         private static FieldInfo SkinLeftButtonField;
         private static FieldInfo SkinRightButtonField;
@@ -1267,15 +1270,18 @@ namespace AndroidConsolizer.Patches
         // BuildingSkinMenu cursor patches (#34)
         // ====================================================================
 
-        /// <summary>Prefix for BuildingSkinMenu.receiveGamePadButton — cursor navigation.</summary>
+        /// <summary>Prefix for BuildingSkinMenu.receiveGamePadButton — 2-row cursor navigation.
+        /// Layout:  Row 0: [Prev (col 0), Next (col 1)]
+        ///          Row 1: [OK (col 0, visually under Next)]</summary>
         private static bool SkinMenu_ReceiveGamePadButton_Prefix(IClickableMenu __instance, Buttons button)
         {
-            // Reset nav index when a new skin menu opens
+            // Reset nav when a new skin menu opens
             int hash = __instance.GetHashCode();
             if (hash != _lastSkinMenuHash)
             {
                 _lastSkinMenuHash = hash;
-                _skinNavIndex = 1; // default to OK
+                _skinRow = 1;  // default to OK
+                _skinCol = 0;
             }
 
             // B, LT/RT/LB/RB: let game handle
@@ -1285,37 +1291,81 @@ namespace AndroidConsolizer.Patches
 
             bool isLeft = button == Buttons.DPadLeft || button == Buttons.LeftThumbstickLeft;
             bool isRight = button == Buttons.DPadRight || button == Buttons.LeftThumbstickRight;
+            bool isUp = button == Buttons.DPadUp || button == Buttons.LeftThumbstickUp;
+            bool isDown = button == Buttons.DPadDown || button == Buttons.LeftThumbstickDown;
+
+            if (isUp)
+            {
+                if (_skinRow == 1)
+                {
+                    _skinRow = 0;
+                    _skinCol = 1; // OK is under Next arrow
+                    Game1.playSound("smallSelect");
+                }
+                return false;
+            }
+
+            if (isDown)
+            {
+                if (_skinRow == 0)
+                {
+                    _skinRow = 1;
+                    _skinCol = 0;
+                    Game1.playSound("smallSelect");
+                }
+                return false;
+            }
 
             if (isLeft)
             {
-                if (_skinNavIndex > 0)
+                if (_skinRow == 0)
                 {
-                    _skinNavIndex--;
-                    Game1.playSound("smallSelect");
+                    if (_skinCol > 0)
+                    {
+                        _skinCol--;
+                        Game1.playSound("smallSelect");
+                    }
+                    else
+                    {
+                        // At prev button edge — cycle to previous skin
+                        var leftBtn = SkinLeftButtonField?.GetValue(__instance) as ClickableComponent;
+                        if (leftBtn != null)
+                            __instance.receiveLeftClick(leftBtn.bounds.Center.X, leftBtn.bounds.Center.Y);
+                    }
                 }
-                else
+                else // row 1 (OK)
                 {
-                    // At prev button — cycle to previous skin
-                    var leftBtn = SkinLeftButtonField?.GetValue(__instance) as ClickableComponent;
-                    if (leftBtn != null)
-                        __instance.receiveLeftClick(leftBtn.bounds.Center.X, leftBtn.bounds.Center.Y);
+                    // Left from OK → go to prev arrow
+                    _skinRow = 0;
+                    _skinCol = 0;
+                    Game1.playSound("smallSelect");
                 }
                 return false;
             }
 
             if (isRight)
             {
-                if (_skinNavIndex < 2)
+                if (_skinRow == 0)
                 {
-                    _skinNavIndex++;
-                    Game1.playSound("smallSelect");
+                    if (_skinCol < 1)
+                    {
+                        _skinCol++;
+                        Game1.playSound("smallSelect");
+                    }
+                    else
+                    {
+                        // At next button edge — cycle to next skin
+                        var rightBtn = SkinRightButtonField?.GetValue(__instance) as ClickableComponent;
+                        if (rightBtn != null)
+                            __instance.receiveLeftClick(rightBtn.bounds.Center.X, rightBtn.bounds.Center.Y);
+                    }
                 }
-                else
+                else // row 1 (OK)
                 {
-                    // At next button — cycle to next skin
-                    var rightBtn = SkinRightButtonField?.GetValue(__instance) as ClickableComponent;
-                    if (rightBtn != null)
-                        __instance.receiveLeftClick(rightBtn.bounds.Center.X, rightBtn.bounds.Center.Y);
+                    // Right from OK → go to next arrow
+                    _skinRow = 0;
+                    _skinCol = 1;
+                    Game1.playSound("smallSelect");
                 }
                 return false;
             }
@@ -1323,19 +1373,17 @@ namespace AndroidConsolizer.Patches
             if (button == Buttons.A)
             {
                 ClickableComponent btn = null;
-                if (_skinNavIndex == 0) btn = SkinLeftButtonField?.GetValue(__instance) as ClickableComponent;
-                else if (_skinNavIndex == 1) btn = SkinOkButtonField?.GetValue(__instance) as ClickableComponent;
-                else if (_skinNavIndex == 2) btn = SkinRightButtonField?.GetValue(__instance) as ClickableComponent;
+                if (_skinRow == 0)
+                    btn = _skinCol == 0
+                        ? SkinLeftButtonField?.GetValue(__instance) as ClickableComponent
+                        : SkinRightButtonField?.GetValue(__instance) as ClickableComponent;
+                else
+                    btn = SkinOkButtonField?.GetValue(__instance) as ClickableComponent;
 
                 if (btn != null)
                     __instance.receiveLeftClick(btn.bounds.Center.X, btn.bounds.Center.Y);
                 return false;
             }
-
-            // Block up/down (no vertical navigation in skin menu)
-            if (button == Buttons.DPadUp || button == Buttons.LeftThumbstickUp
-                || button == Buttons.DPadDown || button == Buttons.LeftThumbstickDown)
-                return false;
 
             return true;
         }
@@ -1344,9 +1392,12 @@ namespace AndroidConsolizer.Patches
         private static void SkinMenu_Draw_Postfix(IClickableMenu __instance, SpriteBatch b)
         {
             ClickableComponent btn = null;
-            if (_skinNavIndex == 0) btn = SkinLeftButtonField?.GetValue(__instance) as ClickableComponent;
-            else if (_skinNavIndex == 1) btn = SkinOkButtonField?.GetValue(__instance) as ClickableComponent;
-            else if (_skinNavIndex == 2) btn = SkinRightButtonField?.GetValue(__instance) as ClickableComponent;
+            if (_skinRow == 0)
+                btn = _skinCol == 0
+                    ? SkinLeftButtonField?.GetValue(__instance) as ClickableComponent
+                    : SkinRightButtonField?.GetValue(__instance) as ClickableComponent;
+            else
+                btn = SkinOkButtonField?.GetValue(__instance) as ClickableComponent;
 
             if (btn == null) return;
 
