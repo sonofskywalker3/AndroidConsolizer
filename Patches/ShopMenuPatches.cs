@@ -21,6 +21,7 @@ namespace AndroidConsolizer.Patches
         private static FieldInfo HoveredItemField;
         private static FieldInfo QuantityToBuyField;
         private static FieldInfo InventoryButtonField;
+        private static FieldInfo InvCurrentlySelectedItemField;
 
 
         /// <summary>Check if the active menu is a ShopMenu on the buy tab (right stick should be suppressed).</summary>
@@ -72,6 +73,7 @@ namespace AndroidConsolizer.Patches
             HoveredItemField = AccessTools.Field(typeof(ShopMenu), "hoveredItem");
             QuantityToBuyField = AccessTools.Field(typeof(ShopMenu), "quantityToBuy");
             InventoryButtonField = AccessTools.Field(typeof(ShopMenu), "inventoryButton");
+            InvCurrentlySelectedItemField = AccessTools.Field(typeof(InventoryMenu), "currentlySelectedItem");
 
 
             try
@@ -744,27 +746,32 @@ namespace AndroidConsolizer.Patches
                 }
             }
 
-            // DIAGNOSTIC #40: Log sell tab cursor state
+            // #40 FIX: Sync inventory highlight to snapped slot on sell tab.
+            // On the sell tab, the game draws inventory slots with tile 56 (highlighted) vs 10 (normal)
+            // based on InventoryMenu.currentlySelectedItem. Snap navigation updates
+            // currentlySnappedComponent but NOT currentlySelectedItem, so no visual highlight appears.
+            if (InvCurrentlySelectedItemField != null)
             {
                 bool sellTabActive = InvVisibleField != null && (bool)InvVisibleField.GetValue(__instance);
                 if (sellTabActive)
                 {
-                    if (!_sellTabDiagLogged)
+                    var snapped = __instance.currentlySnappedComponent;
+                    if (snapped != null)
                     {
-                        _sellTabDiagLogged = true;
-                        var snapped = __instance.currentlySnappedComponent;
-                        int slotIdx = snapped != null ? __instance.inventory.inventory.IndexOf(snapped) : -1;
-                        Monitor.Log($"[DIAG-40] Entered sell tab. snapped={snapped?.name}(ID:{snapped?.myID}) slotIdx={slotIdx} bounds={snapped?.bounds} mouseXY=({Game1.getMouseX()},{Game1.getMouseY()}) snappyMenus={Game1.options.SnappyMenus}", LogLevel.Info);
-                    }
-                    if (Game1.ticks % 120 == 0)
-                    {
-                        var snapped = __instance.currentlySnappedComponent;
-                        Monitor.Log($"[DIAG-40] Sell: snapped=ID:{snapped?.myID} bounds={snapped?.bounds} mouse=({Game1.getMouseX()},{Game1.getMouseY()})", LogLevel.Info);
+                        int idx = __instance.inventory.inventory.IndexOf(snapped);
+                        int current = (int)InvCurrentlySelectedItemField.GetValue(__instance.inventory);
+                        if (idx >= 0 && current != idx)
+                        {
+                            InvCurrentlySelectedItemField.SetValue(__instance.inventory, idx);
+                        }
                     }
                 }
                 else
                 {
-                    _sellTabDiagLogged = false;
+                    // Clear highlight when not on sell tab
+                    int current = (int)InvCurrentlySelectedItemField.GetValue(__instance.inventory);
+                    if (current != -1)
+                        InvCurrentlySelectedItemField.SetValue(__instance.inventory, -1);
                 }
             }
 
