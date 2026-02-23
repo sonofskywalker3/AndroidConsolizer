@@ -1195,11 +1195,8 @@ namespace AndroidConsolizer.Patches
             if (!_overridingMousePosition)
                 return;
 
-            // DIAGNOSTIC: Log real mouse coords vs our cursor to find the coordinate transform
-            if (ModEntry.Config.VerboseLogging)
-            {
-                Monitor.Log($"[CarpenterMenu] GetMouseState override: real=({__result.X},{__result.Y}) cursor=({(int)_cursorX},{(int)_cursorY}) viewport=({Game1.viewport.X},{Game1.viewport.Y},{Game1.viewport.Width},{Game1.viewport.Height}) zoom={Game1.options.zoomLevel} nativeZoom={Game1.options.desiredBaseZoomLevel} pixelZoom={Game1.pixelZoom} uiMode={Game1.uiMode}", LogLevel.Trace);
-            }
+            // Diagnostic logging removed — was generating 100MB+ logs.
+            // Re-enable temporarily if coordinate issues resurface.
             // Offset by half building dimensions so the ghost centers on the cursor.
             // TestToPan sets _drawAtX = GetMouseState().X / zoom, which becomes the
             // ghost's top-left corner. Subtracting half the building size here makes
