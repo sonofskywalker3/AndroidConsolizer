@@ -21,7 +21,6 @@ namespace AndroidConsolizer.Patches
         private static FieldInfo HoveredItemField;
         private static FieldInfo QuantityToBuyField;
         private static FieldInfo InventoryButtonField;
-        private static FieldInfo InvCurrentlySelectedItemField;
 
 
         /// <summary>Check if the active menu is a ShopMenu on the buy tab (right stick should be suppressed).</summary>
@@ -60,8 +59,6 @@ namespace AndroidConsolizer.Patches
         private const float RStickThreshold = 0.5f;
         private const int RStickJumpCount = 5;
 
-        // DIAGNOSTIC #40
-        private static bool _sellTabDiagLogged;
 
         /// <summary>Apply Harmony patches.</summary>
         public static void Apply(Harmony harmony, IMonitor monitor)
@@ -73,8 +70,6 @@ namespace AndroidConsolizer.Patches
             HoveredItemField = AccessTools.Field(typeof(ShopMenu), "hoveredItem");
             QuantityToBuyField = AccessTools.Field(typeof(ShopMenu), "quantityToBuy");
             InventoryButtonField = AccessTools.Field(typeof(ShopMenu), "inventoryButton");
-            InvCurrentlySelectedItemField = AccessTools.Field(typeof(InventoryMenu), "currentlySelectedItem");
-
 
             try
             {
@@ -746,35 +741,6 @@ namespace AndroidConsolizer.Patches
                 }
             }
 
-            // #40 FIX: Sync inventory highlight to snapped slot on sell tab.
-            // On the sell tab, the game draws inventory slots with tile 56 (highlighted) vs 10 (normal)
-            // based on InventoryMenu.currentlySelectedItem. Snap navigation updates
-            // currentlySnappedComponent but NOT currentlySelectedItem, so no visual highlight appears.
-            if (InvCurrentlySelectedItemField != null)
-            {
-                bool sellTabActive = InvVisibleField != null && (bool)InvVisibleField.GetValue(__instance);
-                if (sellTabActive)
-                {
-                    var snapped = __instance.currentlySnappedComponent;
-                    if (snapped != null)
-                    {
-                        int idx = __instance.inventory.inventory.IndexOf(snapped);
-                        int current = (int)InvCurrentlySelectedItemField.GetValue(__instance.inventory);
-                        if (idx >= 0 && current != idx)
-                        {
-                            InvCurrentlySelectedItemField.SetValue(__instance.inventory, idx);
-                        }
-                    }
-                }
-                else
-                {
-                    // Clear highlight when not on sell tab
-                    int current = (int)InvCurrentlySelectedItemField.GetValue(__instance.inventory);
-                    if (current != -1)
-                        InvCurrentlySelectedItemField.SetValue(__instance.inventory, -1);
-                }
-            }
-
         }
 
         /// <summary>
@@ -881,6 +847,25 @@ namespace AndroidConsolizer.Patches
                 bool inventoryVisible = (bool)InvVisibleField.GetValue(__instance);
                 if (!inventoryVisible)
                     return;
+
+                // Draw finger cursor at snapped component on sell tab
+                // (Android doesn't render a visible cursor on this tab with controller)
+                if (GamePad.GetState(PlayerIndex.One).IsConnected && __instance.currentlySnappedComponent != null)
+                {
+                    var target = __instance.currentlySnappedComponent;
+                    int cursorTile = Game1.options.snappyMenus ? 44 : Game1.mouseCursor;
+                    b.Draw(
+                        Game1.mouseCursors,
+                        new Vector2(target.bounds.Center.X, target.bounds.Center.Y),
+                        Game1.getSourceRectForStandardTileSheet(Game1.mouseCursors, cursorTile, 16, 16),
+                        Color.White,
+                        0f,
+                        Vector2.Zero,
+                        4f + Game1.dialogueButtonScale / 150f,
+                        SpriteEffects.None,
+                        1f
+                    );
+                }
 
                 Item sellItem = GetSellTabSelectedItem(__instance);
                 if (sellItem == null)
