@@ -1244,10 +1244,12 @@ namespace AndroidConsolizer.Patches
                 return;
             }
 
-            // Farm view cursor
+            // Farm view cursor — draw in world space (no UI transform) to match
+            // the building ghost which is rendered via StartWorldDrawInUI.
             if (!_cursorActive)
                 return;
 
+            Game1.StartWorldDrawInUI(b);
             b.Draw(
                 Game1.mouseCursors,
                 new Vector2(_cursorX, _cursorY),
@@ -1259,6 +1261,7 @@ namespace AndroidConsolizer.Patches
                 SpriteEffects.None,
                 1f
             );
+            Game1.EndWorldDrawInUI(b);
         }
 
         // ====================================================================
