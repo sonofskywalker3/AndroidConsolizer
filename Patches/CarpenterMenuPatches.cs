@@ -1182,18 +1182,10 @@ namespace AndroidConsolizer.Patches
             if (!_overridingMousePosition)
                 return;
 
-            // Cursor coords are in game units (viewport space). GetMouseState returns raw
-            // screen pixels, and the game divides by zoomLevel to get game units. Multiply
-            // by zoom so the division yields the correct game-unit position.
-            //
-            // The ghost anchor is at the building's top-left corner. Offset by half the
-            // building dimensions to center the ghost on the cursor.
-            // 1 tile = 64 game pixels, half = 32.
-            float zoom = Game1.options.zoomLevel;
-            float adjustedX = _cursorX - _buildingTileWidth * 32;
-            float adjustedY = _cursorY - _buildingTileHeight * 32;
+            // Cursor coords are in game units (viewport space). On Android, GetMouseState
+            // coordinates are used directly as game units — no zoom scaling needed.
             __result = new MouseState(
-                (int)(adjustedX * zoom), (int)(adjustedY * zoom),
+                (int)_cursorX, (int)_cursorY,
                 __result.ScrollWheelValue,
                 __result.LeftButton,
                 __result.MiddleButton,
