@@ -742,6 +742,18 @@ namespace AndroidConsolizer.Patches
                     Monitor.Log($"[CarpenterMenu] Blocked touch-sim receiveLeftClick({x},{y}) after unaffordable Build intercept", LogLevel.Debug);
                 return false;
             }
+
+            // Block touch-sim clicks while BuildingSkinMenu is open as child.
+            // Our SkinMenu prefix handles A presses via receiveLeftClick on the child;
+            // the Android touch-sim then fires receiveLeftClick on CarpenterMenu which
+            // closes/disrupts the child menu.
+            if (__instance.GetChildMenu() != null)
+            {
+                if (ModEntry.Config.VerboseLogging)
+                    Monitor.Log($"[CarpenterMenu] Blocked touch-sim receiveLeftClick({x},{y}) — child menu (BuildingSkinMenu) is open", LogLevel.Debug);
+                return false;
+            }
+
             return true;
         }
 
