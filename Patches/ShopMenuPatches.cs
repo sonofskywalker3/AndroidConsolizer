@@ -59,6 +59,14 @@ namespace AndroidConsolizer.Patches
         private const float RStickThreshold = 0.5f;
         private const int RStickJumpCount = 5;
 
+        // Left stick hold-to-repeat for menu navigation.
+        // Game's directionKeyPolling decrements for all menus but only fires
+        // receiveGamePadButton repeat for childMenu/textEntry, NOT activeClickableMenu.
+        private static int _lsUpTicks, _lsDownTicks, _lsLeftTicks, _lsRightTicks;
+        private const int StickNavDelay = 15;      // ~250ms initial delay (matches game's directionKeyPolling)
+        private const int StickNavRepeatRate = 4;   // ~70ms between repeats (matches game's directionKeyPolling)
+        private const float StickNavThreshold = 0.5f;
+
         // Sell tab highlight override — greys out items with sell price 0
         private static bool _highlightOverrideActive;
         private static ShopMenu _highlightOverrideShop;
@@ -761,6 +769,47 @@ namespace AndroidConsolizer.Patches
                     }
                 }
             }
+
+            // Left stick hold-to-repeat — fire receiveGamePadButton at repeat rate
+            // while stick is held in a direction. SMAPI only fires on state transitions.
+            float lsX = gpState.ThumbSticks.Left.X;
+            float lsY = gpState.ThumbSticks.Left.Y;
+
+            if (lsY > StickNavThreshold)
+            {
+                _lsUpTicks++;
+                if (_lsUpTicks > StickNavDelay && (_lsUpTicks - StickNavDelay) % StickNavRepeatRate == 0)
+                    __instance.receiveGamePadButton(Buttons.LeftThumbstickUp);
+            }
+            else
+                _lsUpTicks = 0;
+
+            if (lsY < -StickNavThreshold)
+            {
+                _lsDownTicks++;
+                if (_lsDownTicks > StickNavDelay && (_lsDownTicks - StickNavDelay) % StickNavRepeatRate == 0)
+                    __instance.receiveGamePadButton(Buttons.LeftThumbstickDown);
+            }
+            else
+                _lsDownTicks = 0;
+
+            if (lsX < -StickNavThreshold)
+            {
+                _lsLeftTicks++;
+                if (_lsLeftTicks > StickNavDelay && (_lsLeftTicks - StickNavDelay) % StickNavRepeatRate == 0)
+                    __instance.receiveGamePadButton(Buttons.LeftThumbstickLeft);
+            }
+            else
+                _lsLeftTicks = 0;
+
+            if (lsX > StickNavThreshold)
+            {
+                _lsRightTicks++;
+                if (_lsRightTicks > StickNavDelay && (_lsRightTicks - StickNavDelay) % StickNavRepeatRate == 0)
+                    __instance.receiveGamePadButton(Buttons.LeftThumbstickRight);
+            }
+            else
+                _lsRightTicks = 0;
 
             // Install sell-tab highlight override that greys out 0-price items.
             // Vanilla's highlightItemToSell only checks category — items like Mixed Seeds
