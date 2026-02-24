@@ -943,10 +943,26 @@ namespace AndroidConsolizer.Patches
                                    || (invVisible && Game1.mouseCursorTransparency < 0.01f);
                     if (needCursor)
                     {
+                        // On buy tab, getMouseX/Y() may be stale (still at sell tab position).
+                        // Use the snapped component's bounds instead (same 3/4-point position
+                        // that snapCursorToCurrentSnappedComponent uses).
+                        int cursorX, cursorY;
+                        if (!invVisible && __instance.currentlySnappedComponent != null)
+                        {
+                            var bounds = __instance.currentlySnappedComponent.bounds;
+                            cursorX = bounds.Right - bounds.Width / 4;
+                            cursorY = bounds.Bottom - bounds.Height / 4;
+                        }
+                        else
+                        {
+                            cursorX = Game1.getMouseX();
+                            cursorY = Game1.getMouseY();
+                        }
+
                         int cursorTile = Game1.options.snappyMenus ? 44 : Game1.mouseCursor;
                         b.Draw(
                             Game1.mouseCursors,
-                            new Vector2(Game1.getMouseX(), Game1.getMouseY()),
+                            new Vector2(cursorX, cursorY),
                             Game1.getSourceRectForStandardTileSheet(Game1.mouseCursors, cursorTile, 16, 16),
                             Color.White,
                             0f,
