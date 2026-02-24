@@ -848,24 +848,24 @@ namespace AndroidConsolizer.Patches
                 if (!inventoryVisible)
                     return;
 
-                // DIAGNOSTIC: Log why drawMouse might not render at some shops (Clint)
-                // drawMouse checks: gamepadControls, mostRecentlyUsedControlType==GAMEPAD,
-                // !hardwareCursor, and multiplies by mouseCursorTransparency
-                if (GamePad.GetState(PlayerIndex.One).IsConnected && Game1.ticks % 60 == 0)
+                // Vanilla's drawMouse() multiplies by Game1.mouseCursorTransparency.
+                // At some shops (Blacksmith, Joja) this is 0, making the cursor invisible.
+                // When that happens, draw the cursor ourselves at the same position vanilla
+                // would use (Game1.getMouseX/Y), so it looks identical to the vanilla cursor.
+                if (Game1.mouseCursorTransparency < 0.01f && GamePad.GetState(PlayerIndex.One).IsConnected)
                 {
-                    var vjField = AccessTools.Field(typeof(Game1), "virtualJoypad");
-                    object vj = vjField?.GetValue(null);
-                    string controlType = "?";
-                    if (vj != null)
-                    {
-                        var ctField = AccessTools.Field(vj.GetType(), "mostRecentlyUsedControlType");
-                        controlType = ctField?.GetValue(vj)?.ToString() ?? "null";
-                    }
-                    int mx = Game1.getMouseX();
-                    int my = Game1.getMouseY();
-                    var diagSnapped = __instance.currentlySnappedComponent;
-                    string snappedInfo = diagSnapped != null ? $"id={diagSnapped.myID} bounds={diagSnapped.bounds}" : "null";
-                    Monitor.Log($"[DIAG-40] shopId={__instance.ShopId} gamepadControls={Game1.options.gamepadControls} controlType={controlType} hardwareCursor={Game1.options.hardwareCursor} cursorTransparency={Game1.mouseCursorTransparency} mouse=({mx},{my}) snapped={snappedInfo}", LogLevel.Info);
+                    int cursorTile = Game1.options.snappyMenus ? 44 : Game1.mouseCursor;
+                    b.Draw(
+                        Game1.mouseCursors,
+                        new Vector2(Game1.getMouseX(), Game1.getMouseY()),
+                        Game1.getSourceRectForStandardTileSheet(Game1.mouseCursors, cursorTile, 16, 16),
+                        Color.White,
+                        0f,
+                        Vector2.Zero,
+                        4f + Game1.dialogueButtonScale / 150f,
+                        SpriteEffects.None,
+                        1f
+                    );
                 }
 
                 Item sellItem = GetSellTabSelectedItem(__instance);
