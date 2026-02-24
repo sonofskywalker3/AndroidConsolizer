@@ -59,6 +59,27 @@ namespace AndroidConsolizer.Patches
         private const float RStickThreshold = 0.5f;
         private const int RStickJumpCount = 5;
 
+        // Sell tab highlight override — greys out items with sell price 0
+        private static bool _highlightOverrideActive;
+        private static ShopMenu _highlightOverrideShop;
+
+        /// <summary>
+        /// Enhanced highlight for sell tab: returns false for items that pass category
+        /// check but have sell price 0 (e.g. Mixed Seeds). This greys them out AND
+        /// blocks vanilla's receiveLeftClick sell path (which also checks highlight).
+        /// </summary>
+        private static bool HighlightItemToSellWithPriceCheck(Item i)
+        {
+            if (_highlightOverrideShop == null || !_highlightOverrideShop.highlightItemToSell(i))
+                return false;
+
+            // Item passes category check — now also verify it has a sell price
+            if (i is StardewValley.Object obj)
+                return obj.sellToStorePrice() > 0;
+
+            int sp = i.salePrice();
+            return sp > 0;
+        }
 
         /// <summary>Apply Harmony patches.</summary>
         public static void Apply(Harmony harmony, IMonitor monitor)
@@ -741,6 +762,28 @@ namespace AndroidConsolizer.Patches
                 }
             }
 
+            // Install sell-tab highlight override that greys out 0-price items.
+            // Vanilla's highlightItemToSell only checks category — items like Mixed Seeds
+            // pass the category check but have salePrice()=0. Our override also checks price,
+            // which both greys them out visually AND blocks vanilla's receiveLeftClick sell path.
+            if (InvVisibleField != null)
+            {
+                bool onSellTab = (bool)InvVisibleField.GetValue(__instance);
+                if (onSellTab && !_highlightOverrideActive)
+                {
+                    _highlightOverrideShop = __instance;
+                    __instance.inventory.highlightMethod = HighlightItemToSellWithPriceCheck;
+                    _highlightOverrideActive = true;
+                }
+                else if (!onSellTab && _highlightOverrideActive)
+                {
+                    // Restore vanilla highlight when leaving sell tab
+                    __instance.inventory.highlightMethod = __instance.highlightItemToSell;
+                    _highlightOverrideActive = false;
+                    _highlightOverrideShop = null;
+                }
+            }
+
         }
 
         /// <summary>
@@ -876,12 +919,17 @@ namespace AndroidConsolizer.Patches
                 if (!__instance.highlightItemToSell(sellItem))
                     return;
 
-                // Only show sell tooltip for Object items (crops, fish, minerals, etc.)
-                // Non-Object items (tools, weapons, rings, boots) can't be sold in shops
-                if (sellItem is not StardewValley.Object obj)
-                    return;
+                // Compute sell price — same logic as the sell code in ReceiveGamePadButton_Prefix.
+                // Object items use sellToStorePrice(), everything else (weapons, rings, boots) uses salePrice()/2.
+                int sellPrice;
+                if (sellItem is StardewValley.Object obj)
+                    sellPrice = obj.sellToStorePrice();
+                else
+                {
+                    int sp = sellItem.salePrice();
+                    sellPrice = sp > 0 ? sp / 2 : 0;
+                }
 
-                int sellPrice = obj.sellToStorePrice();
                 if (sellPrice <= 0)
                     return;
 
