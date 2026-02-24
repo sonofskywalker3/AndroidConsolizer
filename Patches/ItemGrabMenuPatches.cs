@@ -1504,18 +1504,38 @@ namespace AndroidConsolizer.Patches
             }
         }
 
-        /// <summary>Invoke the menu's behaviorOnItemGrab callback if set (e.g. rewardGrabbed for bundle rewards).</summary>
+        /// <summary>Invoke the menu's behaviorOnItemGrab callback if set (e.g. rewardGrabbed for bundle rewards).
+        /// For reward menus, defers the callback until all items from the same bundle (SpecialVariable) are taken,
+        /// preventing partial grabs from clearing the entire bundle's reward flag.</summary>
         private static void InvokeBehaviorOnItemGrab(ItemGrabMenu menu, Item item)
         {
             try
             {
                 var callback = AccessTools.Field(typeof(ItemGrabMenu), "behaviorOnItemGrab")?.GetValue(menu) as Delegate;
-                if (callback != null)
+                if (callback == null) return;
+
+                // Check if more items from this bundle remain in the chest.
+                // SpecialVariable = bundle index for reward items. Only fire the callback
+                // when the last item from this bundle is taken, so partial grabs don't
+                // clobber remaining reward items on re-open.
+                int bundleIndex = item.SpecialVariable;
+                var chestInv = menu.ItemsToGrabMenu?.actualInventory;
+                if (chestInv != null)
                 {
-                    callback.DynamicInvoke(item, Game1.player);
-                    if (ModEntry.Config.VerboseLogging)
-                        Monitor.Log($"[ChestTransfer] behaviorOnItemGrab invoked for {item?.DisplayName}", LogLevel.Debug);
+                    for (int i = 0; i < chestInv.Count; i++)
+                    {
+                        if (chestInv[i] != null && chestInv[i].SpecialVariable == bundleIndex)
+                        {
+                            if (ModEntry.Config.VerboseLogging)
+                                Monitor.Log($"[ChestTransfer] behaviorOnItemGrab deferred for {item?.DisplayName} — more items from bundle {bundleIndex} remain", LogLevel.Debug);
+                            return;
+                        }
+                    }
                 }
+
+                callback.DynamicInvoke(item, Game1.player);
+                if (ModEntry.Config.VerboseLogging)
+                    Monitor.Log($"[ChestTransfer] behaviorOnItemGrab invoked for {item?.DisplayName} (bundle {bundleIndex})", LogLevel.Debug);
             }
             catch (Exception ex)
             {
