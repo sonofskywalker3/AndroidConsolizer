@@ -31,6 +31,7 @@ namespace AndroidConsolizer.Patches
         private static FieldInfo _heldItemField;
         private static MethodInfo _tryDepositItemMethod;
         private static FieldInfo _presentButtonField;
+        private static FieldInfo _whichAreaField;
 
         // Overview page state
         private static bool _onOverviewPage;
@@ -56,6 +57,10 @@ namespace AndroidConsolizer.Patches
         private static int _enteredPageTick = -100;
         private static bool _weInitiatedClick;
 
+        // Track pending reward indices when opening rewards menu (#41b)
+        private static bool _rewardsMenuOpened;
+        private static List<int> _pendingRewardIndices;
+
 
         public static void Apply(Harmony harmony, IMonitor monitor)
         {
@@ -70,6 +75,7 @@ namespace AndroidConsolizer.Patches
             _heldItemField = AccessTools.Field(typeof(JunimoNoteMenu), "heldItem");
             _tryDepositItemMethod = AccessTools.Method(typeof(JunimoNoteMenu), "tryDepositItem");
             _presentButtonField = AccessTools.Field(typeof(JunimoNoteMenu), "presentButton");
+            _whichAreaField = AccessTools.Field(typeof(JunimoNoteMenu), "whichArea");
 
             // Patch GetMouseState — both input wrapper and XNA Mouse paths
             var inputType = Game1.input.GetType();
@@ -139,6 +145,8 @@ namespace AndroidConsolizer.Patches
             _inIngredientZone = false;
             _ingredientRows = null;
             _savedOverviewComponentId = -1;
+            // Don't reset _rewardsMenuOpened/_pendingRewardIndices here —
+            // they need to survive the menu transition from ItemGrabMenu back to JunimoNoteMenu
         }
 
         // ===== GetMouseState postfix =====
@@ -576,6 +584,10 @@ namespace AndroidConsolizer.Patches
                 // Overview page entry — populate allClickableComponents and wire neighbors
                 if (!specificBundle && !_onOverviewPage)
                 {
+                    // Force-clear BundleRewards if we just came back from the rewards menu (#41b).
+                    // Must run BEFORE InitOverviewNavigation so presentButton isn't recreated.
+                    ClearPendingRewards();
+
                     if (InitOverviewNavigation(__instance))
                     {
                         _onOverviewPage = true;
@@ -957,6 +969,15 @@ namespace AndroidConsolizer.Patches
             var snapped = menu.currentlySnappedComponent;
             if (snapped == null) return;
 
+            // If clicking on presentButton, save pending reward indices so we can
+            // force-clear them after the rewards menu closes (#41b).
+            // rewardGrabbed() isn't reliably clearing BundleRewards on Android.
+            var presentBtn = _presentButtonField?.GetValue(menu) as ClickableComponent;
+            if (presentBtn != null && snapped == presentBtn)
+            {
+                SavePendingRewardIndices(menu);
+            }
+
             var center = snapped.bounds.Center;
             float zoom = Game1.options.zoomLevel;
             _overrideRawX = (int)(center.X * zoom);
@@ -965,9 +986,6 @@ namespace AndroidConsolizer.Patches
 
             // Must call both receiveLeftClick (sets pressedOnBundleSpecificPage flag)
             // AND releaseLeftClick (actually opens the bundle via bundle.containsPoint).
-            // Previously we relied on the game's gamepad-to-click fallback in updateActiveMenu
-            // to call releaseLeftClick on A release, but that's fragile — coordinate scaling
-            // (zoom vs uiScale) and timing issues can cause containsPoint to fail.
             _weInitiatedClick = true;
             try
             {
@@ -978,6 +996,71 @@ namespace AndroidConsolizer.Patches
             {
                 _weInitiatedClick = false;
                 _overridingMouse = false;
+            }
+        }
+
+        // ===== Reward clearing (#41b) =====
+
+        private static void SavePendingRewardIndices(JunimoNoteMenu menu)
+        {
+            try
+            {
+                _pendingRewardIndices = new List<int>();
+                var bundleRewards = Game1.netWorldState.Value.BundleRewards;
+                int whichArea = _whichAreaField != null ? (int)_whichAreaField.GetValue(menu) : -1;
+                if (whichArea < 0 || bundleRewards == null) return;
+
+                var bundleData = Game1.netWorldState.Value.BundleData;
+                foreach (var key in bundleData.Keys)
+                {
+                    string[] parts = key.Split('/');
+                    if (parts.Length < 2) continue;
+                    // Bundle data keys are "areaName/bundleIndex"
+                    int bundleIndex;
+                    if (!int.TryParse(parts[1], out bundleIndex)) continue;
+                    if (bundleRewards.ContainsKey(bundleIndex) && bundleRewards[bundleIndex])
+                        _pendingRewardIndices.Add(bundleIndex);
+                }
+                _rewardsMenuOpened = true;
+                Monitor.Log($"[DIAG-41] Rewards menu opened, pending indices: [{string.Join(",", _pendingRewardIndices)}]", LogLevel.Info);
+            }
+            catch (Exception ex)
+            {
+                Monitor.Log($"[DIAG-41] SavePendingRewardIndices error: {ex.Message}", LogLevel.Warn);
+            }
+        }
+
+        private static void ClearPendingRewards()
+        {
+            if (!_rewardsMenuOpened || _pendingRewardIndices == null) return;
+            try
+            {
+                var bundleRewards = Game1.netWorldState.Value.BundleRewards;
+                if (bundleRewards == null) return;
+
+                foreach (int idx in _pendingRewardIndices)
+                {
+                    if (bundleRewards.ContainsKey(idx) && bundleRewards[idx])
+                    {
+                        bundleRewards[idx] = false;
+                        Monitor.Log($"[DIAG-41] Force-cleared BundleRewards[{idx}]", LogLevel.Info);
+                    }
+                }
+
+                // Also null out presentButton on the current menu — it was already
+                // created by checkForRewards() in the constructor based on the stale
+                // BundleRewards state, before our clearing ran.
+                if (_presentButtonField != null && Game1.activeClickableMenu is JunimoNoteMenu jnm)
+                    _presentButtonField.SetValue(jnm, null);
+            }
+            catch (Exception ex)
+            {
+                Monitor.Log($"[DIAG-41] ClearPendingRewards error: {ex.Message}", LogLevel.Warn);
+            }
+            finally
+            {
+                _rewardsMenuOpened = false;
+                _pendingRewardIndices = null;
             }
         }
 
