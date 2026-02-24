@@ -272,7 +272,8 @@ namespace AndroidConsolizer.Patches
                         HandlePurchaseAPress(__instance);
                         return false;
                     }
-                    return true; // B, directional, etc. — let game handle
+                    if (b == Buttons.B) return true; // let game handle back
+                    return false; // block directional — kills highlight toggle
                 }
 
                 switch (b)
