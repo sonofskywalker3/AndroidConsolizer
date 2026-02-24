@@ -146,6 +146,16 @@ namespace AndroidConsolizer.Patches
                 );
             }
 
+            // openRewardsMenu — adjust chest contents for partially-claimed rewards (#41f)
+            var openRewardsMethod = AccessTools.Method(typeof(JunimoNoteMenu), "openRewardsMenu");
+            if (openRewardsMethod != null)
+            {
+                harmony.Patch(
+                    original: openRewardsMethod,
+                    postfix: new HarmonyMethod(typeof(JunimoNoteMenuPatches), nameof(OpenRewardsMenu_Postfix))
+                );
+            }
+
             // DIAGNOSTIC: patch performSpecialContextChecks on ItemGrabMenu to trace reward flow
             var perfSpecialMethod = AccessTools.Method(typeof(ItemGrabMenu), "performSpecialContextChecks");
             Monitor.Log($"[DIAG-41f] performSpecialContextChecks method lookup: {(perfSpecialMethod != null ? perfSpecialMethod.ToString() : "NULL")}", LogLevel.Info);
@@ -1107,6 +1117,49 @@ namespace AndroidConsolizer.Patches
             catch (Exception ex)
             {
                 Monitor.Log($"[DIAG-41] SavePendingRewardIndices error: {ex.Message}", LogLevel.Warn);
+            }
+        }
+
+        /// <summary>After openRewardsMenu creates a new ItemGrabMenu, adjust chest stacks
+        /// to subtract items already taken in previous opens (partial reward tracking).</summary>
+        private static void OpenRewardsMenu_Postfix()
+        {
+            try
+            {
+                if (ItemGrabMenuPatches.PartialRewardTaken.Count == 0) return;
+                if (!(Game1.activeClickableMenu is ItemGrabMenu igm)) return;
+
+                var chestInv = igm.ItemsToGrabMenu?.actualInventory;
+                if (chestInv == null) return;
+
+                var callback = AccessTools.Field(typeof(ItemGrabMenu), "behaviorOnItemGrab")?.GetValue(igm) as Delegate;
+
+                for (int i = chestInv.Count - 1; i >= 0; i--)
+                {
+                    if (chestInv[i] == null) continue;
+                    int bundleIndex = chestInv[i].SpecialVariable;
+                    int taken;
+                    if (!ItemGrabMenuPatches.PartialRewardTaken.TryGetValue(bundleIndex, out taken)) continue;
+
+                    chestInv[i].Stack -= taken;
+                    if (chestInv[i].Stack <= 0)
+                    {
+                        // All items from this bundle were taken across previous opens
+                        var claimed = chestInv[i];
+                        chestInv[i] = null;
+                        ItemGrabMenuPatches.PartialRewardTaken.Remove(bundleIndex);
+                        callback?.DynamicInvoke(claimed, Game1.player);
+                        Monitor.Log($"[ChestTransfer] Reward fully claimed on reopen for bundle {bundleIndex}", LogLevel.Debug);
+                    }
+                    else
+                    {
+                        Monitor.Log($"[ChestTransfer] Reward adjusted on reopen for bundle {bundleIndex}: reduced by {taken}, {chestInv[i].Stack} remain", LogLevel.Debug);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Monitor.Log($"[ChestTransfer] OpenRewardsMenu_Postfix error: {ex.Message}", LogLevel.Warn);
             }
         }
 

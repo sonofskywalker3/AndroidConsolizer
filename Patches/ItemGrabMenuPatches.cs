@@ -87,6 +87,10 @@ namespace AndroidConsolizer.Patches
         private const int ID_TRASH_PLAYER = 54105;   // was 105
         private const int ID_CLOSE_X = 54500;        // was -500 (sentinel, not resolvable by getComponentWithID)
 
+        /// <summary>Tracks partial reward claims: bundleIndex → number of items taken.
+        /// Persists across reward menu close/reopen so GetBundleRewards repopulation can be adjusted.</summary>
+        internal static Dictionary<int, int> PartialRewardTaken = new Dictionary<int, int>();
+
         /// <summary>Apply Harmony patches.</summary>
         public static void Apply(Harmony harmony, IMonitor monitor)
         {
@@ -1293,7 +1297,7 @@ namespace AndroidConsolizer.Patches
             {
                 chestInv[slotIndex] = null;
                 Game1.playSound("stoneStep");
-                InvokeBehaviorOnItemGrab(menu, item);
+                InvokeBehaviorOnItemGrab(menu, item, stackBefore);
                 if (ModEntry.Config.VerboseLogging)
                     Monitor.Log($"[ChestTransfer] Took {stackBefore}x {item.DisplayName} from chest", LogLevel.Debug);
             }
@@ -1301,7 +1305,7 @@ namespace AndroidConsolizer.Patches
             {
                 // Partial — leftover stays in chest (same reference, already updated)
                 Game1.playSound("stoneStep");
-                InvokeBehaviorOnItemGrab(menu, item);
+                InvokeBehaviorOnItemGrab(menu, item, stackBefore - leftover.Stack);
                 if (ModEntry.Config.VerboseLogging)
                     Monitor.Log($"[ChestTransfer] Partial: took {stackBefore - leftover.Stack}x {item.DisplayName}, {leftover.Stack} remain in chest", LogLevel.Debug);
             }
@@ -1314,7 +1318,7 @@ namespace AndroidConsolizer.Patches
                 _swapSourceSlot = slotIndex;
                 _swapFromChest = true;
                 Game1.playSound("dwop");
-                InvokeBehaviorOnItemGrab(menu, item);
+                InvokeBehaviorOnItemGrab(menu, item, stackBefore);
                 if (ModEntry.Config.VerboseLogging)
                     Monitor.Log($"[ChestTransfer] Picked up {_swapHeldItem.DisplayName} from chest slot {slotIndex} for swap", LogLevel.Debug);
             }
@@ -1506,8 +1510,9 @@ namespace AndroidConsolizer.Patches
 
         /// <summary>Invoke the menu's behaviorOnItemGrab callback if set (e.g. rewardGrabbed for bundle rewards).
         /// For reward menus, defers the callback until all items from the same bundle (SpecialVariable) are taken,
-        /// preventing partial grabs from clearing the entire bundle's reward flag.</summary>
-        private static void InvokeBehaviorOnItemGrab(ItemGrabMenu menu, Item item)
+        /// preventing partial grabs from clearing the entire bundle's reward flag.
+        /// Tracks partial grabs so the reward menu can adjust stacks on re-open.</summary>
+        private static void InvokeBehaviorOnItemGrab(ItemGrabMenu menu, Item item, int takenCount = 1)
         {
             try
             {
@@ -1526,13 +1531,19 @@ namespace AndroidConsolizer.Patches
                     {
                         if (chestInv[i] != null && chestInv[i].SpecialVariable == bundleIndex)
                         {
+                            // More items remain — defer callback, track how many were taken
+                            int prev;
+                            PartialRewardTaken.TryGetValue(bundleIndex, out prev);
+                            PartialRewardTaken[bundleIndex] = prev + takenCount;
                             if (ModEntry.Config.VerboseLogging)
-                                Monitor.Log($"[ChestTransfer] behaviorOnItemGrab deferred for {item?.DisplayName} — more items from bundle {bundleIndex} remain", LogLevel.Debug);
+                                Monitor.Log($"[ChestTransfer] behaviorOnItemGrab deferred for {item?.DisplayName} — more items from bundle {bundleIndex} remain (total taken: {PartialRewardTaken[bundleIndex]})", LogLevel.Debug);
                             return;
                         }
                     }
                 }
 
+                // All items from this bundle taken — fire callback and clear tracking
+                PartialRewardTaken.Remove(bundleIndex);
                 callback.DynamicInvoke(item, Game1.player);
                 if (ModEntry.Config.VerboseLogging)
                     Monitor.Log($"[ChestTransfer] behaviorOnItemGrab invoked for {item?.DisplayName} (bundle {bundleIndex})", LogLevel.Debug);
