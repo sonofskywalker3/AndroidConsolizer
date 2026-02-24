@@ -33,10 +33,13 @@ All items done. See `DONE.md` and `.planning/STATE.md` quick tasks table.
 - **41b. FIXED (v3.4.72)** — Bundle reward no longer redeemable multiple times. Root cause: `rewardGrabbed()` doesn't reliably clear `BundleRewards` on Android. Fix: when controller A opens rewards menu, save pending bundle indices. On overview re-entry, force-clear those `BundleRewards` entries and null presentButton before `InitOverviewNavigation` runs.
 - **41c. FIXED (v3.4.69)** — Bundle reward gift (presentButton) now navigable with controller. Added presentButton to `allClickableComponents` in `InitOverviewNavigation` with ID 105, wired into spatial neighbor graph.
 - **41d. FIXED (v3.4.70)** — Hover animation and tooltip now clear when navigating from a bundle to a non-bundle component (presentButton, area buttons). `SyncHighlightedBundle` was returning early when target wasn't a Bundle — now resets all non-complete bundle sprites and sets `highlightedBundle = -1` before returning.
-- **41e. Cursor invisible in reward menu** — When pressing A on presentButton to open the reward ItemGrabMenu, the cursor is not visible. Need to ensure our ItemGrabMenu cursor handling applies to reward menus (may not be recognized as a chest-context menu).
-- **41f. Can deposit items into reward menu / present disappears on B-close** — Two related issues:
-  - Present disappeared when pressing B without taking items. Root cause: `ClearPendingRewards` force-cleared ALL BundleRewards unconditionally. Fix (v3.4.76): Track actual grabs via `rewardGrabbed` postfix, only clear grabbed indices.
-  - Decompiled source shows deposits SHOULD be blocked (`reverseGrab:false`, `behaviorFunction:null` → deposit check fails). Need to verify on device whether deposits actually happen on Android.
+- **41e. FIXED (v3.4.78)** — Cursor visible in reward menu. ItemGrabMenu cursor handling already applied; the fix for 41f (adding `!reverseGrab` deposit block and `behaviorOnItemGrab` callback) made the reward menu fully functional with controller.
+- **41f. FIXED (v3.4.76-v3.4.83)** — Reward menu controller support fully working. Multiple issues fixed across versions:
+  - Present disappeared on B-close: `ClearPendingRewards` force-cleared ALL BundleRewards. Fix (v3.4.76): track actual grabs via `rewardGrabbed` postfix, only clear grabbed indices.
+  - Deposits into reward menu: our `TransferToChest` bypassed `reverseGrab` check. Fix (v3.4.78): added `!reverseGrab` guard.
+  - `rewardGrabbed` callback never fired via controller: our `TransferFromChest` bypassed `behaviorOnItemGrab`. Fix (v3.4.78): invoke callback via reflection after transfers.
+  - RT/LT switching to GameMenu from walked-in CC rooms: Fix (v3.4.79): added `fromGameMenu` check.
+  - Y (take-one) blocked on reward menus (v3.4.83): rewards are all-or-nothing per stack. Plays cancel sound.
 - **File:** `Patches/JunimoNoteMenuPatches.cs`
 
 ### 45. FIXED (v3.4.74) — Purchase Button on Cash Bundles (Vault)
@@ -181,6 +184,14 @@ All items done. See `DONE.md` and `.planning/STATE.md` quick tasks table.
 - Same pattern as #44 (zero-price items greyed out on sell tab) — override `highlightMethod` on the inventory to only highlight valid donation items.
 - **Investigation needed:** How does the game determine valid donations? Check `Bundle.canAcceptThisItem()` or equivalent. Need to match against the bundle's remaining required ingredients.
 - **File:** `Patches/JunimoNoteMenuPatches.cs`
+
+### 47. Missed Rewards Chest Not Appearing
+- After completing a CC room with unclaimed bundle rewards, the "missed rewards" chest should appear at tile (22, 10) in the Community Center. On Android, the chest never appears — even when reward stacks are left completely untouched.
+- **Vanilla system:** `CommunityCenter.checkForMissedRewards()` iterates `bundleRewards`, checks `bundleRewards[key] == true && areasComplete[area] == true`, populates `missedRewardsChest` items. Called from `doRestoreAreaCutscene` (line 875), `resetSharedState` (line 562), and `performAction` on "MissedRewards" tile (line 357). Chest tile modification via `showMissedRewardsChestEvent`.
+- **Confirmed broken:** User left 2 of 4 reward stacks completely untouched, room completed, no chest appeared. `BundleRewards` still showed pending indices `[23, 25]` in logs after room completion.
+- **Investigation needed:** Does `showMissedRewardsChestEvent` fire on Android? Does the tile modification at (22, 10) work? Is `checkForMissedRewards` ever called? May be an Android-specific issue with the event system or tile layer.
+- **Possible fix approaches:** If the event never fires, we could hook `markAreaAsComplete` or `doRestoreAreaCutscene` to force-check for missed rewards. If the chest exists but is invisible, may need tile/sprite fix.
+- **File:** Likely new `Patches/CommunityCenterPatches.cs`
 
 ### 38. GMCM Two-Tier Config (Simple Page + Granular File)
 - GMCM currently has a flat list of toggles. With 20+ features, this is heading toward a 68-item checklist nobody wants to scroll through.
