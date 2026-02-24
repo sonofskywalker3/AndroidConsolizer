@@ -37,11 +37,11 @@ jobs:
           fi
 
       - name: Upload to Nexus Mods
-        uses: Nexus-Mods/upload-action@v2.2.0
+        uses: Nexus-Mods/upload-action@main
         with:
           api_key: ${{ secrets.NEXUS_API_KEY }}
           file_id: 41869
           game_domain_name: stardewvalley
           filename: "AndroidConsolizer/bin/Release/net6.0/AndroidConsolizer ${{ steps.version.outputs.version }}.zip"
           version: ${{ steps.version.outputs.version }}
-          file_category: main
+          fileCategory: main
