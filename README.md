@@ -2,7 +2,7 @@
 
 A SMAPI mod that brings console-style controller support to Android Stardew Valley. Play with a controller like you would on Nintendo Switch - 12-slot toolbar rows, proper shop purchasing, chest management, and more.
 
-## Current Version: 3.4.0 — The Game Menu Release
+## Current Version: 3.5.0 — The Chest & Menu Polish Release
 
 ## Features
 
@@ -35,7 +35,10 @@ When "Use Bumpers Instead of Triggers" is enabled:
 - **Right stick**: Jump 5 items at a time on buy tab (hold to repeat)
 - **Y button icon**: Visual tab-switch hint on the inventory button (adapts to controller layout)
 - Touch tab-switch button blocked when controller is connected (prevents accidental taps)
-- Sell price tooltip with gold coin icon appears next to selected item on sell tab
+- Sell price tooltip with gold coin icon appears next to selected item on sell tab (all item types — weapons, rings, boots, not just objects)
+- Non-sellable items (0g value) greyed out on sell tab
+- Visible cursor on both buy and sell tabs (fixes Android's missing cursor at Blacksmith, Joja, and other shops)
+- Left stick hold-to-repeat navigation on buy/sell tabs (15-tick delay, 4-tick repeat)
 - Supports trade-item shops (Desert Trader), tool upgrades, recipes, and all special purchases
 - Respects available stock, player money, and trade item requirements
 
@@ -51,6 +54,7 @@ When "Use Bumpers Instead of Triggers" is enabled:
 
 ### Inventory Fixes
 - **X button**: Sort your inventory
+- **Equipment tooltips**: Hovering over equipment slots (hat, rings, boots, shirt, pants, trinkets) shows item stats
 
 ### Shipping Bin Fix (Console-Style)
 - **A button**: Ship entire stack from selected inventory slot
@@ -71,20 +75,26 @@ When "Use Bumpers Instead of Triggers" is enabled:
 - Prevents Robin's building menu from instantly closing when opened with controller
 - **Full joystick control in farm view** — Build, Move, and Demolish all work with the controller
   - Left stick moves a visible cursor across the farm, panning the viewport at screen edges
-  - **Build mode**: Press A to set the building position at your cursor, press A again to confirm placement.
-  - **Move mode**: Press A to select a building, move cursor to new location, press A to set the position, press A again to confirm.
+  - Building ghost tracks cursor in real time at all zoom levels
+  - **Build mode**: Press A to confirm placement at your cursor position
+  - **Move mode**: Press A to select a building, move cursor to new location, press A to confirm
   - **Demolish mode**: Press A on a building to highlight it (green), press A again to confirm demolition. Move cursor off the building to deselect without demolishing.
   - Touch still works normally alongside the joystick cursor
+- **Building skin picker**: Navigate skin options with controller, A cycles appearances
 
 ### Community Center Bundle Navigation
 - **Full controller support** for the Community Center JunimoNoteMenu
 - **Bundle overview**: Navigate between bundles with D-Pad/thumbstick, A opens the donation page
   - Cursor remembers which bundle you were viewing when returning from the donation page
   - LB/RB switches between Community Center rooms (vanilla behavior)
+  - Completed bundle icons display correctly (no false incomplete states)
 - **Donation page**: Navigate inventory with D-Pad/thumbstick (6-column grid), A donates items
   - Right from the last inventory column enters the ingredient list zone
   - Navigate ingredients to see what each bundle slot needs (tooltip shows item name)
   - Left from the ingredient list returns to inventory
+- **Vault bundles**: A on the purchase button pays for the bundle (cursor-based, single press)
+- **Bundle rewards**: Navigate to the present icon, A opens rewards. A takes full stacks. Rewards properly clear after collection. B-close without taking preserves rewards for next visit.
+- **LT/RT blocked** when CC is opened by walking into a room (only switches tabs when opened from GameMenu)
 - Custom cursor drawn on both overview and donation pages (Android suppresses the default cursor here)
 
 ### Game Menu Navigation
@@ -143,6 +153,8 @@ When "Use Bumpers Instead of Triggers" is enabled:
 | **CC overview** | A | Open bundle donation page |
 | **CC donation** | D-Pad/stick | Navigate inventory / ingredient list |
 | **CC donation** | A | Donate item from inventory |
+| **CC vault** | A | Purchase vault bundle |
+| **CC rewards** | A | Take full reward stack |
 | **Game Menu** | LT/RT | Switch between tabs |
 | **Social tab** | D-Pad/stick | Navigate villager list (3 at a time) |
 | **Social tab** | Right stick | Fast scroll villager list |
@@ -270,10 +282,9 @@ Output: `bin/Release/net6.0/AndroidConsolizer X.X.X.zip`
 
 ## Known Issues
 
-- Shop sell tab not navigable when switched via touchscreen tap (Y button works)
 - Geode breaking menu works but has no visual feedback with controller
 - Trash can lid animation doesn't play on Android with controller hover
-- Chest uses red square selector instead of finger cursor (cosmetic)
+- Museum donation menu requires touch for item placement (controller can't place items on the grid)
 
 ## TODO / Roadmap
 
@@ -281,7 +292,8 @@ Output: `bin/Release/net6.0/AndroidConsolizer X.X.X.zip`
 - Zoom control slider in options menu
 - Museum donation menu controller support
 - Geode breaking menu visual feedback
-- Chest style picker snap point
+- Tool charging while moving (console parity)
+- Slingshot aim-and-fire with controller
 - Expanded controller testing (8BitDo, DualSense, etc.)
 
 ## Why "Consolizer"?
@@ -299,6 +311,28 @@ Android Stardew Valley has broken controller support that makes it nearly unplay
 MIT License - Feel free to modify and redistribute.
 
 ## Changelog
+
+### 3.5.0 — The Chest & Menu Polish Release
+- **CarpenterMenu Polish** — Building ghost now tracks cursor continuously in real time at all zoom levels. Building skin picker fully navigable with controller (A cycles skins). Fixed ghost/cursor speed mismatch, zoom-incorrect offsets, and GetMouseState override persisting after menu close.
+- **Shop Cursor Fixes** — Visible cursor now appears on both buy and sell tabs at all shops (Blacksmith, Joja, and others where Android hid it). Left stick hold-to-repeat navigation added (15-tick delay, 4-tick repeat matching game timing).
+- **Sell Tab Improvements** — Sell price tooltip works for all item types (weapons, rings, boots — not just objects). Items with 0g sell value greyed out on sell tab.
+- **Equipment Slot Tooltips** — Hovering over equipment slots (hat, rings, boots, shirt, pants, trinkets) now shows item stats. Android's stripped `drawToolTip` call restored via postfix.
+- **Community Center Bundle Fixes**
+  - Completed bundle icons now show correct completion state on overview (no false incomplete icons)
+  - Bundle reward (present) navigable with controller and properly clears after collection
+  - B-close on reward menu preserves unclaimed rewards for next visit
+  - Controller deposits into reward menus blocked (rewards are take-only)
+  - Y blocked on reward menus (rewards are all-or-nothing per stack)
+  - Vault bundles: A on purchase button pays for the bundle (cursor-based, single press)
+  - LT/RT tab switching blocked when CC is opened by walking into a room (only works from GameMenu)
+  - Hover animation and tooltip properly clear when navigating between bundles and non-bundle components
+- **Chest Tooltip Positioning** — Tooltips reposition below/above the slot with proper cursor clearance, adapting to screen size
+- **Finger Cursor** — Red selection box replaced with finger cursor in all InventoryMenu contexts (chests, crafting, collections)
+- **Dialogue Width Fix** — Dialogue boxes no longer get squished on small screens when custom toolbar is active
+- **Watering Can Gauge** — Water level gauge renders correctly in inventory, chest, and toolbar contexts
+- **Boot Freeze Fix** — Intermittent white screen freeze on SMAPI Android boot detected and auto-recovered
+- **Button Remapping Toggle** — New `EnableButtonRemapping` config option to disable A/B and X/Y swaps independently of other features
+- **Codebase cleanup** — Removed 166 lines of diagnostic patches and logging. All remaining debug logs gated behind VerboseLogging.
 
 ### 3.4.0 — The Game Menu Release
 - **Social Tab Navigation** — Full controller support for the Social page
