@@ -45,6 +45,22 @@ All items done. See `DONE.md` and `.planning/STATE.md` quick tasks table.
 - **Log finding:** Equipment slot components exist at correct positions (IDs 101-104). `highlightEquipmentIcon = -1`.
 - **File:** `Patches/InventoryPagePatches.cs`
 
+### 43. Sell Tooltip Missing for Non-Object Items (Weapons, etc.)
+- Sell price tooltip only shows for `StardewValley.Object` items. Non-Object items like `MeleeWeapon`, `Ring`, `Boots` are skipped with an early return in `ShopMenu_Draw_Postfix`.
+- **But selling works correctly** — the A-button sell code already handles non-Object items via `salePrice() / 2`. Only the tooltip display is broken.
+- **Confirmed:** Steel Smallsword sold for 50g at Adventurer's Guild with no tooltip shown.
+- **Fix:** Remove the `is not StardewValley.Object` early return. Compute sell price using the same logic as the sell code: `obj.sellToStorePrice()` for Object items, `salePrice() / 2` for everything else. Show tooltip for any item with price > 0.
+- **File:** `Patches/ShopMenuPatches.cs` — `ShopMenu_Draw_Postfix`, tooltip section around line 880.
+
+### 44. Zero-Price Items Sold for Free via Touch Simulation
+- Items with `sellToStorePrice()=0` (Mixed Seeds, Mixed Flower Seeds) are correctly blocked by our `ReceiveGamePadButton_Prefix` (plays cancel sound, returns false).
+- **BUT:** Android touch simulation fires `receiveLeftClick` through a SEPARATE path after every A press. Vanilla's sell logic in receiveLeftClick removes the item for 0g, bypassing our check. Log confirms: items disappear after repeated A presses despite every press being blocked by our prefix.
+- **Two-part fix needed:**
+  1. **Grey out unsellable items** — Items with sell price 0 should appear greyed out on the sell tab, matching vanilla's behavior for items not in `categoriesToSellHere`. Need to override `highlightItemToSell` or provide a custom highlight function that also checks sell price > 0.
+  2. **Block touch-sim sell for 0-price items** — In `ReceiveLeftClick_Prefix`, when on sell tab with controller connected, block clicks on inventory slots containing items with sell price 0. Alternatively, block ALL touch-sim clicks on sell tab inventory slots (force sells through our gamepad handler only).
+- **Affected items:** Mixed Seeds, Mixed Flower Seeds, and any other item where `salePrice()` returns 0 but `highlightItemToSell()` returns true (item category is accepted by the shop but individual item has no value).
+- **File:** `Patches/ShopMenuPatches.cs`
+
 ---
 
 ## Milestone 3: Overworld Cursor & Accessibility (v3.6)
