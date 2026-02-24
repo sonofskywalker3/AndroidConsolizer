@@ -1,0 +1,47 @@
+name: Publish to Nexus Mods
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish (leave empty to auto-detect from manifest.json)'
+        required: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: AndroidConsolizer
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 6
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '6.0.x'
+
+      - name: Build
+        run: dotnet build AndroidConsolizer.csproj -c Release
+
+      - name: Get version
+        id: version
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            VERSION=$(grep -oP '"Version":\s*"\K[^"]+' manifest.json)
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Upload to Nexus Mods
+        uses: Nexus-Mods/upload-action@v2.2.0
+        with:
+          api_key: ${{ secrets.NEXUS_API_KEY }}
+          file_id: 41869
+          game_domain_name: stardewvalley
+          filename: "AndroidConsolizer/bin/Release/net6.0/AndroidConsolizer ${{ steps.version.outputs.version }}.zip"
+          version: ${{ steps.version.outputs.version }}
+          file_category: main
