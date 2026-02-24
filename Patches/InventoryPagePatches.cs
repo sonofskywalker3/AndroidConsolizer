@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using HarmonyLib;
+using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 using StardewModdingAPI;
 using StardewValley;
@@ -58,10 +60,10 @@ namespace AndroidConsolizer.Patches
                     prefix: new HarmonyMethod(typeof(InventoryPagePatches), nameof(InventoryMenu_ReceiveLeftClick_Prefix))
                 );
 
-                // DIAGNOSTIC #42: Patch performHoverAction to log equipment tooltip coords
+                // Draw postfix — equipment slot tooltips (Android's draw() doesn't call drawToolTip)
                 harmony.Patch(
-                    original: AccessTools.Method(typeof(InventoryPage), nameof(InventoryPage.performHoverAction)),
-                    prefix: new HarmonyMethod(typeof(InventoryPagePatches), nameof(InventoryPage_PerformHoverAction_Diag))
+                    original: AccessTools.Method(typeof(InventoryPage), nameof(InventoryPage.draw), new[] { typeof(SpriteBatch) }),
+                    postfix: new HarmonyMethod(typeof(InventoryPagePatches), nameof(InventoryPage_Draw_Postfix))
                 );
 
                 Monitor.Log("InventoryPage patches applied successfully.", LogLevel.Trace);
@@ -343,24 +345,52 @@ namespace AndroidConsolizer.Patches
             return true;
         }
 
-        // DIAGNOSTIC #42: Equipment tooltip hover tracking
-        private static int _lastEquipDiagTick = -1;
-
-        private static void InventoryPage_PerformHoverAction_Diag(InventoryPage __instance, int x, int y)
+        /// <summary>
+        /// Draw postfix for InventoryPage — draws equipment slot tooltips.
+        /// Android's InventoryPage.draw() doesn't call drawToolTip (stripped from PC version).
+        /// We read the equipped item directly from the player based on snapped slot ID,
+        /// bypassing getMouseX/Y() which can be unreliable on Android.
+        /// </summary>
+        private static void InventoryPage_Draw_Postfix(InventoryPage __instance, SpriteBatch b)
         {
-            if (Game1.ticks - _lastEquipDiagTick < 120) return;
-
-            var snapped = __instance.currentlySnappedComponent;
-            if (snapped == null) return;
-
-            bool isEquipSlot = snapped.myID >= 101 && snapped.myID <= 120;
-            if (!isEquipSlot) return;
-
-            _lastEquipDiagTick = Game1.ticks;
-            Monitor.Log($"[DIAG-42] performHoverAction({x},{y}) snapped={snapped.name}(ID:{snapped.myID}) bounds={snapped.bounds} containsPoint={snapped.containsPoint(x, y)} mouseXY=({Game1.getMouseX()},{Game1.getMouseY()})", LogLevel.Info);
-            foreach (var icon in __instance.equipmentIcons)
+            try
             {
-                Monitor.Log($"[DIAG-42]   equip '{icon.name}' ID:{icon.myID} bounds={icon.bounds} contains({x},{y})={icon.containsPoint(x, y)}", LogLevel.Info);
+                if (!GamePad.GetState(PlayerIndex.One).IsConnected)
+                    return;
+
+                var snapped = __instance.currentlySnappedComponent;
+                if (snapped == null || snapped.myID < 101 || snapped.myID > 120)
+                    return;
+
+                Item equipItem = GetEquipmentForSlot(snapped.myID);
+                if (equipItem == null)
+                    return;
+
+                IClickableMenu.drawToolTip(b, equipItem.getDescription(), equipItem.DisplayName, equipItem);
+            }
+            catch { }
+        }
+
+        /// <summary>Get the equipped item for a given equipment slot component ID.</summary>
+        private static Item GetEquipmentForSlot(int slotId)
+        {
+            switch (slotId)
+            {
+                case 101: return Game1.player.hat.Value;
+                case 102: return Game1.player.rightRing.Value;
+                case 103: return Game1.player.leftRing.Value;
+                case 104: return Game1.player.boots.Value;
+                case 108: return Game1.player.shirtItem.Value;
+                case 109: return Game1.player.pantsItem.Value;
+                default:
+                    // Trinket slots (120+)
+                    if (slotId >= 120 && Game1.player.trinketItems != null)
+                    {
+                        int idx = slotId - 120;
+                        if (idx < Game1.player.trinketItems.Count)
+                            return Game1.player.trinketItems[idx];
+                    }
+                    return null;
             }
         }
 
