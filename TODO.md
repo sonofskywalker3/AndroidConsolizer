@@ -27,10 +27,10 @@ All items done. See `DONE.md` and `.planning/STATE.md` quick tasks table.
 - Can't switch pages with controller.
 - **Investigation needed:** Check which menu class this is, how pages are structured, what navigation exists.
 
-### 40. Shop "Sell" Interface — No Cursor
-- Selling works functionally (Adventurer's Guild confirmed working, Clint also works) but there's no visible cursor in sell mode.
-- **Log finding:** Zero AndroidConsolizer sell-mode log lines — the mod has no sell-mode awareness or patches.
-- **Investigation needed:** Check if sell mode is a different ShopMenu state. Our ShopMenuPatches likely only handle the buy side.
+### 40. Shop Cursor Fixes
+- **40a. FIXED (v3.4.57)** — Sell tab cursor missing at Blacksmith and Joja. Root cause: `Game1.mouseCursorTransparency=0` at these shops (=1 at others). Fix: draw cursor ourselves when transparency < 0.01, at `Game1.getMouseX/Y()` (same position vanilla uses).
+- **40b. Buy tab cursor missing** — `drawMouse()` is never called on the buy tab when `SnappyMenus=true` (vanilla condition: `!SnappyMenus || inventoryVisible`). Need to draw cursor in draw postfix when `!inventoryVisible` and `SnappyMenus`, at `Game1.getMouseX/Y()`.
+- **40c. Left stick hold-to-repeat in menus** — Holding left stick only moves one slot, then stops. Not a regression — never existed. The game's `directionKeyPolling` repeat system only applies to `childMenu`/`textEntry`, NOT `activeClickableMenu` (ShopMenu). SMAPI fires `receiveGamePadButton(LeftThumbstickRight)` only on state transitions, not on held state. Need to implement our own hold-to-repeat: track stick direction in Update_Postfix, apply initial delay then fire `receiveGamePadButton` at repeat rate. Same pattern as our Y-sell and LB/RB hold-to-repeat.
 - **File:** `Patches/ShopMenuPatches.cs`
 
 ### 41. Community Center Bundle — Completed Bundle Issues
