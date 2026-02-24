@@ -12,9 +12,6 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: AndroidConsolizer
     steps:
       - uses: actions/checkout@v4
 
@@ -42,6 +39,6 @@ jobs:
           api_key: ${{ secrets.NEXUS_API_KEY }}
           file_id: 41869
           game_domain_name: stardewvalley
-          filename: "AndroidConsolizer/bin/Release/net6.0/AndroidConsolizer ${{ steps.version.outputs.version }}.zip"
+          filename: "bin/Release/net6.0/AndroidConsolizer ${{ steps.version.outputs.version }}.zip"
           version: ${{ steps.version.outputs.version }}
           fileCategory: main
