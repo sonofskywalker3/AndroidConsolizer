@@ -956,6 +956,13 @@ namespace AndroidConsolizer.Patches
                             }
                             else if (playerSlotIndex >= 0)
                             {
+                                // Block deposits when menu doesn't allow it (e.g. bundle reward menus)
+                                if (!__instance.reverseGrab)
+                                {
+                                    Game1.playSound("cancel");
+                                    return false;
+                                }
+
                                 if (remapped == Buttons.Y)
                                 {
                                     // Y strips attachments from tools one at a time before transferring
@@ -1286,6 +1293,7 @@ namespace AndroidConsolizer.Patches
             {
                 chestInv[slotIndex] = null;
                 Game1.playSound("stoneStep");
+                InvokeBehaviorOnItemGrab(menu, item);
                 if (ModEntry.Config.VerboseLogging)
                     Monitor.Log($"[ChestTransfer] Took {stackBefore}x {item.DisplayName} from chest", LogLevel.Debug);
             }
@@ -1293,6 +1301,7 @@ namespace AndroidConsolizer.Patches
             {
                 // Partial — leftover stays in chest (same reference, already updated)
                 Game1.playSound("stoneStep");
+                InvokeBehaviorOnItemGrab(menu, item);
                 if (ModEntry.Config.VerboseLogging)
                     Monitor.Log($"[ChestTransfer] Partial: took {stackBefore - leftover.Stack}x {item.DisplayName}, {leftover.Stack} remain in chest", LogLevel.Debug);
             }
@@ -1305,6 +1314,7 @@ namespace AndroidConsolizer.Patches
                 _swapSourceSlot = slotIndex;
                 _swapFromChest = true;
                 Game1.playSound("dwop");
+                InvokeBehaviorOnItemGrab(menu, item);
                 if (ModEntry.Config.VerboseLogging)
                     Monitor.Log($"[ChestTransfer] Picked up {_swapHeldItem.DisplayName} from chest slot {slotIndex} for swap", LogLevel.Debug);
             }
@@ -1332,6 +1342,7 @@ namespace AndroidConsolizer.Patches
                 if (item.Stack <= 0)
                     chestInv[slotIndex] = null;
                 Game1.playSound("stoneStep");
+                InvokeBehaviorOnItemGrab(menu, one);
                 if (ModEntry.Config.VerboseLogging)
                     Monitor.Log($"[ChestTransfer] Took 1x {one.DisplayName} from chest ({item?.Stack ?? 0} remain)", LogLevel.Debug);
             }
@@ -1347,6 +1358,7 @@ namespace AndroidConsolizer.Patches
                 _swapSourceSlot = -1; // no specific slot — source stack may still exist
                 _swapFromChest = true;
                 Game1.playSound("dwop");
+                InvokeBehaviorOnItemGrab(menu, one);
                 if (ModEntry.Config.VerboseLogging)
                     Monitor.Log($"[ChestTransfer] Picked up 1x {one.DisplayName} from chest for swap ({item?.Stack ?? 0} remain)", LogLevel.Debug);
             }
@@ -1489,6 +1501,26 @@ namespace AndroidConsolizer.Patches
                 Game1.playSound("dwop");
                 if (ModEntry.Config.VerboseLogging)
                     Monitor.Log($"[ChestTransfer] Picked up 1x {one.DisplayName} from player for swap ({item?.Stack ?? 0} remain)", LogLevel.Debug);
+            }
+        }
+
+        /// <summary>Invoke the menu's behaviorOnItemGrab callback if set (e.g. rewardGrabbed for bundle rewards).</summary>
+        private static void InvokeBehaviorOnItemGrab(ItemGrabMenu menu, Item item)
+        {
+            try
+            {
+                var callback = AccessTools.Field(typeof(ItemGrabMenu), "behaviorOnItemGrab")?.GetValue(menu) as Delegate;
+                if (callback != null)
+                {
+                    callback.DynamicInvoke(item, Game1.player);
+                    if (ModEntry.Config.VerboseLogging)
+                        Monitor.Log($"[ChestTransfer] behaviorOnItemGrab invoked for {item?.DisplayName}", LogLevel.Debug);
+                }
+            }
+            catch (Exception ex)
+            {
+                if (ModEntry.Config.VerboseLogging)
+                    Monitor.Log($"[ChestTransfer] behaviorOnItemGrab error: {ex.Message}", LogLevel.Debug);
             }
         }
 
