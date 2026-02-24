@@ -16,50 +16,34 @@ All items done. See `DONE.md` and `.planning/STATE.md` quick tasks table.
 
 ### 34. CarpenterMenu — Remaining Issues
 - **34a. FIXED (v3.4.48)** — Style picker A on arrows now cycles skins instead of exiting.
-- **34b. FIXED (v3.4.49)** — Ghost now centers on cursor (offset by half building dimensions in GetMouseState).
-- **34c. Dead zone in bottom-right corner** — An area in the bottom-right of the farm view can't be clicked/selected. Likely cursor bounds issue with viewport dimensions.
+- **34b. FIXED (v3.4.49, v3.4.64)** — Ghost centers on cursor. v3.4.64: ghost tracks cursor continuously (no two-press), zoom-correct offset, direct _drawAtX/_drawAtY setting.
+- **34c. Dead zone in bottom-right corner** — User couldn't reproduce on TCL (zoom=1.875). May have been Odin-specific or fixed by zoom correction. Keeping open for verification.
 - **34d. FIXED (v3.4.47)** — `_overridingMousePosition` now cleared in OnMenuClosed(). Chest interface works after build menu.
-- **34e. Building placement needs user verification** — v3.4.50 deployed, user reports "better" but hasn't done a full build cycle yet.
+- **34e. FIXED (v3.4.64)** — Building placement now works at all zoom levels. Was using unscaled offset (tileWidth * 32) instead of zoom-scaled (tileWidth * 32 * zoom). Ghost tracks cursor in real time, single A press to build.
 - **File:** `Patches/CarpenterMenuPatches.cs`
-
-### 39. Monster Eradication Tracking Page
-- No cursor visible on the monster eradication goals page (Adventurer's Guild tracking).
-- Can't switch pages with controller.
-- **Investigation needed:** Check which menu class this is, how pages are structured, what navigation exists.
 
 ### 40. Shop Cursor Fixes
 - **40a. FIXED (v3.4.57)** — Sell tab cursor missing at Blacksmith and Joja. Root cause: `Game1.mouseCursorTransparency=0` at these shops (=1 at others). Fix: draw cursor ourselves when transparency < 0.01, at `Game1.getMouseX/Y()` (same position vanilla uses).
-- **40b. Buy tab cursor missing** — `drawMouse()` is never called on the buy tab when `SnappyMenus=true` (vanilla condition: `!SnappyMenus || inventoryVisible`). Need to draw cursor in draw postfix when `!inventoryVisible` and `SnappyMenus`, at `Game1.getMouseX/Y()`.
-- **40c. Left stick hold-to-repeat in menus** — Holding left stick only moves one slot, then stops. Not a regression — never existed. The game's `directionKeyPolling` repeat system only applies to `childMenu`/`textEntry`, NOT `activeClickableMenu` (ShopMenu). SMAPI fires `receiveGamePadButton(LeftThumbstickRight)` only on state transitions, not on held state. Need to implement our own hold-to-repeat: track stick direction in Update_Postfix, apply initial delay then fire `receiveGamePadButton` at repeat rate. Same pattern as our Y-sell and LB/RB hold-to-repeat.
+- **40b. FIXED (v3.4.59-v3.4.62)** — Buy tab cursor missing. Root cause: `drawMouse()` skipped when `SnappyMenus && !inventoryVisible`. Fix: draw cursor at `forSaleButton` matching `hoveredItem` (getMouseX/Y and currentlySnappedComponent both unreliable on Android buy tab).
+- **40c. FIXED (v3.4.60)** — Left stick hold-to-repeat. Root cause: game's `directionKeyPolling` only fires repeat for `childMenu`/`textEntry`, not `activeClickableMenu`. Fix: track stick direction in Update_Postfix, 15-tick delay then 4-tick repeat matching game timing.
 - **File:** `Patches/ShopMenuPatches.cs`
 
 ### 41. Community Center Bundle — Completed Bundle Issues
-- **41a. Completed bundle icon doesn't update** — After completing a bundle, the icon on the room overview doesn't change to the completed state until you exit and re-enter the room screen.
-- **41b. Completed bundle gift redeemable multiple times** — The reward item at the bottom of a completed bundle can be redeemed multiple times via touch. Required exiting and re-entering (sometimes twice) for the gift to finally disappear.
-- **41c. Can't navigate to completed bundle gift** — Gift is not in the navigation array. Touch works (see 41b) but controller can't reach it.
+- **41a. FIXED (v3.4.67)** — Completed bundle icon now shows correct completion state on overview. Root cause: our `SyncHighlightedBundle` was calling `sprite.reset()` on all non-highlighted bundles, reverting completed bundles from frame 14 (completed icon) back to frame 0 (incomplete). Fix: skip sprite reset and hover animation for completed bundles.
+- **41b. FIXED (v3.4.68)** — Bundle reward can no longer be redeemed multiple times. Added `releaseLeftClick` postfix that nulls out `presentButton` after a successful click on it. The game never cleared presentButton after the reward was claimed.
+- **41c. FIXED (v3.4.69)** — Bundle reward gift (presentButton) now navigable with controller. Added presentButton to `allClickableComponents` in `InitOverviewNavigation` with ID 105, wired into spatial neighbor graph. A press triggers the existing click path.
 - **Log finding:** `junimoNoteIcon` is **always null** across 19 observations.
 - **File:** `Patches/JunimoNoteMenuPatches.cs`
 
-### 42. Equipment Slot Tooltips Missing
-- No tooltips shown when hovering over equipment slots (hat, rings, boots) in the inventory page.
-- **Log finding:** Equipment slot components exist at correct positions (IDs 101-104). `highlightEquipmentIcon = -1`.
+### 42. FIXED (v3.4.63) — Equipment Slot Tooltips Missing
+- Android's `InventoryPage.draw()` stripped `drawToolTip` call. Added draw postfix that reads equipment directly from player data based on snapped component ID (hat=101, rings=102-103, boots=104, shirt=108, pants=109, trinkets=120+).
 - **File:** `Patches/InventoryPagePatches.cs`
 
-### 43. Sell Tooltip Missing for Non-Object Items (Weapons, etc.)
-- Sell price tooltip only shows for `StardewValley.Object` items. Non-Object items like `MeleeWeapon`, `Ring`, `Boots` are skipped with an early return in `ShopMenu_Draw_Postfix`.
-- **But selling works correctly** — the A-button sell code already handles non-Object items via `salePrice() / 2`. Only the tooltip display is broken.
-- **Confirmed:** Steel Smallsword sold for 50g at Adventurer's Guild with no tooltip shown.
-- **Fix:** Remove the `is not StardewValley.Object` early return. Compute sell price using the same logic as the sell code: `obj.sellToStorePrice()` for Object items, `salePrice() / 2` for everything else. Show tooltip for any item with price > 0.
-- **File:** `Patches/ShopMenuPatches.cs` — `ShopMenu_Draw_Postfix`, tooltip section around line 880.
+### 43. FIXED (v3.4.58) — Sell Tooltip for Non-Object Items
+- Sell price tooltip now works for all item types (weapons, rings, boots). Replaced `is not Object` early return with unified price logic: `sellToStorePrice()` for Object, `salePrice() / 2` for everything else.
 
-### 44. Zero-Price Items Sold for Free via Touch Simulation
-- Items with `sellToStorePrice()=0` (Mixed Seeds, Mixed Flower Seeds) are correctly blocked by our `ReceiveGamePadButton_Prefix` (plays cancel sound, returns false).
-- **BUT:** Android touch simulation fires `receiveLeftClick` through a SEPARATE path after every A press. Vanilla's sell logic in receiveLeftClick removes the item for 0g, bypassing our check. Log confirms: items disappear after repeated A presses despite every press being blocked by our prefix.
-- **Two-part fix needed:**
-  1. **Grey out unsellable items** — Items with sell price 0 should appear greyed out on the sell tab, matching vanilla's behavior for items not in `categoriesToSellHere`. Need to override `highlightItemToSell` or provide a custom highlight function that also checks sell price > 0.
-  2. **Block touch-sim sell for 0-price items** — In `ReceiveLeftClick_Prefix`, when on sell tab with controller connected, block clicks on inventory slots containing items with sell price 0. Alternatively, block ALL touch-sim clicks on sell tab inventory slots (force sells through our gamepad handler only).
-- **Affected items:** Mixed Seeds, Mixed Flower Seeds, and any other item where `salePrice()` returns 0 but `highlightItemToSell()` returns true (item category is accepted by the shop but individual item has no value).
-- **File:** `Patches/ShopMenuPatches.cs`
+### 44. FIXED (v3.4.58) — Zero-Price Items Greyed Out on Sell Tab
+- Items with sell price 0 (Mixed Seeds, Mixed Flower Seeds) now greyed out on sell tab via `highlightMethod` override. Vanilla's `receiveLeftClick` sell path checks `highlightItemToSell` before selling, so greying out blocks both touch-sim and gamepad sell paths.
 
 ---
 
@@ -92,6 +76,11 @@ All items done. See `DONE.md` and `.planning/STATE.md` quick tasks table.
 ---
 
 ## Milestone 4: Dialogue & Interaction Polish (v3.7)
+
+### 39. Monster Eradication Tracking Page
+- No cursor visible on the monster eradication goals page (Adventurer's Guild tracking).
+- Can't switch pages with controller.
+- **Investigation needed:** Check which menu class this is, how pages are structured, what navigation exists.
 
 ### 22b. Dialogue Option Box — Counter-Intuitive Initial Selection
 - Nothing visually selected when dialogue choice box appears. Pressing down selects TOP option; pressing up selects BOTTOM option.
