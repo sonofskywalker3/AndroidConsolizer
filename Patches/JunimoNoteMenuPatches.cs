@@ -137,11 +137,24 @@ namespace AndroidConsolizer.Patches
 
             // rewardGrabbed — track which rewards were actually taken (#41b B-close fix)
             var rewardGrabbedMethod = AccessTools.Method(typeof(JunimoNoteMenu), "rewardGrabbed");
+            Monitor.Log($"[DIAG-41f] rewardGrabbed method lookup: {(rewardGrabbedMethod != null ? rewardGrabbedMethod.ToString() : "NULL — method not found!")}", LogLevel.Info);
             if (rewardGrabbedMethod != null)
             {
                 harmony.Patch(
                     original: rewardGrabbedMethod,
                     postfix: new HarmonyMethod(typeof(JunimoNoteMenuPatches), nameof(RewardGrabbed_Postfix))
+                );
+            }
+
+            // DIAGNOSTIC: patch performSpecialContextChecks on ItemGrabMenu to trace reward flow
+            var perfSpecialMethod = AccessTools.Method(typeof(ItemGrabMenu), "performSpecialContextChecks");
+            Monitor.Log($"[DIAG-41f] performSpecialContextChecks method lookup: {(perfSpecialMethod != null ? perfSpecialMethod.ToString() : "NULL")}", LogLevel.Info);
+            if (perfSpecialMethod != null)
+            {
+                harmony.Patch(
+                    original: perfSpecialMethod,
+                    prefix: new HarmonyMethod(typeof(JunimoNoteMenuPatches), nameof(PerformSpecialContextChecks_Prefix)),
+                    postfix: new HarmonyMethod(typeof(JunimoNoteMenuPatches), nameof(PerformSpecialContextChecks_Postfix))
                 );
             }
 
@@ -1142,6 +1155,34 @@ namespace AndroidConsolizer.Patches
                 _pendingRewardIndices = null;
                 _grabbedRewardIndices.Clear();
             }
+        }
+
+        // ===== DIAGNOSTIC #41f: performSpecialContextChecks tracing =====
+
+        private static void PerformSpecialContextChecks_Prefix(ItemGrabMenu __instance, Item item, int tap_x, int tap_y)
+        {
+            try
+            {
+                var ctx = __instance.context;
+                var behaviorField = AccessTools.Field(typeof(ItemGrabMenu), "behaviorOnItemGrab");
+                var behaviorVal = behaviorField?.GetValue(__instance);
+                var invHeldField = AccessTools.Field(typeof(InventoryMenu), "inventoryItemHeld");
+                var invHeld = invHeldField?.GetValue(__instance.ItemsToGrabMenu);
+                Monitor.Log($"[DIAG-41f] performSpecialContextChecks CALLED: item={item?.DisplayName ?? "null"}, " +
+                    $"context={ctx?.GetType()?.FullName ?? "null"}, " +
+                    $"behaviorOnItemGrab={(behaviorVal != null ? "SET" : "null")}, " +
+                    $"reverseGrab={__instance.reverseGrab}, " +
+                    $"inventoryItemHeld={invHeld ?? "field-not-found"}", LogLevel.Info);
+            }
+            catch (Exception ex)
+            {
+                Monitor.Log($"[DIAG-41f] prefix error: {ex.Message}", LogLevel.Warn);
+            }
+        }
+
+        private static void PerformSpecialContextChecks_Postfix(ItemGrabMenu __instance, Item item, bool __result)
+        {
+            Monitor.Log($"[DIAG-41f] performSpecialContextChecks RETURNED: {__result}, item={item?.DisplayName ?? "null"}", LogLevel.Info);
         }
 
         // ===== DIAGNOSTIC #41: Bundle state logging =====
