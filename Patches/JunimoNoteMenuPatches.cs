@@ -57,10 +57,7 @@ namespace AndroidConsolizer.Patches
         private static int _enteredPageTick = -100;
         private static bool _weInitiatedClick;
 
-        // Track pending reward indices when opening rewards menu (#41b)
-        private static bool _rewardsMenuOpened;
-        private static List<int> _pendingRewardIndices;
-        private static HashSet<int> _grabbedRewardIndices = new HashSet<int>();
+        // (Reward tracking fields removed — GrantRewardsDirectly bypasses ItemGrabMenu entirely)
 
 
         public static void Apply(Harmony harmony, IMonitor monitor)
@@ -135,16 +132,6 @@ namespace AndroidConsolizer.Patches
                 postfix: new HarmonyMethod(typeof(JunimoNoteMenuPatches), nameof(Draw_Postfix))
             );
 
-            // rewardGrabbed — track which rewards were actually taken (#41b B-close fix)
-            var rewardGrabbedMethod = AccessTools.Method(typeof(JunimoNoteMenu), "rewardGrabbed");
-            if (rewardGrabbedMethod != null)
-            {
-                harmony.Patch(
-                    original: rewardGrabbedMethod,
-                    postfix: new HarmonyMethod(typeof(JunimoNoteMenuPatches), nameof(RewardGrabbed_Postfix))
-                );
-            }
-
             Monitor.Log("JunimoNoteMenu patches applied.", LogLevel.Trace);
         }
 
@@ -156,8 +143,6 @@ namespace AndroidConsolizer.Patches
             _inIngredientZone = false;
             _ingredientRows = null;
             _savedOverviewComponentId = -1;
-            // Don't reset _rewardsMenuOpened/_pendingRewardIndices here —
-            // they need to survive the menu transition from ItemGrabMenu back to JunimoNoteMenu
         }
 
         // ===== GetMouseState postfix =====
@@ -608,10 +593,6 @@ namespace AndroidConsolizer.Patches
                 // Overview page entry — populate allClickableComponents and wire neighbors
                 if (!specificBundle && !_onOverviewPage)
                 {
-                    // Force-clear BundleRewards if we just came back from the rewards menu (#41b).
-                    // Must run BEFORE InitOverviewNavigation so presentButton isn't recreated.
-                    ClearPendingRewards();
-
                     if (InitOverviewNavigation(__instance))
                     {
                         _onOverviewPage = true;
@@ -1001,13 +982,15 @@ namespace AndroidConsolizer.Patches
             var snapped = menu.currentlySnappedComponent;
             if (snapped == null) return;
 
-            // If clicking on presentButton, save pending reward indices so we can
-            // force-clear them after the rewards menu closes (#41b).
-            // rewardGrabbed() isn't reliably clearing BundleRewards on Android.
+            // presentButton: bypass broken reward ItemGrabMenu entirely (#41b/#41f).
+            // Android's touch-swap code path never calls rewardGrabbed (behaviorOnItemGrab),
+            // so BundleRewards never clears and items regenerate infinitely.
+            // Also allows deposits. Fix: grant items directly, clear BundleRewards, skip menu.
             var presentBtn = _presentButtonField?.GetValue(menu) as ClickableComponent;
             if (presentBtn != null && snapped == presentBtn)
             {
-                SavePendingRewardIndices(menu);
+                GrantRewardsDirectly(menu);
+                return;
             }
 
             var center = snapped.bounds.Center;
@@ -1028,6 +1011,49 @@ namespace AndroidConsolizer.Patches
             {
                 _weInitiatedClick = false;
                 _overridingMouse = false;
+            }
+        }
+
+        // ===== Direct reward grant (#41b/#41f) =====
+
+        private static void GrantRewardsDirectly(JunimoNoteMenu menu)
+        {
+            try
+            {
+                int whichArea = _whichAreaField != null ? (int)_whichAreaField.GetValue(menu) : -1;
+                if (whichArea < 0) return;
+
+                // Generate reward items (same as openRewardsMenu → GetBundleRewards)
+                var rewards = new List<Item>();
+                JunimoNoteMenu.GetBundleRewards(whichArea, rewards);
+                if (rewards.Count == 0) return;
+
+                Game1.playSound("smallSelect");
+
+                // Add each to player inventory and clear BundleRewards
+                var bundleRewards = Game1.netWorldState.Value.BundleRewards;
+                foreach (var item in rewards)
+                {
+                    var leftover = Game1.player.addItemToInventory(item);
+                    if (leftover != null)
+                        Game1.createItemDebris(leftover, Game1.player.getStandingPosition(), -1);
+
+                    if (bundleRewards != null && bundleRewards.ContainsKey(item.SpecialVariable))
+                        bundleRewards[item.SpecialVariable] = false;
+
+                    Monitor.Log($"[DIAG-41] Granted reward: {item.DisplayName} x{item.Stack}, cleared BundleRewards[{item.SpecialVariable}]", LogLevel.Info);
+                }
+
+                // Null presentButton — rewards are claimed
+                if (_presentButtonField != null)
+                    _presentButtonField.SetValue(menu, null);
+
+                // Re-init overview navigation without presentButton
+                InitOverviewNavigation(menu);
+            }
+            catch (Exception ex)
+            {
+                Monitor.Log($"[DIAG-41] GrantRewardsDirectly error: {ex.Message}", LogLevel.Warn);
             }
         }
 
@@ -1056,93 +1082,8 @@ namespace AndroidConsolizer.Patches
             }
         }
 
-        // ===== Reward tracking (#41b) =====
-
-        private static void RewardGrabbed_Postfix(Item item, Farmer who)
-        {
-            if (item != null)
-            {
-                _grabbedRewardIndices.Add(item.SpecialVariable);
-                Monitor.Log($"[DIAG-41] rewardGrabbed fired for bundle index {item.SpecialVariable}", LogLevel.Info);
-            }
-        }
-
-        private static void SavePendingRewardIndices(JunimoNoteMenu menu)
-        {
-            try
-            {
-                _pendingRewardIndices = new List<int>();
-                _grabbedRewardIndices.Clear();
-                var bundleRewards = Game1.netWorldState.Value.BundleRewards;
-                int whichArea = _whichAreaField != null ? (int)_whichAreaField.GetValue(menu) : -1;
-                if (whichArea < 0 || bundleRewards == null) return;
-
-                var bundleData = Game1.netWorldState.Value.BundleData;
-                foreach (var key in bundleData.Keys)
-                {
-                    string[] parts = key.Split('/');
-                    if (parts.Length < 2) continue;
-                    int bundleIndex;
-                    if (!int.TryParse(parts[1], out bundleIndex)) continue;
-                    if (bundleRewards.ContainsKey(bundleIndex) && bundleRewards[bundleIndex])
-                        _pendingRewardIndices.Add(bundleIndex);
-                }
-                _rewardsMenuOpened = true;
-                Monitor.Log($"[DIAG-41] Rewards menu opened, pending indices: [{string.Join(",", _pendingRewardIndices)}]", LogLevel.Info);
-            }
-            catch (Exception ex)
-            {
-                Monitor.Log($"[DIAG-41] SavePendingRewardIndices error: {ex.Message}", LogLevel.Warn);
-            }
-        }
-
-        private static void ClearPendingRewards()
-        {
-            if (!_rewardsMenuOpened || _pendingRewardIndices == null) return;
-            try
-            {
-                // Only force-clear rewards that were actually grabbed.
-                // If player B-closed without taking anything, skip clearing entirely.
-                if (_grabbedRewardIndices.Count > 0)
-                {
-                    var bundleRewards = Game1.netWorldState.Value.BundleRewards;
-                    if (bundleRewards != null)
-                    {
-                        foreach (int idx in _grabbedRewardIndices)
-                        {
-                            if (bundleRewards.ContainsKey(idx) && bundleRewards[idx])
-                            {
-                                bundleRewards[idx] = false;
-                                Monitor.Log($"[DIAG-41] Force-cleared BundleRewards[{idx}]", LogLevel.Info);
-                            }
-                        }
-                    }
-
-                    // Null presentButton only if ALL pending rewards were grabbed
-                    bool allGrabbed = true;
-                    foreach (int idx in _pendingRewardIndices)
-                    {
-                        if (!_grabbedRewardIndices.Contains(idx)) { allGrabbed = false; break; }
-                    }
-                    if (allGrabbed && _presentButtonField != null && Game1.activeClickableMenu is JunimoNoteMenu jnm)
-                        _presentButtonField.SetValue(jnm, null);
-                }
-                else
-                {
-                    Monitor.Log("[DIAG-41] No rewards grabbed (B-close), skipping clear", LogLevel.Info);
-                }
-            }
-            catch (Exception ex)
-            {
-                Monitor.Log($"[DIAG-41] ClearPendingRewards error: {ex.Message}", LogLevel.Warn);
-            }
-            finally
-            {
-                _rewardsMenuOpened = false;
-                _pendingRewardIndices = null;
-                _grabbedRewardIndices.Clear();
-            }
-        }
+        // (SavePendingRewardIndices/ClearPendingRewards/RewardGrabbed_Postfix removed —
+        //  GrantRewardsDirectly handles everything in one step)
 
         // ===== DIAGNOSTIC #41: Bundle state logging =====
 
