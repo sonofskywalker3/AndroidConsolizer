@@ -264,11 +264,16 @@ namespace AndroidConsolizer.Patches
                 }
 
                 // Vault bundles (whichArea==4) have a purchaseButton instead of
-                // ingredient slots. The game's doSpecificBundlePageJoystick handles
-                // this correctly (first A highlights, second A purchases, B goes back).
-                // Let the game handle it.
+                // ingredient slots. Single A press to purchase, cursor drawn in Draw_Postfix.
                 if (__instance.purchaseButton != null)
-                    return true;
+                {
+                    if (b == Buttons.A)
+                    {
+                        HandlePurchaseAPress(__instance);
+                        return false;
+                    }
+                    return true; // B, directional, etc. — let game handle
+                }
 
                 switch (b)
                 {
@@ -681,7 +686,11 @@ namespace AndroidConsolizer.Patches
 
                 if (_onDonationPage)
                 {
-                    if (_inIngredientZone)
+                    if (__instance.purchaseButton != null)
+                    {
+                        target = __instance.purchaseButton;
+                    }
+                    else if (_inIngredientZone)
                     {
                         var ingredientList = GetIngredientList(__instance);
                         if (ingredientList != null && _trackedIngredientIndex < ingredientList.Count)
@@ -728,7 +737,11 @@ namespace AndroidConsolizer.Patches
 
                 if (_onDonationPage)
                 {
-                    if (_inIngredientZone)
+                    if (__instance.purchaseButton != null)
+                    {
+                        target = __instance.purchaseButton;
+                    }
+                    else if (_inIngredientZone)
                     {
                         var ingredientList = GetIngredientList(__instance);
                         if (ingredientList != null && _trackedIngredientIndex < ingredientList.Count)
@@ -997,6 +1010,31 @@ namespace AndroidConsolizer.Patches
             try
             {
                 menu.receiveLeftClick(center.X, center.Y);
+                menu.releaseLeftClick(center.X, center.Y);
+            }
+            finally
+            {
+                _weInitiatedClick = false;
+                _overridingMouse = false;
+            }
+        }
+
+        // ===== Vault purchase button A press (#45) =====
+
+        private static void HandlePurchaseAPress(JunimoNoteMenu menu)
+        {
+            if (menu.purchaseButton == null) return;
+
+            var center = menu.purchaseButton.bounds.Center;
+            float zoom = Game1.options.zoomLevel;
+            _overrideRawX = (int)(center.X * zoom);
+            _overrideRawY = (int)(center.Y * zoom);
+            _overridingMouse = true;
+
+            _weInitiatedClick = true;
+            try
+            {
+                // releaseLeftClick handles the purchase when it hits purchaseButton bounds
                 menu.releaseLeftClick(center.X, center.Y);
             }
             finally
