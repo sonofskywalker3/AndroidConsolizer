@@ -1010,32 +1010,29 @@ namespace AndroidConsolizer.Patches
                 }
                 Monitor.Log($"[DIAG-41]   presentButton exists={present != null} inAllClickable={presentInComponents}", LogLevel.Info);
 
-                // Try logging bundleRewards from CommunityCenter
-                var cc = Game1.getLocationFromName("CommunityCenter");
-                if (cc != null)
+                // Log bundleRewards from Game1.netWorldState.Value.BundleRewards
+                // (CommunityCenter.bundleRewards is a property that delegates to this)
+                try
                 {
-                    var rewardsField = AccessTools.Field(cc.GetType(), "bundleRewards");
-                    var rewards = rewardsField?.GetValue(cc);
-                    if (rewards is System.Collections.IList rewardsList)
+                    var bundleRewards = Game1.netWorldState.Value.BundleRewards;
+                    if (bundleRewards != null)
                     {
                         var pending = new List<string>();
-                        for (int i = 0; i < rewardsList.Count; i++)
+                        foreach (var key in bundleRewards.Keys)
                         {
-                            try
-                            {
-                                // NetArray<bool,NetBool> elements have a .Value property
-                                var val = rewardsList[i];
-                                bool boolVal = val is bool b ? b : (bool)AccessTools.Property(val.GetType(), "Value").GetValue(val);
-                                if (boolVal) pending.Add(i.ToString());
-                            }
-                            catch { }
+                            if (bundleRewards[key])
+                                pending.Add(key.ToString());
                         }
-                        Monitor.Log($"[DIAG-41]   bundleRewards pending indices: [{string.Join(",", pending)}] (total={rewardsList.Count})", LogLevel.Info);
+                        Monitor.Log($"[DIAG-41]   BundleRewards pending: [{string.Join(",", pending)}] (total keys={bundleRewards.Count()})", LogLevel.Info);
                     }
                     else
                     {
-                        Monitor.Log($"[DIAG-41]   bundleRewards type={rewards?.GetType().Name ?? "null"}", LogLevel.Info);
+                        Monitor.Log("[DIAG-41]   BundleRewards is null", LogLevel.Info);
                     }
+                }
+                catch (Exception brEx)
+                {
+                    Monitor.Log($"[DIAG-41]   BundleRewards access error: {brEx.Message}", LogLevel.Warn);
                 }
             }
             catch (Exception ex)
