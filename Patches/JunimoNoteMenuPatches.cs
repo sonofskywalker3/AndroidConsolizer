@@ -926,14 +926,13 @@ namespace AndroidConsolizer.Patches
                 }
             }
 
-            if (targetIndex < 0) return;
-
             // Set highlightedBundle via reflection
             _highlightedBundleField.SetValue(menu, targetIndex);
 
-            // Reset all non-highlighted bundle sprites, trigger hover on the active one.
-            // Skip completed bundles — their sprite is at frame 14 (completed icon) and
-            // resetting would revert them to the incomplete appearance.
+            // Reset all non-highlighted bundle sprites. Skip completed bundles — their sprite
+            // is at frame 14 (completed icon) and resetting would revert them to incomplete.
+            // When targetIndex is -1 (non-bundle component like presentButton), ALL bundles
+            // get reset so no stale hover animation persists.
             for (int i = 0; i < bundlesList.Count; i++)
             {
                 var bundle = bundlesList[i] as Bundle;
@@ -945,6 +944,8 @@ namespace AndroidConsolizer.Patches
                     bundle.sprite.paused = true;
                 }
             }
+
+            if (targetIndex < 0) return;
 
             var highlighted = bundlesList[targetIndex] as Bundle;
             if (highlighted != null && !highlighted.complete)
