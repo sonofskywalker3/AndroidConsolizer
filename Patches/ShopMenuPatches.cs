@@ -884,32 +884,38 @@ namespace AndroidConsolizer.Patches
                     }
                 }
 
+                // Draw cursor when vanilla's drawMouse() doesn't:
+                // - Buy tab: drawMouse() skipped entirely when SnappyMenus && !inventoryVisible
+                // - Sell tab at Blacksmith/Joja: drawMouse() called but mouseCursorTransparency=0
+                if (GamePad.GetState(PlayerIndex.One).IsConnected && InvVisibleField != null)
+                {
+                    bool invVisible = (bool)InvVisibleField.GetValue(__instance);
+                    bool needCursor = (!invVisible && Game1.options.snappyMenus)
+                                   || (invVisible && Game1.mouseCursorTransparency < 0.01f);
+                    if (needCursor)
+                    {
+                        int cursorTile = Game1.options.snappyMenus ? 44 : Game1.mouseCursor;
+                        b.Draw(
+                            Game1.mouseCursors,
+                            new Vector2(Game1.getMouseX(), Game1.getMouseY()),
+                            Game1.getSourceRectForStandardTileSheet(Game1.mouseCursors, cursorTile, 16, 16),
+                            Color.White,
+                            0f,
+                            Vector2.Zero,
+                            4f + Game1.dialogueButtonScale / 150f,
+                            SpriteEffects.None,
+                            1f
+                        );
+                    }
+                }
+
+                // --- Sell tab tooltip (below here is sell-tab only) ---
                 if (InvVisibleField == null)
                     return;
 
                 bool inventoryVisible = (bool)InvVisibleField.GetValue(__instance);
                 if (!inventoryVisible)
                     return;
-
-                // Vanilla's drawMouse() multiplies by Game1.mouseCursorTransparency.
-                // At some shops (Blacksmith, Joja) this is 0, making the cursor invisible.
-                // When that happens, draw the cursor ourselves at the same position vanilla
-                // would use (Game1.getMouseX/Y), so it looks identical to the vanilla cursor.
-                if (Game1.mouseCursorTransparency < 0.01f && GamePad.GetState(PlayerIndex.One).IsConnected)
-                {
-                    int cursorTile = Game1.options.snappyMenus ? 44 : Game1.mouseCursor;
-                    b.Draw(
-                        Game1.mouseCursors,
-                        new Vector2(Game1.getMouseX(), Game1.getMouseY()),
-                        Game1.getSourceRectForStandardTileSheet(Game1.mouseCursors, cursorTile, 16, 16),
-                        Color.White,
-                        0f,
-                        Vector2.Zero,
-                        4f + Game1.dialogueButtonScale / 150f,
-                        SpriteEffects.None,
-                        1f
-                    );
-                }
 
                 Item sellItem = GetSellTabSelectedItem(__instance);
                 if (sellItem == null)
