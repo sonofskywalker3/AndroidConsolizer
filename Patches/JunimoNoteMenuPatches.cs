@@ -146,16 +146,6 @@ namespace AndroidConsolizer.Patches
                 );
             }
 
-            // openRewardsMenu — adjust chest contents for partially-claimed rewards (#41f)
-            var openRewardsMethod = AccessTools.Method(typeof(JunimoNoteMenu), "openRewardsMenu");
-            if (openRewardsMethod != null)
-            {
-                harmony.Patch(
-                    original: openRewardsMethod,
-                    postfix: new HarmonyMethod(typeof(JunimoNoteMenuPatches), nameof(OpenRewardsMenu_Postfix))
-                );
-            }
-
             // DIAGNOSTIC: patch performSpecialContextChecks on ItemGrabMenu to trace reward flow
             var perfSpecialMethod = AccessTools.Method(typeof(ItemGrabMenu), "performSpecialContextChecks");
             Monitor.Log($"[DIAG-41f] performSpecialContextChecks method lookup: {(perfSpecialMethod != null ? perfSpecialMethod.ToString() : "NULL")}", LogLevel.Info);
@@ -635,12 +625,6 @@ namespace AndroidConsolizer.Patches
                     // Force-clear BundleRewards if we just came back from the rewards menu (#41b).
                     // Must run BEFORE InitOverviewNavigation so presentButton isn't recreated.
                     ClearPendingRewards();
-
-                    // Flush partial reward claims if this area just completed (#41f).
-                    // When all bundles are done, markAreaAsComplete fires before we get here.
-                    // Any partially-taken rewards must be finalized so the game's missed
-                    // rewards system doesn't regenerate the full amount (causing dupes).
-                    FlushPartialClaimsIfAreaComplete(__instance);
 
                     if (InitOverviewNavigation(__instance))
                     {
@@ -1123,83 +1107,6 @@ namespace AndroidConsolizer.Patches
             catch (Exception ex)
             {
                 Monitor.Log($"[DIAG-41] SavePendingRewardIndices error: {ex.Message}", LogLevel.Warn);
-            }
-        }
-
-        /// <summary>When the area completes while partial reward claims exist, flush them by
-        /// calling rewardGrabbed. This clears bundleRewards so the missed rewards chest doesn't
-        /// regenerate the full amount (which would dupe items the user already took).</summary>
-        private static void FlushPartialClaimsIfAreaComplete(JunimoNoteMenu menu)
-        {
-            if (ItemGrabMenuPatches.PartialRewardTaken.Count == 0) return;
-            try
-            {
-                int whichArea = _whichAreaField != null ? (int)_whichAreaField.GetValue(menu) : -1;
-                if (whichArea < 0) return;
-
-                var cc = Game1.getLocationFromName("CommunityCenter") as StardewValley.Locations.CommunityCenter;
-                if (cc == null || !cc.areasComplete[whichArea]) return;
-
-                // Area is complete — flush all partial claims by clearing bundleRewards directly
-                var bundleRewards = Game1.netWorldState.Value.BundleRewards;
-                if (bundleRewards == null) return;
-
-                foreach (int bundleIndex in new List<int>(ItemGrabMenuPatches.PartialRewardTaken.Keys))
-                {
-                    if (bundleRewards.ContainsKey(bundleIndex) && bundleRewards[bundleIndex])
-                    {
-                        bundleRewards[bundleIndex] = false;
-                        Monitor.Log($"[ChestTransfer] Flushed partial claim for bundle {bundleIndex} — area {whichArea} complete, {ItemGrabMenuPatches.PartialRewardTaken[bundleIndex]} items were taken", LogLevel.Debug);
-                    }
-                    ItemGrabMenuPatches.PartialRewardTaken.Remove(bundleIndex);
-                }
-            }
-            catch (Exception ex)
-            {
-                Monitor.Log($"[ChestTransfer] FlushPartialClaimsIfAreaComplete error: {ex.Message}", LogLevel.Warn);
-            }
-        }
-
-        /// <summary>After openRewardsMenu creates a new ItemGrabMenu, adjust chest stacks
-        /// to subtract items already taken in previous opens (partial reward tracking).</summary>
-        private static void OpenRewardsMenu_Postfix()
-        {
-            try
-            {
-                if (ItemGrabMenuPatches.PartialRewardTaken.Count == 0) return;
-                if (!(Game1.activeClickableMenu is ItemGrabMenu igm)) return;
-
-                var chestInv = igm.ItemsToGrabMenu?.actualInventory;
-                if (chestInv == null) return;
-
-                var callback = AccessTools.Field(typeof(ItemGrabMenu), "behaviorOnItemGrab")?.GetValue(igm) as Delegate;
-
-                for (int i = chestInv.Count - 1; i >= 0; i--)
-                {
-                    if (chestInv[i] == null) continue;
-                    int bundleIndex = chestInv[i].SpecialVariable;
-                    int taken;
-                    if (!ItemGrabMenuPatches.PartialRewardTaken.TryGetValue(bundleIndex, out taken)) continue;
-
-                    chestInv[i].Stack -= taken;
-                    if (chestInv[i].Stack <= 0)
-                    {
-                        // All items from this bundle were taken across previous opens
-                        var claimed = chestInv[i];
-                        chestInv[i] = null;
-                        ItemGrabMenuPatches.PartialRewardTaken.Remove(bundleIndex);
-                        callback?.DynamicInvoke(claimed, Game1.player);
-                        Monitor.Log($"[ChestTransfer] Reward fully claimed on reopen for bundle {bundleIndex}", LogLevel.Debug);
-                    }
-                    else
-                    {
-                        Monitor.Log($"[ChestTransfer] Reward adjusted on reopen for bundle {bundleIndex}: reduced by {taken}, {chestInv[i].Stack} remain", LogLevel.Debug);
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Monitor.Log($"[ChestTransfer] OpenRewardsMenu_Postfix error: {ex.Message}", LogLevel.Warn);
             }
         }
 
