@@ -263,6 +263,13 @@ namespace AndroidConsolizer.Patches
                     }
                 }
 
+                // Vault bundles (whichArea==4) have a purchaseButton instead of
+                // ingredient slots. The game's doSpecificBundlePageJoystick handles
+                // this correctly (first A highlights, second A purchases, B goes back).
+                // Let the game handle it.
+                if (__instance.purchaseButton != null)
+                    return true;
+
                 switch (b)
                 {
                     case Buttons.LeftThumbstickRight:
