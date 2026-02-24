@@ -84,8 +84,8 @@ namespace AndroidConsolizer.Patches
         /// <summary>Current building's tile width, cached from Update_Postfix for use in GetMouseState_Postfix.</summary>
         private static int _buildingTileWidth = 0;
 
-        /// <summary>True after the first A press has positioned the ghost at the cursor.
-        /// The next A press (without cursor movement) will let receiveGamePadButton(A) through to build.</summary>
+        /// <summary>True after the first A press in move/demolish mode. Used for two-press
+        /// confirmation (select building → confirm). Not used for build mode (single-press).</summary>
         private static bool _ghostPlaced = false;
 
         /// <summary>Set by ReceiveGamePadButton_Prefix when it lets A through for building.
@@ -167,10 +167,8 @@ namespace AndroidConsolizer.Patches
                     prefix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(ExitThisMenu_Prefix))
                 );
 
-                // Two-press A button: first press blocks receiveGamePadButton(A) so our
-                // postfix can position the ghost via receiveLeftClick. Second press lets
-                // receiveGamePadButton(A) through to trigger the actual build at the
-                // ghost's stored position.
+                // A button handling: build mode = single-press (ghost tracks cursor,
+                // A triggers tryToBuild). Move/demolish = two-press (select then confirm).
                 harmony.Patch(
                     original: AccessTools.Method(typeof(CarpenterMenu), nameof(CarpenterMenu.receiveGamePadButton)),
                     prefix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(ReceiveGamePadButton_Prefix))
@@ -1113,8 +1111,6 @@ namespace AndroidConsolizer.Patches
                     _cursorY = Math.Max(0, Math.Min(_cursorY, Game1.viewport.Height - 1));
                 }
 
-                if (ModEntry.Config.VerboseLogging)
-                    Monitor.Log($"[CarpenterMenu] Cursor: ({(int)_cursorX},{(int)_cursorY}) pan=({panX},{panY})", LogLevel.Trace);
             }
 
             // Set _drawAtX/_drawAtY directly so the ghost tracks the cursor in real time.
