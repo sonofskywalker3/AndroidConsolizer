@@ -5,8 +5,8 @@ on:
     types: [published]
   workflow_dispatch:
     inputs:
-      version:
-        description: 'Version to publish (leave empty to auto-detect from manifest.json)'
+      tag:
+        description: 'Release tag to publish (e.g. v3.5.0). Leave empty for latest release.'
         required: false
 
 jobs:
@@ -14,24 +14,41 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Setup .NET 6
-        uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '6.0.x'
+          sparse-checkout: manifest.json
+          sparse-checkout-cone-mode: false
 
-      - name: Build
-        run: dotnet build AndroidConsolizer.csproj -c Release
-
-      - name: Get version
-        id: version
+      - name: Determine release tag
+        id: release
         run: |
-          if [ -n "${{ github.event.inputs.version }}" ]; then
-            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          if [ "${{ github.event_name }}" = "release" ]; then
+            TAG="${{ github.event.release.tag_name }}"
+          elif [ -n "${{ github.event.inputs.tag }}" ]; then
+            TAG="${{ github.event.inputs.tag }}"
           else
-            VERSION=$(grep -oP '"Version":\s*"\K[^"]+' manifest.json)
-            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            TAG=$(gh release view --json tagName -q '.tagName')
           fi
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          # Strip leading 'v' for version string
+          VERSION="${TAG#v}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Download release asset
+        run: |
+          gh release download "${{ steps.release.outputs.tag }}" \
+            --pattern '*.zip' \
+            --dir .
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Find ZIP file
+        id: zip
+        run: |
+          ZIP=$(ls *.zip | head -1)
+          echo "path=$ZIP" >> $GITHUB_OUTPUT
+          echo "Found: $ZIP"
 
       - name: Upload to Nexus Mods
         uses: Nexus-Mods/upload-action@main
@@ -39,6 +56,6 @@ jobs:
           api_key: ${{ secrets.NEXUS_API_KEY }}
           file_id: 41869
           game_domain_name: stardewvalley
-          filename: "bin/Release/net6.0/AndroidConsolizer ${{ steps.version.outputs.version }}.zip"
-          version: ${{ steps.version.outputs.version }}
+          filename: ${{ steps.zip.outputs.path }}
+          version: ${{ steps.release.outputs.version }}
           fileCategory: main
