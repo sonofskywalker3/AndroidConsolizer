@@ -396,10 +396,10 @@ namespace AndroidConsolizer.Patches
             var farm = Game1.getFarm();
             if (farm == null) return null;
 
-            // Convert cursor (screen coords) to world tile coords, accounting for zoom
-            float zoom = Game1.options.zoomLevel;
-            int worldX = Game1.viewport.X + (int)(_cursorX / zoom);
-            int worldY = Game1.viewport.Y + (int)(_cursorY / zoom);
+            // Convert cursor (game render coords, viewport-relative) to world tile coords.
+            // _cursorX is in the same space as viewport dimensions — no zoom conversion needed.
+            int worldX = Game1.viewport.X + (int)_cursorX;
+            int worldY = Game1.viewport.Y + (int)_cursorY;
             int tileX = worldX / 64;
             int tileY = worldY / 64;
 
@@ -1119,12 +1119,12 @@ namespace AndroidConsolizer.Patches
 
             // Set _drawAtX/_drawAtY directly so the ghost tracks the cursor in real time.
             // Without this, _drawAtX only updates from leftClickHeld → TestToPan (touch drag).
-            // Formula: screenCoord / zoom → unzoomed coord, then offset by half building size.
+            // _cursorX is in game render pixels (viewport-relative), same space as _drawAtX.
+            // No zoom conversion needed — both are in the same coordinate space.
             if (DrawAtXField != null && DrawAtYField != null)
             {
-                float zoom = Game1.options.zoomLevel;
-                int drawX = (int)(_cursorX / zoom) - _buildingTileWidth * 32;
-                int drawY = (int)(_cursorY / zoom) - _buildingTileHeight * 32;
+                int drawX = (int)_cursorX - _buildingTileWidth * 32;
+                int drawY = (int)_cursorY - _buildingTileHeight * 32;
                 DrawAtXField.SetValue(__instance, drawX);
                 DrawAtYField.SetValue(__instance, drawY);
             }
@@ -1201,15 +1201,17 @@ namespace AndroidConsolizer.Patches
             if (!_overridingMousePosition)
                 return;
 
-            // Offset by half building dimensions so the ghost centers on the cursor.
-            // The game divides GetMouseState().X by zoomLevel to get _drawAtX (unzoomed
-            // ghost position). To offset by N unzoomed pixels, we must offset by N * zoom
-            // in the mouse coordinate space: (cursorX - N*zoom) / zoom = cursorX/zoom - N.
+            // Convert game-render coordinates to screen pixels for GetMouseState.
+            // _cursorX is in game render pixels (viewport-relative). GetMouseState returns
+            // screen pixels. The game divides by zoom: _drawAtX = mouseX / zoom.
+            // We want _drawAtX = _cursorX - halfBuilding, so:
+            //   mouseX / zoom = _cursorX - halfBuilding
+            //   mouseX = (_cursorX - halfBuilding) * zoom
             float zoom = Game1.options.zoomLevel;
-            int centerOffsetX = (int)(_buildingTileWidth * 32 * zoom);
-            int centerOffsetY = (int)(_buildingTileHeight * 32 * zoom);
+            int mouseX = (int)((_cursorX - _buildingTileWidth * 32) * zoom);
+            int mouseY = (int)((_cursorY - _buildingTileHeight * 32) * zoom);
             __result = new MouseState(
-                (int)_cursorX - centerOffsetX, (int)_cursorY - centerOffsetY,
+                mouseX, mouseY,
                 __result.ScrollWheelValue,
                 __result.LeftButton,
                 __result.MiddleButton,
