@@ -778,6 +778,14 @@ namespace AndroidConsolizer.Patches
                     components.Add(cc);
             }
 
+            // Add presentButton (reward gift) if it exists
+            var presentBtn = _presentButtonField?.GetValue(menu) as ClickableComponent;
+            if (presentBtn != null)
+            {
+                if (presentBtn.myID < 0) presentBtn.myID = 105;
+                components.Add(presentBtn);
+            }
+
             var areaNext = AccessTools.Field(typeof(JunimoNoteMenu), "areaNextButton")?.GetValue(menu) as ClickableComponent;
             if (areaNext != null)
             {
