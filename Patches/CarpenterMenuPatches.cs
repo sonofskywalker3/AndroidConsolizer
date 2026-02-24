@@ -51,6 +51,8 @@ namespace AndroidConsolizer.Patches
         private static FieldInfo MovingField;        // Android: bool (null on PC)
         private static FieldInfo DemolishingField;   // Android: bool (null on PC)
         private static FieldInfo BuildingToMoveField; // Building being moved (both platforms)
+        private static FieldInfo DrawAtXField;          // int — ghost draw X in unzoomed coords
+        private static FieldInfo DrawAtYField;          // int — ghost draw Y in unzoomed coords
         private static FieldInfo PriceField;           // int — current blueprint price
         private static FieldInfo SelectedBottomButtonField; // BottomButton enum — which button is selected
         private static MethodInfo DoesFarmerHaveEnoughResourcesToBuildMethod; // affordability check
@@ -184,6 +186,8 @@ namespace AndroidConsolizer.Patches
                 MovingField = AccessTools.Field(typeof(CarpenterMenu), "moving");
                 DemolishingField = AccessTools.Field(typeof(CarpenterMenu), "demolishing");
                 BuildingToMoveField = AccessTools.Field(typeof(CarpenterMenu), "buildingToMove");
+                DrawAtXField = AccessTools.Field(typeof(CarpenterMenu), "_drawAtX");
+                DrawAtYField = AccessTools.Field(typeof(CarpenterMenu), "_drawAtY");
                 PriceField = AccessTools.Field(typeof(CarpenterMenu), "price");
                 SelectedBottomButtonField = AccessTools.Field(typeof(CarpenterMenu), "_selectedBottomButton");
                 DoesFarmerHaveEnoughResourcesToBuildMethod = AccessTools.Method(typeof(CarpenterMenu), "DoesFarmerHaveEnoughResourcesToBuild");
@@ -392,9 +396,10 @@ namespace AndroidConsolizer.Patches
             var farm = Game1.getFarm();
             if (farm == null) return null;
 
-            // Convert cursor (viewport coords) to world tile coords
-            int worldX = Game1.viewport.X + (int)_cursorX;
-            int worldY = Game1.viewport.Y + (int)_cursorY;
+            // Convert cursor (screen coords) to world tile coords, accounting for zoom
+            float zoom = Game1.options.zoomLevel;
+            int worldX = Game1.viewport.X + (int)(_cursorX / zoom);
+            int worldY = Game1.viewport.Y + (int)(_cursorY / zoom);
             int tileX = worldX / 64;
             int tileY = worldY / 64;
 
@@ -846,21 +851,13 @@ namespace AndroidConsolizer.Patches
                     }
                 }
 
-                // Build mode: two-press system
-                if (_ghostPlaced)
-                {
-                    _ghostPlaced = false;
-                    _buildPressHandled = true;
-                    if (ModEntry.Config.VerboseLogging)
-                        Monitor.Log("[CarpenterMenu] Ghost placed → letting A through to BUILD", LogLevel.Debug);
-                    return true;
-                }
-                else
-                {
-                    if (ModEntry.Config.VerboseLogging)
-                        Monitor.Log("[CarpenterMenu] BLOCKED A — positioning ghost first", LogLevel.Trace);
-                    return false;
-                }
+                // Build/upgrade/paint mode: single-press. Ghost already tracks cursor
+                // via _drawAtX/_drawAtY set every frame in Update_Postfix.
+                // Let A through — OnClickOK() → tryToBuild() reads _drawAtX/_drawAtY.
+                _buildPressHandled = true;
+                if (ModEntry.Config.VerboseLogging)
+                    Monitor.Log($"[CarpenterMenu] BUILD: letting A through for tryToBuild at ({(int)_cursorX},{(int)_cursorY}) zoom={Game1.options.zoomLevel}", LogLevel.Debug);
+                return true;
             }
 
             return true;
@@ -1120,10 +1117,22 @@ namespace AndroidConsolizer.Patches
                     Monitor.Log($"[CarpenterMenu] Cursor: ({(int)_cursorX},{(int)_cursorY}) pan=({panX},{panY})", LogLevel.Trace);
             }
 
-            // A button handling — all modes use two-press system:
-            // First A (cursor moved): position ghost via receiveLeftClick (or select building
-            //   in move mode if none selected — prefix let receiveGamePadButton through).
-            // Second A (cursor unchanged): confirm via receiveGamePadButton (prefix let it through).
+            // Set _drawAtX/_drawAtY directly so the ghost tracks the cursor in real time.
+            // Without this, _drawAtX only updates from leftClickHeld → TestToPan (touch drag).
+            // Formula: screenCoord / zoom → unzoomed coord, then offset by half building size.
+            if (DrawAtXField != null && DrawAtYField != null)
+            {
+                float zoom = Game1.options.zoomLevel;
+                int drawX = (int)(_cursorX / zoom) - _buildingTileWidth * 32;
+                int drawY = (int)(_cursorY / zoom) - _buildingTileHeight * 32;
+                DrawAtXField.SetValue(__instance, drawX);
+                DrawAtYField.SetValue(__instance, drawY);
+            }
+
+            // A button handling:
+            // Build/upgrade/paint: prefix lets A through → OnClickOK() → tryToBuild() reads _drawAtX/_drawAtY.
+            // Move: prefix lets A through for selection, blocks for ghost positioning.
+            // Demolish: prefix manages selection/confirm/deselect cycle.
             var gps = Game1.input.GetGamePadState();
             bool aPressed = gps.Buttons.A == ButtonState.Pressed;
             if (aPressed && !_prevAPressed)
@@ -1131,19 +1140,21 @@ namespace AndroidConsolizer.Patches
                 if (_buildPressHandled)
                 {
                     // Prefix let receiveGamePadButton(A) through — action was handled by game.
-                    // Set _ghostPlaced so next A can confirm (if cursor doesn't move).
                     _buildPressHandled = false;
-                    _ghostPlaced = true;
+
+                    // For move/demolish: set _ghostPlaced so next A can confirm.
+                    // For build: not needed (single-press, game already placed it).
+                    if (isMoving || isDemolishing)
+                        _ghostPlaced = true;
 
                     if (ModEntry.Config.VerboseLogging)
                     {
                         var btm = BuildingToMoveField?.GetValue(__instance) as Building;
                         string mode = isMoving ? "MOVE" : isDemolishing ? "DEMOLISH" : "BUILD";
-                        Monitor.Log($"[CarpenterMenu] {mode} action handled by receiveGamePadButton at ({(int)_cursorX},{(int)_cursorY}) buildingToMove={btm?.buildingType.Value ?? "none"}", LogLevel.Debug);
+                        Monitor.Log($"[CarpenterMenu] {mode} action handled at ({(int)_cursorX},{(int)_cursorY}) zoom={Game1.options.zoomLevel} buildingToMove={btm?.buildingType.Value ?? "none"}", LogLevel.Debug);
                     }
 
                     // In demolish mode, detect which building was just selected
-                    // so the prefix can check cursor position on the next A press.
                     if (isDemolishing && _demolishSelectedBuilding == null)
                     {
                         _demolishSelectedBuilding = GetBuildingAtCursor();
@@ -1151,21 +1162,16 @@ namespace AndroidConsolizer.Patches
                             Monitor.Log($"[CarpenterMenu] Demolish: selected building = {_demolishSelectedBuilding?.buildingType.Value ?? "none"}", LogLevel.Debug);
                     }
                 }
-                else if (!isDemolishing)
+                else if (isMoving && !isDemolishing)
                 {
-                    // Prefix blocked receiveGamePadButton(A) — position ghost at cursor.
-                    // Override is already active (continuous on farm view).
-                    // Skip for demolish mode: prefix handles ALL demolish A presses itself
-                    // (either lets through for selection/confirm, or calls receiveLeftClick
-                    // for deselect). Running receiveLeftClick again here would double-fire.
+                    // Move mode: prefix blocked A for ghost positioning.
+                    // Fire receiveLeftClick at cursor position for building selection.
                     __instance.receiveLeftClick((int)_cursorX, (int)_cursorY);
                     _ghostPlaced = true;
                     if (ModEntry.Config.VerboseLogging)
-                    {
-                        string mode = isMoving ? "MOVE" : "BUILD";
-                        Monitor.Log($"[CarpenterMenu] {mode} ghost positioned at ({(int)_cursorX},{(int)_cursorY}) — press A again to confirm. zoom={Game1.options.zoomLevel} buildW={_buildingTileWidth} buildH={_buildingTileHeight}", LogLevel.Debug);
-                    }
+                        Monitor.Log($"[CarpenterMenu] MOVE ghost positioned at ({(int)_cursorX},{(int)_cursorY}) zoom={Game1.options.zoomLevel}", LogLevel.Debug);
                 }
+                // else: demolish A handled entirely by prefix (selection/confirm/deselect)
             }
             _prevAPressed = aPressed;
         }
@@ -1195,14 +1201,13 @@ namespace AndroidConsolizer.Patches
             if (!_overridingMousePosition)
                 return;
 
-            // Diagnostic logging removed — was generating 100MB+ logs.
-            // Re-enable temporarily if coordinate issues resurface.
             // Offset by half building dimensions so the ghost centers on the cursor.
-            // TestToPan sets _drawAtX = GetMouseState().X / zoom, which becomes the
-            // ghost's top-left corner. Subtracting half the building size here makes
-            // the ghost's center align with our cursor position.
-            int centerOffsetX = _buildingTileWidth * 32;
-            int centerOffsetY = _buildingTileHeight * 32;
+            // The game divides GetMouseState().X by zoomLevel to get _drawAtX (unzoomed
+            // ghost position). To offset by N unzoomed pixels, we must offset by N * zoom
+            // in the mouse coordinate space: (cursorX - N*zoom) / zoom = cursorX/zoom - N.
+            float zoom = Game1.options.zoomLevel;
+            int centerOffsetX = (int)(_buildingTileWidth * 32 * zoom);
+            int centerOffsetY = (int)(_buildingTileHeight * 32 * zoom);
             __result = new MouseState(
                 (int)_cursorX - centerOffsetX, (int)_cursorY - centerOffsetY,
                 __result.ScrollWheelValue,
