@@ -848,35 +848,18 @@ namespace AndroidConsolizer.Patches
                 if (!inventoryVisible)
                     return;
 
-                // Draw finger cursor at snapped component on sell tab ONLY when vanilla's
-                // cursor position is wrong. drawMouse() draws at Game1.getMouseX/Y() — on most
-                // shops, snap nav keeps this in sync. On some shops (Clint, Joja) it doesn't,
-                // so the vanilla cursor is drawn off-screen. Only draw ours when that happens.
+                // Ensure mouse position tracks the snapped component on sell tab.
+                // Vanilla's snapCursorToCurrentSnappedComponent positions the cursor at
+                // (bounds.Right - bounds.Width/4, bounds.Bottom - bounds.Height/4),
+                // but on some shops (Clint, Joja) the mouse drifts off-target.
+                // Setting it here every frame guarantees the vanilla drawMouse() call
+                // renders the cursor at the correct slot position.
                 if (GamePad.GetState(PlayerIndex.One).IsConnected && __instance.currentlySnappedComponent != null)
                 {
                     var target = __instance.currentlySnappedComponent;
-                    int mx = Game1.getMouseX();
-                    int my = Game1.getMouseY();
-                    bool vanillaCursorOnTarget = target.bounds.Contains(mx, my);
-
-                    if (!vanillaCursorOnTarget)
-                    {
-                        int cursorTile = Game1.options.snappyMenus ? 44 : Game1.mouseCursor;
-                        b.Draw(
-                            Game1.mouseCursors,
-                            new Vector2(target.bounds.Center.X, target.bounds.Center.Y),
-                            Game1.getSourceRectForStandardTileSheet(Game1.mouseCursors, cursorTile, 16, 16),
-                            Color.White,
-                            0f,
-                            Vector2.Zero,
-                            4f + Game1.dialogueButtonScale / 150f,
-                            SpriteEffects.None,
-                            1f
-                        );
-
-                        if (ModEntry.Config.VerboseLogging && Game1.ticks % 120 == 0)
-                            Monitor.Log($"[DIAG-40] Sell cursor fix: mouse=({mx},{my}) not in snapped bounds={target.bounds} shopId={__instance.ShopId}", LogLevel.Debug);
-                    }
+                    int snapX = target.bounds.Right - target.bounds.Width / 4;
+                    int snapY = target.bounds.Bottom - target.bounds.Height / 4;
+                    Game1.setMousePosition(snapX, snapY, ui_scale: true);
                 }
 
                 Item sellItem = GetSellTabSelectedItem(__instance);
