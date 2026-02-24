@@ -103,6 +103,12 @@ namespace AndroidConsolizer.Patches
                 prefix: new HarmonyMethod(typeof(JunimoNoteMenuPatches), nameof(LeftClickHeld_Prefix))
             );
 
+            // releaseLeftClick — null out presentButton after reward click to prevent double-redemption
+            harmony.Patch(
+                original: AccessTools.Method(typeof(JunimoNoteMenu), nameof(JunimoNoteMenu.releaseLeftClick)),
+                postfix: new HarmonyMethod(typeof(JunimoNoteMenuPatches), nameof(ReleaseLeftClick_Postfix))
+            );
+
             // receiveGamePadButton — handle navigation and A press
             harmony.Patch(
                 original: AccessTools.Method(typeof(JunimoNoteMenu), nameof(JunimoNoteMenu.receiveGamePadButton)),
@@ -169,6 +175,19 @@ namespace AndroidConsolizer.Patches
                 return false;
 
             return true;
+        }
+
+        // ===== releaseLeftClick postfix — null presentButton after reward claimed (#41b) =====
+
+        private static void ReleaseLeftClick_Postfix(JunimoNoteMenu __instance, int x, int y)
+        {
+            if (_presentButtonField == null || !_onOverviewPage) return;
+
+            var pb = _presentButtonField.GetValue(__instance) as ClickableComponent;
+            if (pb != null && pb.containsPoint(x, y))
+            {
+                _presentButtonField.SetValue(__instance, null);
+            }
         }
 
         // ===== leftClickHeld prefix — block touch-sim drag feedback while A is held =====
