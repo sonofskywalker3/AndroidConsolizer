@@ -34,7 +34,9 @@ All items done. See `DONE.md` and `.planning/STATE.md` quick tasks table.
 - **41c. FIXED (v3.4.69)** — Bundle reward gift (presentButton) now navigable with controller. Added presentButton to `allClickableComponents` in `InitOverviewNavigation` with ID 105, wired into spatial neighbor graph.
 - **41d. FIXED (v3.4.70)** — Hover animation and tooltip now clear when navigating from a bundle to a non-bundle component (presentButton, area buttons). `SyncHighlightedBundle` was returning early when target wasn't a Bundle — now resets all non-complete bundle sprites and sets `highlightedBundle = -1` before returning.
 - **41e. Cursor invisible in reward menu** — When pressing A on presentButton to open the reward ItemGrabMenu, the cursor is not visible. Need to ensure our ItemGrabMenu cursor handling applies to reward menus (may not be recognized as a chest-context menu).
-- **41f. Can deposit items into reward menu** — The reward ItemGrabMenu acts like a chest — player can put items into it and they're lost. Game creates it without a deposit-blocking `highlightFunction`. Need to investigate `openRewardsMenu()` parameters.
+- **41f. Can deposit items into reward menu / present disappears on B-close** — Two related issues:
+  - Present disappeared when pressing B without taking items. Root cause: `ClearPendingRewards` force-cleared ALL BundleRewards unconditionally. Fix (v3.4.76): Track actual grabs via `rewardGrabbed` postfix, only clear grabbed indices.
+  - Decompiled source shows deposits SHOULD be blocked (`reverseGrab:false`, `behaviorFunction:null` → deposit check fails). Need to verify on device whether deposits actually happen on Android.
 - **File:** `Patches/JunimoNoteMenuPatches.cs`
 
 ### 45. FIXED (v3.4.74) — Purchase Button on Cash Bundles (Vault)
