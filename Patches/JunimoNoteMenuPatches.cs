@@ -268,9 +268,10 @@ namespace AndroidConsolizer.Patches
                             return false;
                         case Buttons.LeftTrigger:
                         case Buttons.RightTrigger:
-                            if (!ModEntry.Config.UseBumpersInsteadOfTriggers)
+                            if (!ModEntry.Config.UseBumpersInsteadOfTriggers && __instance.fromGameMenu)
                             {
                                 // Triggers = GameMenu tab switching. Exit CC back to GameMenu.
+                                // Only when CC was opened FROM GameMenu (not by walking into room).
                                 // LT wraps to last tab (Options), RT wraps to first tab (Inventory).
                                 var gm = new GameMenu();
                                 int tab = (b == Buttons.LeftTrigger)
@@ -281,7 +282,7 @@ namespace AndroidConsolizer.Patches
                                 Game1.activeClickableMenu = gm;
                                 return false;
                             }
-                            return true; // bumper mode: let vanilla handle room switching
+                            return true; // bumper mode or walked-in: let vanilla handle
                         default:
                             return true;
                     }
