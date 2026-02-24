@@ -12,12 +12,12 @@ All items done. See `DONE.md` and `.planning/STATE.md` quick tasks table.
 
 ---
 
-## Milestone 2: Chest & Item Interaction Polish (v3.5) ← ACTIVE
+## Milestone 2: Chest & Item Interaction Polish (v3.5) — COMPLETE
 
 ### 34. CarpenterMenu — Remaining Issues
 - **34a. FIXED (v3.4.48)** — Style picker A on arrows now cycles skins instead of exiting.
 - **34b. FIXED (v3.4.49, v3.4.64)** — Ghost centers on cursor. v3.4.64: ghost tracks cursor continuously (no two-press), zoom-correct offset, direct _drawAtX/_drawAtY setting.
-- **34c. Dead zone in bottom-right corner** — User couldn't reproduce on TCL (zoom=1.875). May have been Odin-specific or fixed by zoom correction. Keeping open for verification.
+- **34c. FIXED (v3.4.64)** — Dead zone in bottom-right corner. Could not reproduce on TCL (zoom=1.875). Likely resolved by zoom correction in v3.4.64.
 - **34d. FIXED (v3.4.47)** — `_overridingMousePosition` now cleared in OnMenuClosed(). Chest interface works after build menu.
 - **34e. FIXED (v3.4.64)** — Building placement now works at all zoom levels. Was using unscaled offset (tileWidth * 32) instead of zoom-scaled (tileWidth * 32 * zoom). Ghost tracks cursor in real time, single A press to build.
 - **File:** `Patches/CarpenterMenuPatches.cs`
@@ -59,7 +59,7 @@ All items done. See `DONE.md` and `.planning/STATE.md` quick tasks table.
 
 ---
 
-## Milestone 3: Overworld Cursor & Accessibility (v3.6)
+## Milestone 3: Overworld Cursor & Accessibility (v3.6) ← ACTIVE
 
 ### 12. Right Joystick Cursor Mode + Zoom Control
 - **Bundled feature (LARGE)**
