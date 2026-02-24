@@ -636,6 +636,12 @@ namespace AndroidConsolizer.Patches
                     // Must run BEFORE InitOverviewNavigation so presentButton isn't recreated.
                     ClearPendingRewards();
 
+                    // Flush partial reward claims if this area just completed (#41f).
+                    // When all bundles are done, markAreaAsComplete fires before we get here.
+                    // Any partially-taken rewards must be finalized so the game's missed
+                    // rewards system doesn't regenerate the full amount (causing dupes).
+                    FlushPartialClaimsIfAreaComplete(__instance);
+
                     if (InitOverviewNavigation(__instance))
                     {
                         _onOverviewPage = true;
@@ -1117,6 +1123,40 @@ namespace AndroidConsolizer.Patches
             catch (Exception ex)
             {
                 Monitor.Log($"[DIAG-41] SavePendingRewardIndices error: {ex.Message}", LogLevel.Warn);
+            }
+        }
+
+        /// <summary>When the area completes while partial reward claims exist, flush them by
+        /// calling rewardGrabbed. This clears bundleRewards so the missed rewards chest doesn't
+        /// regenerate the full amount (which would dupe items the user already took).</summary>
+        private static void FlushPartialClaimsIfAreaComplete(JunimoNoteMenu menu)
+        {
+            if (ItemGrabMenuPatches.PartialRewardTaken.Count == 0) return;
+            try
+            {
+                int whichArea = _whichAreaField != null ? (int)_whichAreaField.GetValue(menu) : -1;
+                if (whichArea < 0) return;
+
+                var cc = Game1.getLocationFromName("CommunityCenter") as StardewValley.Locations.CommunityCenter;
+                if (cc == null || !cc.areasComplete[whichArea]) return;
+
+                // Area is complete — flush all partial claims by clearing bundleRewards directly
+                var bundleRewards = Game1.netWorldState.Value.BundleRewards;
+                if (bundleRewards == null) return;
+
+                foreach (int bundleIndex in new List<int>(ItemGrabMenuPatches.PartialRewardTaken.Keys))
+                {
+                    if (bundleRewards.ContainsKey(bundleIndex) && bundleRewards[bundleIndex])
+                    {
+                        bundleRewards[bundleIndex] = false;
+                        Monitor.Log($"[ChestTransfer] Flushed partial claim for bundle {bundleIndex} — area {whichArea} complete, {ItemGrabMenuPatches.PartialRewardTaken[bundleIndex]} items were taken", LogLevel.Debug);
+                    }
+                    ItemGrabMenuPatches.PartialRewardTaken.Remove(bundleIndex);
+                }
+            }
+            catch (Exception ex)
+            {
+                Monitor.Log($"[ChestTransfer] FlushPartialClaimsIfAreaComplete error: {ex.Message}", LogLevel.Warn);
             }
         }
 
