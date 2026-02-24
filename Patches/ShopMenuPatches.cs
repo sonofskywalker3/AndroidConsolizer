@@ -943,20 +943,38 @@ namespace AndroidConsolizer.Patches
                                    || (invVisible && Game1.mouseCursorTransparency < 0.01f);
                     if (needCursor)
                     {
-                        // On buy tab, getMouseX/Y() may be stale (still at sell tab position).
-                        // Use the snapped component's bounds instead (same 3/4-point position
-                        // that snapCursorToCurrentSnappedComponent uses).
-                        int cursorX, cursorY;
-                        if (!invVisible && __instance.currentlySnappedComponent != null)
+                        int cursorX = Game1.getMouseX();
+                        int cursorY = Game1.getMouseY();
+
+                        // On buy tab, getMouseX/Y() and currentlySnappedComponent are both
+                        // unreliable (stale from sell tab, or null). Find the forSaleButton
+                        // that matches hoveredItem instead — hoveredItem IS reliably set
+                        // because our purchase code depends on it.
+                        if (!invVisible)
                         {
-                            var bounds = __instance.currentlySnappedComponent.bounds;
-                            cursorX = bounds.Right - bounds.Width / 4;
-                            cursorY = bounds.Bottom - bounds.Height / 4;
-                        }
-                        else
-                        {
-                            cursorX = Game1.getMouseX();
-                            cursorY = Game1.getMouseY();
+                            bool found = false;
+                            var hovItem = HoveredItemField?.GetValue(__instance) as ISalable;
+                            if (hovItem != null)
+                            {
+                                for (int i = 0; i < __instance.forSaleButtons.Count; i++)
+                                {
+                                    int itemIdx = __instance.currentItemIndex + i;
+                                    if (itemIdx < __instance.forSale.Count && __instance.forSale[itemIdx] == hovItem)
+                                    {
+                                        var btn = __instance.forSaleButtons[i];
+                                        cursorX = btn.bounds.Right - btn.bounds.Width / 4;
+                                        cursorY = btn.bounds.Bottom - btn.bounds.Height / 4;
+                                        found = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            if (!found && __instance.forSaleButtons.Count > 0)
+                            {
+                                var btn = __instance.forSaleButtons[0];
+                                cursorX = btn.bounds.Right - btn.bounds.Width / 4;
+                                cursorY = btn.bounds.Bottom - btn.bounds.Height / 4;
+                            }
                         }
 
                         int cursorTile = Game1.options.snappyMenus ? 44 : Game1.mouseCursor;
