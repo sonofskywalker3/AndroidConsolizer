@@ -848,18 +848,24 @@ namespace AndroidConsolizer.Patches
                 if (!inventoryVisible)
                     return;
 
-                // Ensure mouse position tracks the snapped component on sell tab.
-                // Vanilla's snapCursorToCurrentSnappedComponent positions the cursor at
-                // (bounds.Right - bounds.Width/4, bounds.Bottom - bounds.Height/4),
-                // but on some shops (Clint, Joja) the mouse drifts off-target.
-                // Setting it here every frame guarantees the vanilla drawMouse() call
-                // renders the cursor at the correct slot position.
-                if (GamePad.GetState(PlayerIndex.One).IsConnected && __instance.currentlySnappedComponent != null)
+                // DIAGNOSTIC: Log why drawMouse might not render at some shops (Clint)
+                // drawMouse checks: gamepadControls, mostRecentlyUsedControlType==GAMEPAD,
+                // !hardwareCursor, and multiplies by mouseCursorTransparency
+                if (GamePad.GetState(PlayerIndex.One).IsConnected && Game1.ticks % 60 == 0)
                 {
-                    var target = __instance.currentlySnappedComponent;
-                    int snapX = target.bounds.Right - target.bounds.Width / 4;
-                    int snapY = target.bounds.Bottom - target.bounds.Height / 4;
-                    Game1.setMousePosition(snapX, snapY, ui_scale: true);
+                    var vjField = AccessTools.Field(typeof(Game1), "virtualJoypad");
+                    object vj = vjField?.GetValue(null);
+                    string controlType = "?";
+                    if (vj != null)
+                    {
+                        var ctField = AccessTools.Field(vj.GetType(), "mostRecentlyUsedControlType");
+                        controlType = ctField?.GetValue(vj)?.ToString() ?? "null";
+                    }
+                    int mx = Game1.getMouseX();
+                    int my = Game1.getMouseY();
+                    var diagSnapped = __instance.currentlySnappedComponent;
+                    string snappedInfo = diagSnapped != null ? $"id={diagSnapped.myID} bounds={diagSnapped.bounds}" : "null";
+                    Monitor.Log($"[DIAG-40] shopId={__instance.ShopId} gamepadControls={Game1.options.gamepadControls} controlType={controlType} hardwareCursor={Game1.options.hardwareCursor} cursorTransparency={Game1.mouseCursorTransparency} mouse=({mx},{my}) snapped={snappedInfo}", LogLevel.Info);
                 }
 
                 Item sellItem = GetSellTabSelectedItem(__instance);
