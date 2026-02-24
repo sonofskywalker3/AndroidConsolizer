@@ -904,13 +904,15 @@ namespace AndroidConsolizer.Patches
             // Set highlightedBundle via reflection
             _highlightedBundleField.SetValue(menu, targetIndex);
 
-            // Reset all non-highlighted bundle sprites, trigger hover on the active one
+            // Reset all non-highlighted bundle sprites, trigger hover on the active one.
+            // Skip completed bundles — their sprite is at frame 14 (completed icon) and
+            // resetting would revert them to the incomplete appearance.
             for (int i = 0; i < bundlesList.Count; i++)
             {
                 var bundle = bundlesList[i] as Bundle;
                 if (bundle == null) continue;
 
-                if (i != targetIndex)
+                if (i != targetIndex && !bundle.complete)
                 {
                     bundle.sprite.reset();
                     bundle.sprite.paused = true;
@@ -918,7 +920,8 @@ namespace AndroidConsolizer.Patches
             }
 
             var highlighted = bundlesList[targetIndex] as Bundle;
-            highlighted?.tryHoverAction(highlighted.bounds.X, highlighted.bounds.Y);
+            if (highlighted != null && !highlighted.complete)
+                highlighted.tryHoverAction(highlighted.bounds.X, highlighted.bounds.Y);
         }
 
         private static void HandleOverviewAPress(JunimoNoteMenu menu)
