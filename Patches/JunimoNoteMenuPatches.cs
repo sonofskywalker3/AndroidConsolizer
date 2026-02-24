@@ -137,24 +137,11 @@ namespace AndroidConsolizer.Patches
 
             // rewardGrabbed — track which rewards were actually taken (#41b B-close fix)
             var rewardGrabbedMethod = AccessTools.Method(typeof(JunimoNoteMenu), "rewardGrabbed");
-            Monitor.Log($"[DIAG-41f] rewardGrabbed method lookup: {(rewardGrabbedMethod != null ? rewardGrabbedMethod.ToString() : "NULL — method not found!")}", LogLevel.Info);
             if (rewardGrabbedMethod != null)
             {
                 harmony.Patch(
                     original: rewardGrabbedMethod,
                     postfix: new HarmonyMethod(typeof(JunimoNoteMenuPatches), nameof(RewardGrabbed_Postfix))
-                );
-            }
-
-            // DIAGNOSTIC: patch performSpecialContextChecks on ItemGrabMenu to trace reward flow
-            var perfSpecialMethod = AccessTools.Method(typeof(ItemGrabMenu), "performSpecialContextChecks");
-            Monitor.Log($"[DIAG-41f] performSpecialContextChecks method lookup: {(perfSpecialMethod != null ? perfSpecialMethod.ToString() : "NULL")}", LogLevel.Info);
-            if (perfSpecialMethod != null)
-            {
-                harmony.Patch(
-                    original: perfSpecialMethod,
-                    prefix: new HarmonyMethod(typeof(JunimoNoteMenuPatches), nameof(PerformSpecialContextChecks_Prefix)),
-                    postfix: new HarmonyMethod(typeof(JunimoNoteMenuPatches), nameof(PerformSpecialContextChecks_Postfix))
                 );
             }
 
@@ -633,9 +620,6 @@ namespace AndroidConsolizer.Patches
                         // Sync highlightedBundle so the initial bundle animates immediately
                         if (__instance.currentlySnappedComponent != null)
                             SyncHighlightedBundle(__instance, __instance.currentlySnappedComponent);
-
-                        // DIAGNOSTIC #41: Log bundle state on overview entry
-                        LogBundleState(__instance, "entered overview");
                     }
                 }
 
@@ -670,9 +654,6 @@ namespace AndroidConsolizer.Patches
                     _overridingMouse = false;
                     _inIngredientZone = false;
                     _ingredientRows = null;
-
-                    // DIAGNOSTIC #41: Log bundle state when returning to overview from donation
-                    LogBundleState(__instance, "returned to overview from donation");
                 }
 
                 // Keep currentlySnappedComponent in sync (game may reset it)
@@ -1077,7 +1058,8 @@ namespace AndroidConsolizer.Patches
             if (item != null)
             {
                 _grabbedRewardIndices.Add(item.SpecialVariable);
-                Monitor.Log($"[DIAG-41] rewardGrabbed fired for bundle index {item.SpecialVariable}", LogLevel.Info);
+                if (ModEntry.Config.VerboseLogging)
+                    Monitor.Log($"[Rewards] rewardGrabbed fired for bundle index {item.SpecialVariable}", LogLevel.Debug);
             }
         }
 
@@ -1102,11 +1084,12 @@ namespace AndroidConsolizer.Patches
                         _pendingRewardIndices.Add(bundleIndex);
                 }
                 _rewardsMenuOpened = true;
-                Monitor.Log($"[DIAG-41] Rewards menu opened, pending indices: [{string.Join(",", _pendingRewardIndices)}]", LogLevel.Info);
+                if (ModEntry.Config.VerboseLogging)
+                    Monitor.Log($"[Rewards] Opened, pending indices: [{string.Join(",", _pendingRewardIndices)}]", LogLevel.Debug);
             }
             catch (Exception ex)
             {
-                Monitor.Log($"[DIAG-41] SavePendingRewardIndices error: {ex.Message}", LogLevel.Warn);
+                Monitor.Log($"[Rewards] SavePendingRewardIndices error: {ex.Message}", LogLevel.Warn);
             }
         }
 
@@ -1127,7 +1110,8 @@ namespace AndroidConsolizer.Patches
                             if (bundleRewards.ContainsKey(idx) && bundleRewards[idx])
                             {
                                 bundleRewards[idx] = false;
-                                Monitor.Log($"[DIAG-41] Force-cleared BundleRewards[{idx}]", LogLevel.Info);
+                                if (ModEntry.Config.VerboseLogging)
+                                    Monitor.Log($"[Rewards] Cleared BundleRewards[{idx}]", LogLevel.Debug);
                             }
                         }
                     }
@@ -1143,106 +1127,19 @@ namespace AndroidConsolizer.Patches
                 }
                 else
                 {
-                    Monitor.Log("[DIAG-41] No rewards grabbed (B-close), skipping clear", LogLevel.Info);
+                    if (ModEntry.Config.VerboseLogging)
+                        Monitor.Log("[Rewards] No rewards grabbed (B-close), skipping clear", LogLevel.Debug);
                 }
             }
             catch (Exception ex)
             {
-                Monitor.Log($"[DIAG-41] ClearPendingRewards error: {ex.Message}", LogLevel.Warn);
+                Monitor.Log($"[Rewards] ClearPendingRewards error: {ex.Message}", LogLevel.Warn);
             }
             finally
             {
                 _rewardsMenuOpened = false;
                 _pendingRewardIndices = null;
                 _grabbedRewardIndices.Clear();
-            }
-        }
-
-        // ===== DIAGNOSTIC #41f: performSpecialContextChecks tracing =====
-
-        private static void PerformSpecialContextChecks_Prefix(ItemGrabMenu __instance, Item item, int tap_x, int tap_y)
-        {
-            try
-            {
-                var ctx = __instance.context;
-                var behaviorField = AccessTools.Field(typeof(ItemGrabMenu), "behaviorOnItemGrab");
-                var behaviorVal = behaviorField?.GetValue(__instance);
-                var invHeldField = AccessTools.Field(typeof(InventoryMenu), "inventoryItemHeld");
-                var invHeld = invHeldField?.GetValue(__instance.ItemsToGrabMenu);
-                Monitor.Log($"[DIAG-41f] performSpecialContextChecks CALLED: item={item?.DisplayName ?? "null"}, " +
-                    $"context={ctx?.GetType()?.FullName ?? "null"}, " +
-                    $"behaviorOnItemGrab={(behaviorVal != null ? "SET" : "null")}, " +
-                    $"reverseGrab={__instance.reverseGrab}, " +
-                    $"inventoryItemHeld={invHeld ?? "field-not-found"}", LogLevel.Info);
-            }
-            catch (Exception ex)
-            {
-                Monitor.Log($"[DIAG-41f] prefix error: {ex.Message}", LogLevel.Warn);
-            }
-        }
-
-        private static void PerformSpecialContextChecks_Postfix(ItemGrabMenu __instance, Item item, bool __result)
-        {
-            Monitor.Log($"[DIAG-41f] performSpecialContextChecks RETURNED: {__result}, item={item?.DisplayName ?? "null"}", LogLevel.Info);
-        }
-
-        // ===== DIAGNOSTIC #41: Bundle state logging =====
-
-        private static void LogBundleState(JunimoNoteMenu menu, string context)
-        {
-            try
-            {
-                var bundlesList = _bundlesField?.GetValue(menu) as System.Collections.IList;
-                int bundleCount = bundlesList?.Count ?? 0;
-                Monitor.Log($"[DIAG-41] {context}: {bundleCount} bundles", LogLevel.Info);
-
-                if (bundlesList != null)
-                {
-                    for (int i = 0; i < bundlesList.Count; i++)
-                    {
-                        var bundle = bundlesList[i] as Bundle;
-                        if (bundle == null) continue;
-                        Monitor.Log($"[DIAG-41]   bundle[{i}] ID:{bundle.myID} complete={bundle.complete} srcRect={bundle.sprite?.sourceRect}", LogLevel.Info);
-                    }
-                }
-
-                var present = _presentButtonField?.GetValue(menu);
-                bool presentInComponents = false;
-                if (present != null && menu.allClickableComponents != null)
-                {
-                    foreach (var c in menu.allClickableComponents)
-                        if (c == present) { presentInComponents = true; break; }
-                }
-                Monitor.Log($"[DIAG-41]   presentButton exists={present != null} inAllClickable={presentInComponents}", LogLevel.Info);
-
-                // Log bundleRewards from Game1.netWorldState.Value.BundleRewards
-                // (CommunityCenter.bundleRewards is a property that delegates to this)
-                try
-                {
-                    var bundleRewards = Game1.netWorldState.Value.BundleRewards;
-                    if (bundleRewards != null)
-                    {
-                        var pending = new List<string>();
-                        foreach (var key in bundleRewards.Keys)
-                        {
-                            if (bundleRewards[key])
-                                pending.Add(key.ToString());
-                        }
-                        Monitor.Log($"[DIAG-41]   BundleRewards pending: [{string.Join(",", pending)}] (total keys={bundleRewards.Count()})", LogLevel.Info);
-                    }
-                    else
-                    {
-                        Monitor.Log("[DIAG-41]   BundleRewards is null", LogLevel.Info);
-                    }
-                }
-                catch (Exception brEx)
-                {
-                    Monitor.Log($"[DIAG-41]   BundleRewards access error: {brEx.Message}", LogLevel.Warn);
-                }
-            }
-            catch (Exception ex)
-            {
-                Monitor.Log($"[DIAG-41] LogBundleState error: {ex.Message}", LogLevel.Warn);
             }
         }
 
