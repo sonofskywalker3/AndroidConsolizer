@@ -37,10 +37,9 @@ All items done. See `DONE.md` and `.planning/STATE.md` quick tasks table.
 - **41f. Can deposit items into reward menu** — The reward ItemGrabMenu acts like a chest — player can put items into it and they're lost. Game creates it without a deposit-blocking `highlightFunction`. Need to investigate `openRewardsMenu()` parameters.
 - **File:** `Patches/JunimoNoteMenuPatches.cs`
 
-### 45. Purchase Button on Cash Bundles (Vault)
-- Can't navigate to the purchase button on Vault (gold-cost) bundles with controller.
-- The donation page for Vault bundles has a `purchaseButton` instead of ingredient slots. Our navigation only handles inventory slots and ingredient lists.
-- **Investigation needed:** Check if `purchaseButton` exists on the donation page, add to navigation, handle A press.
+### 45. FIXED (v3.4.74) — Purchase Button on Cash Bundles (Vault)
+- Vault bundles have a `purchaseButton` (myID=797) instead of ingredient slots. Game's `doSpecificBundlePageJoystick` uses highlight-based two-step A, but we use cursor-based single-press A.
+- Fix: `HandlePurchaseAPress` overrides GetMouseState to purchaseButton center, calls `releaseLeftClick`. Draw_Prefix/Draw_Postfix draw cursor at purchaseButton when on donation page.
 - **File:** `Patches/JunimoNoteMenuPatches.cs`
 
 ### 42. FIXED (v3.4.63) — Equipment Slot Tooltips Missing
@@ -174,6 +173,12 @@ All items done. See `DONE.md` and `.planning/STATE.md` quick tasks table.
 - Likely caused by gap between relocated component bounds and actual rendered swatch visuals.
 - **Not blocking.** Cosmetic only.
 - **File:** `Patches/ItemGrabMenuPatches.cs`
+
+### 46. Grey Out Non-Donatable Items on Bundle Page
+- When a bundle donation page is open, items in inventory that cannot be donated to that bundle should be greyed out.
+- Same pattern as #44 (zero-price items greyed out on sell tab) — override `highlightMethod` on the inventory to only highlight valid donation items.
+- **Investigation needed:** How does the game determine valid donations? Check `Bundle.canAcceptThisItem()` or equivalent. Need to match against the bundle's remaining required ingredients.
+- **File:** `Patches/JunimoNoteMenuPatches.cs`
 
 ### 38. GMCM Two-Tier Config (Simple Page + Granular File)
 - GMCM currently has a flat list of toggles. With 20+ features, this is heading toward a 68-item checklist nobody wants to scroll through.
