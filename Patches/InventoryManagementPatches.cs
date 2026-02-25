@@ -543,19 +543,23 @@ namespace AndroidConsolizer.Patches
                     if (cc.myID == 120) { hasTrinket = true; break; }
                 }
 
+                // Wire ALL candidate equipment slots right → drop zone
+                // and pick the Y-closest one as drop zone's left neighbor
                 int bestEquipId = -1;
                 int bestDist = int.MaxValue;
 
                 foreach (var cc in inventoryPage.allClickableComponents)
                 {
-                    // Check equipment slot IDs: trinket, boots, pants, rings
                     bool isCandidate = cc.myID == 120 || cc.myID == 104 || cc.myID == 109;
-                    // Include ring slots only if trinket isn't available
                     if (!hasTrinket && (cc.myID == 102 || cc.myID == 103))
                         isCandidate = true;
 
                     if (isCandidate)
                     {
+                        // Wire this equipment slot right → drop zone
+                        cc.rightNeighborID = DropZoneId;
+
+                        // Track the Y-closest for drop zone's left neighbor
                         int equipCenterY = cc.bounds.Y + cc.bounds.Height / 2;
                         int dist = Math.Abs(equipCenterY - dropCenterY);
                         if (dist < bestDist)
@@ -567,19 +571,7 @@ namespace AndroidConsolizer.Patches
                 }
 
                 if (bestEquipId >= 0)
-                {
                     dropZone.leftNeighborID = bestEquipId;
-
-                    // Wire the equipment slot's right → drop zone
-                    foreach (var cc in inventoryPage.allClickableComponents)
-                    {
-                        if (cc.myID == bestEquipId)
-                        {
-                            cc.rightNeighborID = DropZoneId;
-                            break;
-                        }
-                    }
-                }
 
                 if (ModEntry.Config.VerboseLogging)
                     Monitor?.Log($"InventoryManagement: Injected drop zone at ({dropX},{dropY}) size {dropSize}x{dropSize}, below trash, leftNeighbor={dropZone.leftNeighborID}", LogLevel.Debug);
@@ -612,9 +604,15 @@ namespace AndroidConsolizer.Patches
                 if (sort == null) return;
 
                 // Collect all components in the same X column as sort, at or below sort
-                var sidebar = new System.Collections.Generic.List<ClickableComponent>();
+                var sidebar = new List<ClickableComponent>();
+                ClickableComponent dropZone = null;
                 foreach (var cc in inventoryPage.allClickableComponents)
                 {
+                    if (cc.myID == DropZoneId)
+                    {
+                        dropZone = cc;
+                        continue; // Don't add via X-check; append at end
+                    }
                     if (EquipmentSlotIds.Contains(cc.myID))
                         continue;
                     if (cc.myID < 0)
@@ -629,10 +627,12 @@ namespace AndroidConsolizer.Patches
                     }
                 }
 
-                if (sidebar.Count < 2) return;
-
-                // Sort by Y position
+                // Sort column items by Y, then always append drop zone at the end
                 sidebar.Sort((a, b) => a.bounds.Y.CompareTo(b.bounds.Y));
+                if (dropZone != null)
+                    sidebar.Add(dropZone);
+
+                if (sidebar.Count < 2) return;
 
                 // Wire the chain: each element points down to next, up to previous
                 for (int i = 0; i < sidebar.Count; i++)
