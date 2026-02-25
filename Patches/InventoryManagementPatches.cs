@@ -477,9 +477,8 @@ namespace AndroidConsolizer.Patches
                     dropY = bbY + (bbH - dropSize) / 2;
                 }
 
-                // Horizontal: center between end of stats text area and right edge of page
-                // Stats text is centered from num3 to rightEdge, where
-                // num3 = portraitX + portraitWidth + equipmentIconSize * 1.5
+                // Horizontal: center between actual text right edge and page right edge
+                // Measure real text width so this works at any zoom level / screen size
                 int dropX = trash.bounds.X + (trash.bounds.Width - dropSize) / 2; // fallback
                 int rightEdge = inventoryPage.xPositionOnScreen + inventoryPage.width;
                 if (InvPage_PortraitXField != null && InvPage_PortraitWidthField != null && InvPage_EquipmentIconSizeField != null)
@@ -489,9 +488,29 @@ namespace AndroidConsolizer.Patches
                     int equipIconSize = (int)InvPage_EquipmentIconSizeField.GetValue(inventoryPage);
                     int statsLeft = (int)(portraitX + portraitWidth + equipIconSize * 1.5);
                     int statsCenterX = statsLeft + (rightEdge - statsLeft) / 2;
-                    // Center drop zone between stats center (≈ text end) and right edge
-                    int dropCenterX = statsCenterX + (rightEdge - statsCenterX) / 2;
+
+                    // Measure widest stats line to find where text actually ends
+                    float maxHalfWidth = 100; // conservative fallback
+                    try
+                    {
+                        SpriteFont font = Game1.smallFont;
+                        string name = Game1.player.Name ?? "";
+                        string farm = (Game1.player.farmName.Value ?? "") + " Farm";
+                        string money = Utility.getNumberWithCommas(Game1.player.Money);
+                        string earned = Utility.getNumberWithCommas((int)Game1.player.totalMoneyEarned);
+                        maxHalfWidth = Math.Max(
+                            Math.Max(font.MeasureString(name).X, font.MeasureString(farm).X),
+                            Math.Max(font.MeasureString(money).X, font.MeasureString(earned).X)) / 2f;
+                    }
+                    catch { }
+
+                    int textRightEdge = statsCenterX + (int)maxHalfWidth + 24; // 24px padding
+                    int dropCenterX = textRightEdge + (rightEdge - textRightEdge) / 2;
                     dropX = dropCenterX - dropSize / 2;
+
+                    // Clamp within page bounds
+                    dropX = Math.Min(dropX, rightEdge - dropSize - 8);
+                    dropX = Math.Max(dropX, textRightEdge);
                 }
 
                 var dropZone = new ClickableComponent(
