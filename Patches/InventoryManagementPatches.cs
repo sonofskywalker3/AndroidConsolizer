@@ -460,12 +460,9 @@ namespace AndroidConsolizer.Patches
 
                 // Position: same X as trash, below trash with padding
                 // Use bottomBoxY via reflection if available, otherwise fall back to trash position
-                int dropX = trash.bounds.X;
-                int dropY = trash.bounds.Y + trash.bounds.Height + 16; // 16px gap below trash
-                int dropSize = 80; // Slightly larger than 64x64 equipment slots for "Drop" text
-
-                // Center horizontally on trash column
-                dropX = trash.bounds.X + (trash.bounds.Width - dropSize) / 2;
+                int dropSize = 160; // Large visible box, about twice equipment slot size
+                int dropX = trash.bounds.X + (trash.bounds.Width - dropSize) / 2; // Center on trash column
+                int dropY = trash.bounds.Y + trash.bounds.Height + 120; // Well below trash
 
                 var dropZone = new ClickableComponent(
                     new Rectangle(dropX, dropY, dropSize, dropSize),
