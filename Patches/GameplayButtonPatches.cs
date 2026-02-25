@@ -332,8 +332,20 @@ namespace AndroidConsolizer.Patches
                 // A/B swap applies everywhere (main menu, game menus, gameplay)
                 bool swapAB = ShouldSwapAB();
 
-                // X/Y swap during gameplay and BobberBar (fishing mini-game uses gameplay buttons)
-                bool swapXY = ShouldSwapXY() && (Game1.activeClickableMenu == null || Game1.activeClickableMenu is BobberBar);
+                // X/Y swap: Switch swaps during gameplay, Xbox/PS swaps in menus.
+                // BobberBar counts as gameplay (fishing mini-game uses gameplay buttons).
+                bool swapXY;
+                if (ModEntry.Config?.EnableButtonRemapping == false)
+                    swapXY = false;
+                else
+                {
+                    var layout = ModEntry.Config?.ControllerLayout ?? ControllerLayout.Switch;
+                    bool inMenu = Game1.activeClickableMenu != null && !(Game1.activeClickableMenu is BobberBar);
+                    if (layout == ControllerLayout.Switch)
+                        swapXY = !inMenu;  // Switch: swap during gameplay only (menus use raw X/Y)
+                    else
+                        swapXY = inMenu;   // Xbox/PS: swap in menus only (gameplay uses raw X/Y)
+                }
 
                 // Nothing to do if no swapping needed
                 if (!swapXY && !swapAB)
