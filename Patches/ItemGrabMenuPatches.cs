@@ -1514,11 +1514,17 @@ namespace AndroidConsolizer.Patches
         }
 
         /// <summary>Invoke the menu's behaviorOnItemGrab callback if set (e.g. rewardGrabbed for bundle rewards).
-        /// Since Y is blocked on reward menus, A always takes the full stack, so the callback fires immediately.</summary>
+        /// Only fires for reward menus (source == 0). For normal chests, the callback is grabItemFromChest
+        /// which calls ShowMenu() — rebuilding the entire menu and resetting cursor to slot 0.
+        /// Our transfer code already handles inventory manipulation, so the callback is redundant for chests.</summary>
         private static void InvokeBehaviorOnItemGrab(ItemGrabMenu menu, Item item)
         {
             try
             {
+                // Skip for normal chests — grabItemFromChest rebuilds the entire menu
+                if (menu.source != 0)
+                    return;
+
                 var callback = AccessTools.Field(typeof(ItemGrabMenu), "behaviorOnItemGrab")?.GetValue(menu) as Delegate;
                 if (callback == null) return;
 
