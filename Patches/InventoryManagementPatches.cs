@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
 using Microsoft.Xna.Framework;
@@ -422,19 +423,22 @@ namespace AndroidConsolizer.Patches
             // and consumed by prefix patches during this tick's input processing.
             AllowGameAPress = false;
 
-            // Inject drop zone component between sort (106) and trash (105) if not already present
+            // Inject drop zone and maintain sidebar navigation chain every tick
             if (Game1.activeClickableMenu is GameMenu gm2 && gm2.currentTab == GameMenu.inventoryTab)
             {
                 var invPage2 = gm2.pages[GameMenu.inventoryTab] as InventoryPage;
                 if (invPage2 != null)
+                {
                     EnsureDropZoneComponent(invPage2);
+                    WireSidebarChain(invPage2);
+                }
             }
         }
 
         /// <summary>
-        /// Inject the drop zone component below trash (105) in the bottom-right area.
+        /// Inject the drop zone component in the bottom-right area if not already present.
         /// Visible box with "Drop" text, drawn in InventoryPage_Draw_Postfix.
-        /// Navigation: Trash (105) ↔ Drop Zone (110). Sort (106) → Trash (105) direct.
+        /// Sidebar chain wiring (sort → trash → ... → drop zone) handled by WireSidebarChain.
         /// </summary>
         private static void EnsureDropZoneComponent(InventoryPage inventoryPage)
         {
@@ -518,20 +522,17 @@ namespace AndroidConsolizer.Patches
                     "dropZone")
                 {
                     myID = DropZoneId,
-                    upNeighborID = 105,         // trash
-                    downNeighborID = -1,         // nothing below
+                    upNeighborID = -1,           // WireSidebarChain sets this
+                    downNeighborID = -1,         // nothing below (or chain sets it)
                     rightNeighborID = -1,        // right edge
                     leftNeighborID = -1          // will wire to equipment below
                 };
 
                 inventoryPage.allClickableComponents.Add(dropZone);
 
-                // Ensure sort (106) goes directly to trash (105) — NOT through drop zone
-                if (sort != null)
-                    sort.downNeighborID = 105;
-
-                // Wire trash (105) down → drop zone
-                trash.downNeighborID = DropZoneId;
+                // Sidebar chain wiring (sort → trash → [other mod buttons] → drop zone)
+                // is handled by WireSidebarChain, called every tick
+                WireSidebarChain(inventoryPage);
 
                 // Wire equipment slots ↔ drop zone
                 // Priority: trinket (120) if unlocked, then nearest ring/boots/pants
@@ -587,6 +588,65 @@ namespace AndroidConsolizer.Patches
             {
                 if (ModEntry.Config.VerboseLogging)
                     Monitor?.Log($"InventoryManagement: EnsureDropZoneComponent error: {ex.Message}", LogLevel.Debug);
+            }
+        }
+
+        // Equipment slot IDs to exclude from the sidebar chain
+        private static readonly HashSet<int> EquipmentSlotIds = new HashSet<int> { 101, 102, 103, 104, 108, 109, 120 };
+
+        /// <summary>
+        /// Build a vertical navigation chain from all sidebar components (same X column as sort).
+        /// Automatically picks up buttons added by other mods (e.g. Stardew Delivery Service).
+        /// Called every tick — cheap (~5 components) and ensures late additions are wired.
+        /// </summary>
+        private static void WireSidebarChain(InventoryPage inventoryPage)
+        {
+            try
+            {
+                // Find sort (106) as the anchor for the sidebar column
+                ClickableComponent sort = null;
+                foreach (var cc in inventoryPage.allClickableComponents)
+                {
+                    if (cc.myID == 106) { sort = cc; break; }
+                }
+                if (sort == null) return;
+
+                // Collect all components in the same X column as sort, at or below sort
+                var sidebar = new System.Collections.Generic.List<ClickableComponent>();
+                foreach (var cc in inventoryPage.allClickableComponents)
+                {
+                    if (EquipmentSlotIds.Contains(cc.myID))
+                        continue;
+                    if (cc.myID < 0)
+                        continue;
+                    // Inventory slots (0-35) are not sidebar
+                    if (cc.myID < 36)
+                        continue;
+                    if (Math.Abs(cc.bounds.X + cc.bounds.Width / 2 - sort.bounds.X - sort.bounds.Width / 2) < sort.bounds.Width
+                        && cc.bounds.Y >= sort.bounds.Y)
+                    {
+                        sidebar.Add(cc);
+                    }
+                }
+
+                if (sidebar.Count < 2) return;
+
+                // Sort by Y position
+                sidebar.Sort((a, b) => a.bounds.Y.CompareTo(b.bounds.Y));
+
+                // Wire the chain: each element points down to next, up to previous
+                for (int i = 0; i < sidebar.Count; i++)
+                {
+                    sidebar[i].downNeighborID = (i < sidebar.Count - 1) ? sidebar[i + 1].myID : -1;
+                    if (i > 0)
+                        sidebar[i].upNeighborID = sidebar[i - 1].myID;
+                    // First element keeps its existing upNeighborID (connects to inventory grid)
+                }
+            }
+            catch (Exception ex)
+            {
+                if (ModEntry.Config.VerboseLogging)
+                    Monitor?.Log($"InventoryManagement: WireSidebarChain error: {ex.Message}", LogLevel.Debug);
             }
         }
 
