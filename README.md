@@ -94,15 +94,15 @@ When "Use Bumpers Instead of Triggers" is enabled:
   - Left from the ingredient list returns to inventory
 - **Vault bundles**: A on the purchase button pays for the bundle (cursor-based, single press)
 - **Bundle rewards**: Navigate to the present icon, A opens rewards. A takes full stacks. Rewards properly clear after collection. B-close without taking preserves rewards for next visit.
-- **LT/RT blocked** when CC is opened by walking into a room (only switches tabs when opened from GameMenu)
+- **LT/RT blocked** when CC is opened from the junimo tile (only switches tabs when opened from GameMenu)
 - Custom cursor drawn on both overview and donation pages (Android suppresses the default cursor here)
 
 ### Game Menu Navigation
-- **Social tab**: D-pad/thumbstick navigates the villager list (3 at a time), right stick for fast scrolling. A opens the gift log. LB/RB switches villagers inside the gift log.
-- **Collections tab**: D-pad/thumbstick navigates the item grid. LT/RT cycles between sub-tabs (Crops, Fish, Recipes, etc.). Finger cursor replaces red highlight box.
+- **Social tab**: D-pad/thumbstick navigates the villager list, right stick for fast scrolling. A opens the gift log. LB/RB switches villagers inside the gift log.
+- **Collections tab**: D-pad/thumbstick navigates the item grid and sub-tabs. Finger cursor replaces red highlight box.
 - **Crafting tab**: Finger cursor replaces red highlight box.
 - **Skills tab**: D-pad/thumbstick grid navigation across skill icons and level bars.
-- **Animals tab**: D-pad/thumbstick navigates the animal list with A to select.
+- **Animals tab**: D-pad/thumbstick navigates the animal list.
 - **Powers tab**: Finger cursor replaces glow highlight.
 - **Options tab**: Left stick navigates options, A activates, right stick scrolls the list. Dropdowns supported.
 - **LT/RT tab switching**: Cycle between all game menu tabs with triggers (console parity).
@@ -156,12 +156,11 @@ When "Use Bumpers Instead of Triggers" is enabled:
 | **CC vault** | A | Purchase vault bundle |
 | **CC rewards** | A | Take full reward stack |
 | **Game Menu** | LT/RT | Switch between tabs |
-| **Social tab** | D-Pad/stick | Navigate villager list (3 at a time) |
+| **Social tab** | D-Pad/stick | Navigate villager list |
 | **Social tab** | Right stick | Fast scroll villager list |
 | **Social tab** | A | Open gift log |
 | **Gift log** | LB/RB | Switch between villagers |
 | **Gift log** | B | Return to social tab |
-| **Collections** | LT/RT | Cycle sub-tabs (Crops, Fish, etc.) |
 | **Options** | Left stick | Navigate options |
 | **Options** | Right stick | Scroll options list |
 | **Options** | A | Activate option / toggle / open dropdown |
@@ -182,6 +181,9 @@ When "Use Bumpers Instead of Triggers" is enabled:
 | **Built-in (Odin)** | AYN Odin Pro | ✅ Fully Working | All buttons and triggers work |
 | **Xbox One Wireless (Bluetooth)** | AYN Odin Pro | ⚠️ Partial | Triggers (LT/RT) not detected — enable "Use Bumpers Instead of Triggers". All other buttons work. |
 | **Xbox Series X\|S Wireless (Bluetooth)** | AYN Odin Pro | ⚠️ Partial | Triggers (LT/RT) not detected — enable "Use Bumpers Instead of Triggers". All other buttons work. |
+| **Built-in (Ayaneo)** | Ayaneo Pocket Air Mini | ✅ Fully Working | All buttons and triggers work |
+| **Built-in (G Cloud)** | Logitech G Cloud | ⚠️ Partial | Occasional double trigger input |
+| **EasySMX S10** | TCL NXTPaper 11 Plus | ✅ Fully Working | All buttons and triggers work |
 
 ### Known Issues: Xbox Controller on Android
 
@@ -324,7 +326,7 @@ MIT License - Feel free to modify and redistribute.
   - Controller deposits into reward menus blocked (rewards are take-only)
   - Y blocked on reward menus (rewards are all-or-nothing per stack)
   - Vault bundles: A on purchase button pays for the bundle (cursor-based, single press)
-  - LT/RT tab switching blocked when CC is opened by walking into a room (only works from GameMenu)
+  - LT/RT tab switching blocked when CC is opened from the junimo tile (only works from GameMenu)
   - Hover animation and tooltip properly clear when navigating between bundles and non-bundle components
 - **Chest Tooltip Positioning** — Tooltips reposition below/above the slot with proper cursor clearance, adapting to screen size
 - **Finger Cursor** — Red selection box replaced with finger cursor in all InventoryMenu contexts (chests, crafting, collections)
@@ -336,7 +338,7 @@ MIT License - Feel free to modify and redistribute.
 
 ### 3.4.0 — The Game Menu Release
 - **Social Tab Navigation** — Full controller support for the Social page
-  - D-pad/thumbstick navigates villager list (3 at a time with scroll support)
+  - D-pad/thumbstick navigates villager list with scroll support
   - Right stick for fast scrolling with hold-to-accelerate
   - Scrollbar tracks your position as you navigate
   - A opens the gift log (ProfileMenu) for the selected villager
@@ -344,10 +346,10 @@ MIT License - Feel free to modify and redistribute.
   - B returns to social tab, restoring scroll position
   - Cell content aligned properly (portrait, name, relationship status no longer overlap)
   - Gift log has a visible cursor
-- **Collections Tab Navigation** — D-pad/thumbstick grid navigation with LT/RT sub-tab switching (Crops, Fish, Recipes, Achievements, etc.). Finger cursor replaces red highlight box.
+- **Collections Tab Navigation** — D-pad/thumbstick grid navigation across items and sub-tabs (Crops, Fish, Recipes, Achievements, etc.). Finger cursor replaces red highlight box.
 - **Crafting Tab** — Finger cursor replaces red highlight box
 - **Skills Page Navigation** — D-pad/thumbstick grid navigation across skill icons and level bars
-- **Animals Tab Navigation** — D-pad/thumbstick navigates animal list, A selects
+- **Animals Tab Navigation** — D-pad/thumbstick navigates animal list
 - **Powers Tab** — Finger cursor replaces glow highlight
 - **Options Tab Navigation** — Left stick navigates options, A activates/toggles, right stick scrolls the options list. Dropdown menus open and close properly.
 - **LT/RT Tab Switching** — Cycle between all game menu tabs with triggers (console parity). Works with CC tab too.
