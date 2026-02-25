@@ -73,8 +73,12 @@ namespace AndroidConsolizer.Patches
         private static FieldInfo InvMenu_CurrentlySelectedItemField;
         private static int _savedSelectedItem = -1;
 
-        // For drop zone positioning — bottomBoxY marks the top of the bottom half of the inventory page
+        // For drop zone positioning in the bottom half of the inventory page
         private static FieldInfo InvPage_BottomBoxYField;
+        private static FieldInfo InvPage_BottomBoxHeightField;
+        private static FieldInfo InvPage_PortraitXField;
+        private static FieldInfo InvPage_PortraitWidthField;
+        private static FieldInfo InvPage_EquipmentIconSizeField;
 
         /// <summary>Apply Harmony patches for cursor item rendering.</summary>
         public static void Apply(Harmony harmony, IMonitor monitor)
@@ -88,6 +92,10 @@ namespace AndroidConsolizer.Patches
             InvMenu_HoveredItemField = AccessTools.Field(typeof(InventoryMenu), "hoveredItem");
             InvMenu_CurrentlySelectedItemField = AccessTools.Field(typeof(InventoryMenu), "currentlySelectedItem");
             InvPage_BottomBoxYField = AccessTools.Field(typeof(InventoryPage), "bottomBoxY");
+            InvPage_BottomBoxHeightField = AccessTools.Field(typeof(InventoryPage), "bottomBoxHeight");
+            InvPage_PortraitXField = AccessTools.Field(typeof(InventoryPage), "portraitX");
+            InvPage_PortraitWidthField = AccessTools.Field(typeof(InventoryPage), "portraitWidth");
+            InvPage_EquipmentIconSizeField = AccessTools.Field(typeof(InventoryPage), "equipmentIconSize");
 
             try
             {
@@ -458,11 +466,33 @@ namespace AndroidConsolizer.Patches
                     return;
                 }
 
-                // Position: same X as trash, below trash with padding
-                // Use bottomBoxY via reflection if available, otherwise fall back to trash position
                 int dropSize = 160; // Large visible box, about twice equipment slot size
-                int dropX = trash.bounds.X + (trash.bounds.Width - dropSize) / 2; // Center on trash column
-                int dropY = trash.bounds.Y + trash.bounds.Height + 120; // Well below trash
+
+                // Vertical: center in the bottom half of the inventory page
+                int dropY = trash.bounds.Y + trash.bounds.Height + 120; // fallback
+                if (InvPage_BottomBoxYField != null && InvPage_BottomBoxHeightField != null)
+                {
+                    int bbY = (int)InvPage_BottomBoxYField.GetValue(inventoryPage);
+                    int bbH = (int)InvPage_BottomBoxHeightField.GetValue(inventoryPage);
+                    dropY = bbY + (bbH - dropSize) / 2;
+                }
+
+                // Horizontal: center between end of stats text area and right edge of page
+                // Stats text is centered from num3 to rightEdge, where
+                // num3 = portraitX + portraitWidth + equipmentIconSize * 1.5
+                int dropX = trash.bounds.X + (trash.bounds.Width - dropSize) / 2; // fallback
+                int rightEdge = inventoryPage.xPositionOnScreen + inventoryPage.width;
+                if (InvPage_PortraitXField != null && InvPage_PortraitWidthField != null && InvPage_EquipmentIconSizeField != null)
+                {
+                    int portraitX = (int)InvPage_PortraitXField.GetValue(inventoryPage);
+                    int portraitWidth = (int)InvPage_PortraitWidthField.GetValue(inventoryPage);
+                    int equipIconSize = (int)InvPage_EquipmentIconSizeField.GetValue(inventoryPage);
+                    int statsLeft = (int)(portraitX + portraitWidth + equipIconSize * 1.5);
+                    int statsCenterX = statsLeft + (rightEdge - statsLeft) / 2;
+                    // Center drop zone between stats center (≈ text end) and right edge
+                    int dropCenterX = statsCenterX + (rightEdge - statsCenterX) / 2;
+                    dropX = dropCenterX - dropSize / 2;
+                }
 
                 var dropZone = new ClickableComponent(
                     new Rectangle(dropX, dropY, dropSize, dropSize),
@@ -485,16 +515,26 @@ namespace AndroidConsolizer.Patches
                 trash.downNeighborID = DropZoneId;
 
                 // Wire equipment slots ↔ drop zone
-                // Find the nearest equipment slot to the left at similar Y height
-                // Equipment slots: boots (104), pants (109), trinket (120)
+                // Priority: trinket (120) if unlocked, then nearest ring/boots/pants
                 int dropCenterY = dropY + dropSize / 2;
+                bool hasTrinket = false;
+                foreach (var cc in inventoryPage.allClickableComponents)
+                {
+                    if (cc.myID == 120) { hasTrinket = true; break; }
+                }
+
                 int bestEquipId = -1;
                 int bestDist = int.MaxValue;
 
                 foreach (var cc in inventoryPage.allClickableComponents)
                 {
-                    // Check equipment slot IDs in the bottom half
-                    if (cc.myID == 104 || cc.myID == 109 || cc.myID == 120)
+                    // Check equipment slot IDs: trinket, boots, pants, rings
+                    bool isCandidate = cc.myID == 120 || cc.myID == 104 || cc.myID == 109;
+                    // Include ring slots only if trinket isn't available
+                    if (!hasTrinket && (cc.myID == 102 || cc.myID == 103))
+                        isCandidate = true;
+
+                    if (isCandidate)
                     {
                         int equipCenterY = cc.bounds.Y + cc.bounds.Height / 2;
                         int dist = Math.Abs(equipCenterY - dropCenterY);
