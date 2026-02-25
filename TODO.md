@@ -59,6 +59,27 @@ All items done. See `DONE.md` and `.planning/STATE.md` quick tasks table.
 
 ---
 
+## Nexus Feedback Release 1
+
+### 48. Xbox/PS Layout — Y Button Overlap in Chests and Inventory
+- **Reporter:** Nexus user, tested on v3.3 and v3.4
+- **Bug:** On Xbox/PS layout, pressing Y (top physical button) both picks up a single item from a stack AND sorts the inventory/chest. The two actions fire simultaneously, so every single-item pickup also rearranges the container.
+- **Root cause hypothesis:** The button remapper maps the top physical button based on layout position. On Switch, top = X (sort); on Xbox, top = Y (single-item). But if the remapping causes the raw button to hit one code path and the remapped button to hit another, both actions fire on the same press. Or the sort handler fires on the raw button while the transfer handler fires on the remapped button.
+- **Investigation needed:**
+  1. Trace what `ButtonRemapper.RemapButton()` returns for physical Y on Xbox layout
+  2. Check if the vanilla game's `receiveGamePadButton` also processes the raw button after our prefix returns false
+  3. Check if `GetState_Postfix` X/Y swap interferes — the swap happens at hardware level and the `receiveGamePadButton` prefix sees the already-swapped button
+  4. Test: does disabling `EnableButtonRemapping` fix the overlap?
+- **Files:** `ButtonRemapper.cs`, `Patches/GameplayButtonPatches.cs`, `Patches/ItemGrabMenuPatches.cs`, `Patches/InventoryPagePatches.cs`
+
+### 49. Respond to v2.0.0 User — Furniture Debounce Availability
+- **Reporter:** Nexus user on v2.0.0, using Switch Controls mod separately
+- **Request:** Wants furniture debounce without button remapping. Staying on v2.0.0 to avoid conflicts with their existing Switch Controls mod.
+- **Status:** Already solved in current version. `EnableFurnitureDebounce` has been a separate toggle since v3.2.0, and `EnableButtonRemapping` was added in v3.5.0 to disable A/B and X/Y swaps independently.
+- **Action:** Reply on Nexus explaining they can upgrade to v3.5.0 and set `EnableButtonRemapping: false` to get just the fixes without interfering with their Switch Controls mod. All features are individually toggleable via GMCM or config.json.
+
+---
+
 ## Milestone 3: Overworld Cursor & Accessibility (v3.6) ← ACTIVE
 
 ### 12. Right Joystick Cursor Mode + Zoom Control
