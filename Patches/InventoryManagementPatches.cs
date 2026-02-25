@@ -54,7 +54,7 @@ namespace AndroidConsolizer.Patches
         // Cached A-button state from OnUpdateTicked — avoids redundant GamePad.GetState() in draw postfix
         private static bool CachedAButtonDown = false;
 
-        // Drop zone component ID (between sort 106 and trash 105)
+        // Drop zone component ID (below trash 105, bottom-right of inventory page)
         private const int DropZoneId = 110;
 
         // When HandleAButton declines to process a non-inventory slot (equipment, sort, trash),
@@ -73,6 +73,9 @@ namespace AndroidConsolizer.Patches
         private static FieldInfo InvMenu_CurrentlySelectedItemField;
         private static int _savedSelectedItem = -1;
 
+        // For drop zone positioning — bottomBoxY marks the top of the bottom half of the inventory page
+        private static FieldInfo InvPage_BottomBoxYField;
+
         /// <summary>Apply Harmony patches for cursor item rendering.</summary>
         public static void Apply(Harmony harmony, IMonitor monitor)
         {
@@ -84,6 +87,7 @@ namespace AndroidConsolizer.Patches
             InvPage_HoveredItemField = AccessTools.Field(typeof(InventoryPage), "hoveredItem");
             InvMenu_HoveredItemField = AccessTools.Field(typeof(InventoryMenu), "hoveredItem");
             InvMenu_CurrentlySelectedItemField = AccessTools.Field(typeof(InventoryMenu), "currentlySelectedItem");
+            InvPage_BottomBoxYField = AccessTools.Field(typeof(InventoryPage), "bottomBoxY");
 
             try
             {
@@ -151,6 +155,49 @@ namespace AndroidConsolizer.Patches
                     if (ModEntry.Config.VerboseLogging)
                         Monitor?.Log($"InventoryManagement: Draw held item error: {ex.Message}", LogLevel.Debug);
                 }
+            }
+
+            // Draw the drop zone box (visible "Drop" button in the bottom-right)
+            try
+            {
+                ClickableComponent dropZone = null;
+                foreach (var cc in __instance.allClickableComponents)
+                {
+                    if (cc.myID == DropZoneId)
+                    {
+                        dropZone = cc;
+                        break;
+                    }
+                }
+
+                if (dropZone != null)
+                {
+                    var bounds = dropZone.bounds;
+
+                    // Draw 9-slice texture box border (same style as other menu elements)
+                    Color boxColor = IsHoldingItem ? Color.Yellow : Color.White;
+                    IClickableMenu.drawTextureBox(
+                        b,
+                        Game1.menuTexture,
+                        new Rectangle(0, 256, 60, 60),
+                        bounds.X, bounds.Y, bounds.Width, bounds.Height,
+                        boxColor,
+                        1f, // scale
+                        false); // drawShadow
+
+                    // Draw "Drop" text centered inside
+                    string dropText = "Drop";
+                    var textSize = Game1.smallFont.MeasureString(dropText);
+                    float textX = bounds.X + (bounds.Width - textSize.X) / 2f;
+                    float textY = bounds.Y + (bounds.Height - textSize.Y) / 2f;
+                    Color textColor = IsHoldingItem ? new Color(220, 50, 50) : Color.Gray;
+                    Utility.drawTextWithShadow(b, dropText, Game1.smallFont, new Vector2(textX, textY), textColor);
+                }
+            }
+            catch (Exception ex)
+            {
+                if (ModEntry.Config.VerboseLogging)
+                    Monitor?.Log($"InventoryManagement: Draw drop zone error: {ex.Message}", LogLevel.Debug);
             }
 
             // Draw tooltip for hovered item (console-style hover tooltips)
@@ -377,8 +424,9 @@ namespace AndroidConsolizer.Patches
         }
 
         /// <summary>
-        /// Inject the drop zone component between sort (106) and trash (105) if not already present.
-        /// Also wires up snap navigation: sort ↔ drop zone ↔ trash.
+        /// Inject the drop zone component below trash (105) in the bottom-right area.
+        /// Visible box with "Drop" text, drawn in InventoryPage_Draw_Postfix.
+        /// Navigation: Trash (105) ↔ Drop Zone (110). Sort (106) → Trash (105) direct.
         /// </summary>
         private static void EnsureDropZoneComponent(InventoryPage inventoryPage)
         {
@@ -394,7 +442,7 @@ namespace AndroidConsolizer.Patches
                         return; // Already injected
                 }
 
-                // Find sort (106) and trash (105) to calculate position
+                // Find trash (105) to position below it
                 ClickableComponent sort = null;
                 ClickableComponent trash = null;
                 foreach (var cc in inventoryPage.allClickableComponents)
@@ -403,76 +451,81 @@ namespace AndroidConsolizer.Patches
                     else if (cc.myID == 105) trash = cc;
                 }
 
-                if (sort == null || trash == null)
+                if (trash == null)
                 {
                     if (ModEntry.Config.VerboseLogging)
-                        Monitor?.Log("InventoryManagement: Cannot find sort/trash for drop zone placement", LogLevel.Debug);
+                        Monitor?.Log("InventoryManagement: Cannot find trash for drop zone placement", LogLevel.Debug);
                     return;
                 }
 
-                // Position: same X as sort, centered vertically in gap between sort bottom and trash top
-                int sortBottom = sort.bounds.Y + sort.bounds.Height;
-                int trashTop = trash.bounds.Y;
-                int gapCenter = sortBottom + (trashTop - sortBottom) / 2;
-                int dropX = sort.bounds.X;
-                int dropY = gapCenter - 32; // 64x64 component, center it
+                // Position: same X as trash, below trash with padding
+                // Use bottomBoxY via reflection if available, otherwise fall back to trash position
+                int dropX = trash.bounds.X;
+                int dropY = trash.bounds.Y + trash.bounds.Height + 16; // 16px gap below trash
+                int dropSize = 80; // Slightly larger than 64x64 equipment slots for "Drop" text
+
+                // Center horizontally on trash column
+                dropX = trash.bounds.X + (trash.bounds.Width - dropSize) / 2;
 
                 var dropZone = new ClickableComponent(
-                    new Rectangle(dropX, dropY, 64, 64),
+                    new Rectangle(dropX, dropY, dropSize, dropSize),
                     "dropZone")
                 {
                     myID = DropZoneId,
-                    upNeighborID = 106,        // sort
-                    downNeighborID = 105,       // trash
-                    leftNeighborID = sort.leftNeighborID,
-                    rightNeighborID = -1
+                    upNeighborID = 105,         // trash
+                    downNeighborID = -1,         // nothing below
+                    rightNeighborID = -1,        // right edge
+                    leftNeighborID = -1          // will wire to equipment below
                 };
 
                 inventoryPage.allClickableComponents.Add(dropZone);
 
-                // Wire sort (106) down → drop zone (was 105)
-                sort.downNeighborID = DropZoneId;
+                // Ensure sort (106) goes directly to trash (105) — NOT through drop zone
+                if (sort != null)
+                    sort.downNeighborID = 105;
 
-                // Wire trash (105) up → drop zone (was 106)
-                trash.upNeighborID = DropZoneId;
+                // Wire trash (105) down → drop zone
+                trash.downNeighborID = DropZoneId;
 
-                // Wire inventory grid ↔ drop zone: find rightmost-column inventory slots
-                // (those navigating right to sort or trash) and rewire the closest one to drop zone
-                int sortCenterY = sort.bounds.Y + sort.bounds.Height / 2;
-                int dropCenterY = dropY + 32;
-                int trashCenterY = trash.bounds.Y + trash.bounds.Height / 2;
-                int bestSlotId = -1;
+                // Wire equipment slots ↔ drop zone
+                // Find the nearest equipment slot to the left at similar Y height
+                // Equipment slots: boots (104), pants (109), trinket (120)
+                int dropCenterY = dropY + dropSize / 2;
+                int bestEquipId = -1;
                 int bestDist = int.MaxValue;
 
                 foreach (var cc in inventoryPage.allClickableComponents)
                 {
-                    if (cc.myID < 0 || cc.myID >= Game1.player.Items.Count)
-                        continue;
-                    if (cc.rightNeighborID != 106 && cc.rightNeighborID != 105)
-                        continue;
-
-                    int slotCenterY = cc.bounds.Y + cc.bounds.Height / 2;
-                    int distToSort = Math.Abs(slotCenterY - sortCenterY);
-                    int distToDrop = Math.Abs(slotCenterY - dropCenterY);
-                    int distToTrash = Math.Abs(slotCenterY - trashCenterY);
-
-                    // Wire to nearest sidebar component
-                    if (distToDrop <= distToSort && distToDrop <= distToTrash)
+                    // Check equipment slot IDs in the bottom half
+                    if (cc.myID == 104 || cc.myID == 109 || cc.myID == 120)
                     {
-                        cc.rightNeighborID = DropZoneId;
-                        if (distToDrop < bestDist)
+                        int equipCenterY = cc.bounds.Y + cc.bounds.Height / 2;
+                        int dist = Math.Abs(equipCenterY - dropCenterY);
+                        if (dist < bestDist)
                         {
-                            bestDist = distToDrop;
-                            bestSlotId = cc.myID;
+                            bestDist = dist;
+                            bestEquipId = cc.myID;
                         }
                     }
                 }
 
-                if (bestSlotId >= 0)
-                    dropZone.leftNeighborID = bestSlotId;
+                if (bestEquipId >= 0)
+                {
+                    dropZone.leftNeighborID = bestEquipId;
+
+                    // Wire the equipment slot's right → drop zone
+                    foreach (var cc in inventoryPage.allClickableComponents)
+                    {
+                        if (cc.myID == bestEquipId)
+                        {
+                            cc.rightNeighborID = DropZoneId;
+                            break;
+                        }
+                    }
+                }
 
                 if (ModEntry.Config.VerboseLogging)
-                    Monitor?.Log($"InventoryManagement: Injected drop zone at ({dropX},{dropY}), sort→drop→trash nav wired, leftNeighbor={dropZone.leftNeighborID}", LogLevel.Debug);
+                    Monitor?.Log($"InventoryManagement: Injected drop zone at ({dropX},{dropY}) size {dropSize}x{dropSize}, below trash, leftNeighbor={dropZone.leftNeighborID}", LogLevel.Debug);
             }
             catch (Exception ex)
             {
