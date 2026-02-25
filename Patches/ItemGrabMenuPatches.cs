@@ -941,12 +941,6 @@ namespace AndroidConsolizer.Patches
 
                             if (chestSlotIndex >= 0)
                             {
-                                // Block Y (take-one) on reward menus — rewards are all-or-nothing per stack
-                                if (remapped == Buttons.Y && !__instance.reverseGrab)
-                                {
-                                    Game1.playSound("cancel");
-                                    return false;
-                                }
                                 if (remapped == Buttons.A)
                                     TransferFromChest(__instance, chestSlotIndex);
                                 else
@@ -962,13 +956,6 @@ namespace AndroidConsolizer.Patches
                             }
                             else if (playerSlotIndex >= 0)
                             {
-                                // Block deposits when menu doesn't allow it (e.g. bundle reward menus)
-                                if (!__instance.reverseGrab)
-                                {
-                                    Game1.playSound("cancel");
-                                    return false;
-                                }
-
                                 if (remapped == Buttons.Y)
                                 {
                                     // Y strips attachments from tools one at a time before transferring
