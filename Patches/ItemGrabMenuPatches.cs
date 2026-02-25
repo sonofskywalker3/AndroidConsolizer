@@ -941,6 +941,14 @@ namespace AndroidConsolizer.Patches
 
                             if (chestSlotIndex >= 0)
                             {
+                                // Block Y (take-one) on reward menus — rewards are all-or-nothing per stack.
+                                // Use source == 0 (source_none) to detect reward menus; reverseGrab is
+                                // always false on Android even for normal chests, so it can't be used.
+                                if (remapped == Buttons.Y && __instance.source == 0)
+                                {
+                                    Game1.playSound("cancel");
+                                    return false;
+                                }
                                 if (remapped == Buttons.A)
                                     TransferFromChest(__instance, chestSlotIndex);
                                 else
@@ -956,6 +964,14 @@ namespace AndroidConsolizer.Patches
                             }
                             else if (playerSlotIndex >= 0)
                             {
+                                // Block deposits into reward menus (source_none = 0).
+                                // Same detection as above — reverseGrab is unreliable on Android.
+                                if (__instance.source == 0)
+                                {
+                                    Game1.playSound("cancel");
+                                    return false;
+                                }
+
                                 if (remapped == Buttons.Y)
                                 {
                                     // Y strips attachments from tools one at a time before transferring
