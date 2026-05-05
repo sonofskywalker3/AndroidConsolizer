@@ -546,14 +546,32 @@ namespace AndroidConsolizer.Patches
                 shop.currentlySnappedComponent = newSnap;
                 shop.snapCursorToCurrentSnappedComponent();
 
-                // Refresh hoveredItem (the field our buy code reads to know what's under
-                // the cursor). vanilla sets it via performHoverAction at ShopMenu.cs:1422,
-                // matching the button at (x,y) to forSale[currentItemIndex + i]. Without
-                // this call, hoveredItem still references the just-removed item, so the
-                // next A-press hits the missing-price branch and cancels — visible to
-                // user as "first A picks up but second A on the highlighted item does
-                // nothing." (Reported on v3.5.26.)
-                shop.performHoverAction(newSnap.bounds.Center.X, newSnap.bounds.Center.Y);
+                // Refresh hoveredItem (the field our buy code reads to identify what's
+                // under the cursor). On Android, performHoverAction is an empty override
+                // (ShopMenu.cs:1938-1940) — useless. The actual hoveredItem assignment
+                // lives in the private setCurrentItem(int index) at ShopMenu.cs:1380-1422,
+                // which sets currentlySelectedItem, currentItem, and hoveredItem from a
+                // forSale index. We figure out which forSale index the new snap maps to
+                // (forSaleButton position N -> forSale[currentItemIndex + N]) and call
+                // setCurrentItem via reflection. Reported on v3.5.27 ("snap moves but
+                // second A doesn't fire") because performHoverAction did nothing.
+                if (shop.forSaleButtons != null)
+                {
+                    int btnIndex = shop.forSaleButtons.IndexOf(newSnap as ClickableComponent);
+                    if (btnIndex >= 0)
+                    {
+                        int forSaleIndex = shop.currentItemIndex + btnIndex;
+                        if (forSaleIndex >= 0 && forSaleIndex < shop.forSale.Count)
+                        {
+                            try
+                            {
+                                AccessTools.Method(typeof(ShopMenu), "setCurrentItem")
+                                    ?.Invoke(shop, new object[] { forSaleIndex });
+                            }
+                            catch { /* best-effort */ }
+                        }
+                    }
+                }
             }
             catch { /* best-effort — older builds may not expose rebuildSaleButtons */ }
         }
@@ -1179,6 +1197,12 @@ namespace AndroidConsolizer.Patches
 
                 bool inventoryVisible = (bool)InvVisibleField.GetValue(__instance);
                 if (!inventoryVisible)
+                    return;
+
+                // Storage shops (dresser, fish tank) deposit through onSell at zero gold,
+                // not cash-sell. Showing a "sell price + gold coin" tooltip in those is
+                // misleading — user reported seeing sell-price tooltips on the dresser.
+                if (__instance.onSell != null)
                     return;
 
                 Item sellItem = GetSellTabSelectedItem(__instance);
