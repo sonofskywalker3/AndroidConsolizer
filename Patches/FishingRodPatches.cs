@@ -261,29 +261,25 @@ namespace AndroidConsolizer.Patches
 
         /// <summary>
         /// Attach tackle from cursor to rod's tackle slot.
+        /// Routed through Tool.attach() so the iridium rod's two tackle slots alternate via
+        /// advancedIridiumRodTackleToggle, and so canThisBeAttached() validates the placement.
+        /// Direct attachments[1] writes always wrote slot 1, so the iridium rod's second tackle
+        /// slot was never reachable via controller — second attach overwrote the first.
         /// </summary>
         private static bool AttachTackleFromCursor(FishingRod rod, Item tackleItem)
         {
-            SObject currentTackle = rod.attachments[1];
-
-            if (currentTackle == null)
+            SObject displaced = rod.attach((SObject)tackleItem);
+            Game1.player.CursorSlotItem = displaced;
+            if (displaced == null)
             {
-                // Empty slot - attach directly
-                rod.attachments[1] = (SObject)tackleItem;
-                Game1.player.CursorSlotItem = null;
                 InventoryManagementPatches.OnCursorItemCleared();
-                Game1.playSound("button1");
-                Monitor.Log($"FishingRod: Attached {tackleItem.Name} from cursor to tackle slot", LogLevel.Info);
+                Monitor.Log($"FishingRod: Attached {tackleItem.Name} from cursor", LogLevel.Info);
             }
             else
             {
-                // Tackle doesn't stack - swap
-                rod.attachments[1] = (SObject)tackleItem;
-                Game1.player.CursorSlotItem = currentTackle;
-                Game1.playSound("button1");
-                Monitor.Log($"FishingRod: Swapped tackle - attached {tackleItem.Name} from cursor, put {currentTackle.Name} on cursor", LogLevel.Info);
+                Monitor.Log($"FishingRod: Swapped tackle - attached {tackleItem.Name} from cursor, holding {displaced.Name}", LogLevel.Info);
             }
-
+            // rod.attach plays its own "button1" sound on success.
             return true;
         }
 
@@ -375,35 +371,26 @@ namespace AndroidConsolizer.Patches
 
         /// <summary>
         /// Attach tackle from inventory slot to rod's tackle slot.
+        /// Routed through Tool.attach() so iridium rod dual-tackle works correctly
+        /// (see AttachTackleFromCursor for full rationale).
         /// </summary>
         private static bool AttachTackleFromSlot(FishingRod rod, Item tackleItem, int sourceSlot)
         {
-            SObject currentTackle = rod.attachments[1];
-
-            if (currentTackle == null)
-            {
-                // Empty slot - attach directly
-                rod.attachments[1] = (SObject)tackleItem;
-                Game1.player.Items[sourceSlot] = null;
-                Game1.playSound("button1");
-                Monitor.Log($"FishingRod: Attached {tackleItem.Name} to tackle slot", LogLevel.Info);
-            }
+            SObject displaced = rod.attach((SObject)tackleItem);
+            Game1.player.Items[sourceSlot] = displaced;
+            if (displaced == null)
+                Monitor.Log($"FishingRod: Attached {tackleItem.Name}", LogLevel.Info);
             else
-            {
-                // Tackle doesn't stack - swap
-                rod.attachments[1] = (SObject)tackleItem;
-                Game1.player.Items[sourceSlot] = currentTackle;
-                Game1.playSound("button1");
-                Monitor.Log($"FishingRod: Swapped tackle - attached {tackleItem.Name}, removed {currentTackle.Name} to slot {sourceSlot}", LogLevel.Info);
-            }
-
+                Monitor.Log($"FishingRod: Swapped tackle - attached {tackleItem.Name}, returned {displaced.Name} to slot {sourceSlot}", LogLevel.Info);
             return true;
         }
 
         /// <summary>
         /// Handle detaching bait/tackle from the fishing rod.
-        /// Priority: Bait first, then tackle.
-        /// Detached items go to cursor (console-style behavior).
+        /// Priority: bait, then tackle1, then tackle2 (iridium) — matches the natural
+        /// 0→N iteration of vanilla Tool.attach(null), which is also what we hand-rolled
+        /// here previously but only covered slots 0 and 1, missing the iridium rod's
+        /// second tackle slot at attachments[2].
         /// </summary>
         private static bool HandleDetachItem(FishingRod rod)
         {
@@ -416,34 +403,19 @@ namespace AndroidConsolizer.Patches
                 return true;
             }
 
-            // Try to detach bait first
-            SObject bait = rod.attachments[0];
-            if (bait != null)
+            SObject detached = rod.attach(null);
+            if (detached == null)
             {
-                rod.attachments[0] = null;
-                Game1.player.CursorSlotItem = bait;
-                InventoryManagementPatches.SetHoldingItem(true);
-                Game1.playSound("button1");
-                Monitor.Log($"FishingRod: Detached {bait.Stack}x {bait.Name} to cursor", LogLevel.Info);
-                return true;
+                if (ModEntry.Config.VerboseLogging)
+                    Monitor.Log($"FishingRod: No attachments to remove", LogLevel.Debug);
+                return false;
             }
 
-            // Try to detach tackle
-            SObject tackle = rod.attachments[1];
-            if (tackle != null)
-            {
-                rod.attachments[1] = null;
-                Game1.player.CursorSlotItem = tackle;
-                InventoryManagementPatches.SetHoldingItem(true);
-                Game1.playSound("button1");
-                Monitor.Log($"FishingRod: Detached {tackle.Name} to cursor", LogLevel.Info);
-                return true;
-            }
-
-            // No attachments to remove
-            if (ModEntry.Config.VerboseLogging)
-                Monitor.Log($"FishingRod: No attachments to remove", LogLevel.Debug);
-            return false;
+            Game1.player.CursorSlotItem = detached;
+            InventoryManagementPatches.SetHoldingItem(true);
+            Monitor.Log($"FishingRod: Detached {detached.Name} to cursor", LogLevel.Info);
+            // rod.attach(null) plays its own "dwop" sound on success.
+            return true;
         }
 
         /// <summary>
