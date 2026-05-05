@@ -51,6 +51,16 @@ namespace AndroidConsolizer
         /// <summary>Whether the skip confirmation is pending (waiting for second press).</summary>
         private bool cutsceneSkipPending = false;
 
+        /// <summary>Tick when Start was first pressed during gameplay, for tap-vs-hold detection. -1 if not held.</summary>
+        private int _startPressedTick = -1;
+
+        /// <summary>True once a Start hold has crossed the threshold and opened the quest log,
+        /// so the matching Release event doesn't also open the game menu.</summary>
+        private bool _startHoldHandled = false;
+
+        /// <summary>Tick threshold to distinguish a tap from a hold on Start (~500ms at 60fps).</summary>
+        private const int StartHoldThreshold = 30;
+
         // Cached reflection for cutscene skip
         private static FieldInfo EventSkippableField;
         private static FieldInfo EventSkippedField;
@@ -218,6 +228,18 @@ namespace AndroidConsolizer
                 Patches.GameplayButtonPatches.StartPressedThisTick = false;
                 if (Game1.CurrentEvent != null)
                     HandleCutsceneSkip();
+            }
+
+            // Start press-and-hold: open Quest Log once the hold crosses the threshold.
+            // Released-without-hold is handled in OnButtonsChanged (opens GameMenu for the tap).
+            if (_startPressedTick >= 0 && !_startHoldHandled
+                && Game1.ticks - _startPressedTick >= StartHoldThreshold
+                && Game1.activeClickableMenu == null && Context.IsPlayerFree)
+            {
+                _startHoldHandled = true;
+                OpenQuestLog();
+                if (Config.VerboseLogging)
+                    this.Monitor.Log("Start hold: Opening Quest Log", LogLevel.Debug);
             }
 
             // Reset cutscene skip state when event ends or timeout expires
@@ -465,31 +487,31 @@ namespace AndroidConsolizer
             // Cutscene skip is now handled in OnUpdateTicked via GetState edge detection
             // (Start is suppressed at GetState level during events, so SMAPI doesn't see it)
 
-            // Journal button - Start (when enabled) or Back/Select (always, as fallback)
-            // opens Quest Log during gameplay. Back is the lockout-proof fallback so
-            // users who unbind Start from the journal aren't stranded with no way in.
-            if (Game1.activeClickableMenu == null && Context.IsPlayerFree)
+            // Start button: tap opens GameMenu (vanilla behaviour), hold opens Quest Log.
+            // Press-and-hold is needed because Back/Select doesn't register on Xbox Bluetooth
+            // controllers under Android (same problem as the triggers), so a fallback button
+            // would lock out exactly the users who already can't access half their inputs.
+            // Press tracking starts here; the threshold check fires from OnUpdateTicked,
+            // and the tap action fires on Release if no hold was registered.
+            if (Config.EnableJournalButton && Game1.activeClickableMenu == null && Context.IsPlayerFree)
             {
-                bool openJournal = false;
-
-                if (Config.EnableJournalButton && e.Pressed.Contains(SButton.ControllerStart))
+                if (e.Pressed.Contains(SButton.ControllerStart))
                 {
+                    _startPressedTick = Game1.ticks;
+                    _startHoldHandled = false;
                     this.Helper.Input.Suppress(SButton.ControllerStart);
-                    openJournal = true;
                 }
-                else if (e.Pressed.Contains(SButton.ControllerBack))
+                else if (e.Released.Contains(SButton.ControllerStart) && _startPressedTick >= 0)
                 {
-                    // Back/Select isn't bound to anything else in our mod or in vanilla
-                    // gameplay, so it's safe as an always-on fallback.
-                    this.Helper.Input.Suppress(SButton.ControllerBack);
-                    openJournal = true;
-                }
-
-                if (openJournal)
-                {
-                    OpenQuestLog();
-                    if (Config.VerboseLogging)
-                        this.Monitor.Log("Opening Quest Log", LogLevel.Debug);
+                    if (!_startHoldHandled)
+                    {
+                        // Short tap: open the standard game menu (what vanilla does on Start).
+                        Game1.activeClickableMenu = new GameMenu();
+                        if (Config.VerboseLogging)
+                            this.Monitor.Log("Start tap: Opening GameMenu", LogLevel.Debug);
+                    }
+                    _startPressedTick = -1;
+                    _startHoldHandled = false;
                 }
             }
 
@@ -821,7 +843,9 @@ namespace AndroidConsolizer
             }
 
             // Start button function
-            string startGameplay = Config?.EnableJournalButton == true ? "Open Journal" : "Open Inventory";
+            string startGameplay = Config?.EnableJournalButton == true
+                ? "Open Inventory (tap) / Open Journal (hold)"
+                : "Open Inventory";
 
             // Format with consistent ABXY order for both sections
             return $"--- GAMEPLAY ---\n" +
@@ -992,8 +1016,10 @@ namespace AndroidConsolizer
 
             configMenu.AddBoolOption(
                 mod: this.ModManifest,
-                name: () => "Start Opens Journal",
-                tooltip: () => "Start button opens the Quest Log/Journal instead of inventory.",
+                name: () => "Hold Start Opens Journal",
+                tooltip: () => "Tap Start opens the inventory/menu (vanilla behaviour). " +
+                              "Hold Start for ~half a second to open the Quest Log/Journal. " +
+                              "Disable to restore vanilla Start (no journal shortcut).",
                 getValue: () => Config.EnableJournalButton,
                 setValue: value => Config.EnableJournalButton = value
             );
