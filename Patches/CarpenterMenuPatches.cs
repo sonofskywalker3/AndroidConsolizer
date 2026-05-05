@@ -314,6 +314,16 @@ namespace AndroidConsolizer.Patches
                         original: AccessTools.Method(typeof(Furniture), "placementAction"),
                         prefix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(FurniturePlacementAction_Prefix))
                     );
+
+                    // BedFurniture.canBeRemoved overrides the base method without calling base,
+                    // so the Furniture.canBeRemoved patch above never fires for beds. Without
+                    // this dedicated patch, beds get picked up immediately after placement,
+                    // bouncing in and out of inventory.
+                    harmony.Patch(
+                        original: AccessTools.Method(typeof(BedFurniture), nameof(BedFurniture.canBeRemoved)),
+                        prefix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(FurnitureCanBeRemoved_Prefix))
+                    );
+
                     Monitor.Log("Furniture debounce patches applied successfully.", LogLevel.Trace);
                 }
                 catch (Exception ex)
