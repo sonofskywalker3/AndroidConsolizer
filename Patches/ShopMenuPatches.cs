@@ -399,6 +399,29 @@ namespace AndroidConsolizer.Patches
                         Monitor.Log($"Added {quantity}x {newItem.DisplayName} to inventory", LogLevel.Debug);
                 }
 
+                // Invoke the shop's onPurchase callback if set. For storage shops (dresser,
+                // fish tank/aquarium) this routes to onDresserItemWithdrawn, which removes the
+                // original from heldItems — without it, the player gets a getOne() copy AND
+                // the original stays in the storage, duplicating the item. Other shops use
+                // this for side effects (e.g. spawning buildings); a true return asks vanilla
+                // to close the menu, which we honour by exiting.
+                if (__instance.onPurchase != null)
+                {
+                    try
+                    {
+                        bool shouldExit = __instance.onPurchase(selectedItem, Game1.player, quantity, priceAndStock);
+                        if (shouldExit)
+                        {
+                            __instance.exitThisMenu();
+                            return false;
+                        }
+                    }
+                    catch (Exception cbEx)
+                    {
+                        Monitor.Log($"ShopMenu onPurchase callback threw: {cbEx.Message}", LogLevel.Warn);
+                    }
+                }
+
                 // Update stock if limited
                 if (stock != int.MaxValue && stock > 0)
                 {
