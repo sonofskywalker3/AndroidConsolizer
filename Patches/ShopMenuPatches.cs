@@ -276,12 +276,17 @@ namespace AndroidConsolizer.Patches
                 // hovered item isn't in the price dict (happens with storage shops after
                 // a deposit refresh, or when hoveredItem points at a removed forSale entry),
                 // and crashes the update loop with ArgumentOutOfRangeException every tick.
-                // Originally returned true here; user testing showed the resulting crash storm.
+                // ALSO refresh forSaleButtons + re-snap by ID so the cursor lands on a live
+                // button — without this, the cursor sits on the dead reference and every
+                // OTHER A-press hits this path and does nothing until the user nudges the
+                // joystick (the v3.5.25 snap fix in the buy success path didn't cover this
+                // missing-price path because we returned early before reaching it).
                 if (!__instance.itemPriceAndStock.TryGetValue(selectedItem, out var priceAndStock))
                 {
                     if (ModEntry.Config.VerboseLogging)
-                        Monitor.Log($"No price info for {selectedItem.DisplayName} — blocking vanilla A (would crash)", LogLevel.Trace);
+                        Monitor.Log($"No price info for {selectedItem.DisplayName} — refreshing snap", LogLevel.Trace);
                     Game1.playSound("cancel");
+                    RebuildSaleButtonsAndRestoreSnap(__instance);
                     return false;
                 }
 
@@ -558,6 +563,20 @@ namespace AndroidConsolizer.Patches
             try
             {
                 if (shop.onSell == null) return false;
+
+                // Respect vanilla's per-shop deposit rules. Dresser's highlightItemToSell
+                // returns true only for clothing/hat/boots/ring (categoriesToSellHere
+                // populated for Dresser context); aquarium's returns false for everything
+                // (deposits via held-fish + world A-press only, NOT through the shop UI).
+                // Without this check we'd accept anything into either shop, which v3.5.11
+                // - v3.5.25 silently did. User confirmed the vanilla behaviour via PC.
+                if (!shop.highlightItemToSell(sellItem))
+                {
+                    Game1.playSound("cancel");
+                    if (ModEntry.Config.VerboseLogging)
+                        Monitor.Log($"Storage shop rejects {sellItem.DisplayName} (highlightItemToSell=false)", LogLevel.Debug);
+                    return true; // we handled it (with a cancel) — don't fall through to cash-sell
+                }
 
                 bool deposited = shop.onSell(sellItem);
                 if (!deposited) return false;
@@ -963,23 +982,22 @@ namespace AndroidConsolizer.Patches
             //   - Cash-sell shop sell tab: install HighlightItemToSellWithPriceCheck so
             //     0-price items (e.g. Mixed Seeds) grey out and vanilla's receiveLeftClick
             //     sell path also rejects them.
-            //   - Storage shop (dresser, fish tank) sell tab: vanilla's
-            //     `__instance.highlightItemToSell` greys out items the shop "won't take",
-            //     but for storage shops onSell accepts ANYTHING (vanilla quirk), so the
-            //     greying is just user-confusing. Force highlightAllItems to keep
-            //     everything selectable.
+            //   - Storage shop (dresser, fish tank) sell tab: use vanilla's own
+            //     `__instance.highlightItemToSell`, which checks categoriesToSellHere
+            //     (ShopMenu.cs:793). Dresser populates that with clothing/hat/boots/ring
+            //     categories; aquarium leaves it empty. So in vanilla:
+            //       Dresser sell tab — only clothing-type items are clickable
+            //       Aquarium sell tab — everything is greyed (deposits go via held-fish + A
+            //                           on the placed tank in the world, not the shop UI)
+            //     v3.5.23 forced highlightAllItems for storage shops, which incorrectly
+            //     allowed any item to be deposited. v3.5.26 reverts to vanilla's restrictions.
             //   - Buy tab: revert to vanilla highlightItemToSell (the shop's default).
-            // v3.5.22 only restored vanilla on the storage path, which still greyed the
-            // inventory because the shop's own highlightItemToSell does the greying;
-            // v3.5.23 actively installs highlightAllItems for storage shops.
             if (InvVisibleField != null)
             {
                 bool onSellTab = (bool)InvVisibleField.GetValue(__instance);
                 bool isStorageShop = __instance.onSell != null;
                 InventoryMenu.highlightThisItem desired;
-                if (onSellTab && isStorageShop)
-                    desired = InventoryMenu.highlightAllItems;
-                else if (onSellTab)
+                if (onSellTab && !isStorageShop)
                     desired = HighlightItemToSellWithPriceCheck;
                 else
                     desired = __instance.highlightItemToSell;
