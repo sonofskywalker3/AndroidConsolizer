@@ -465,15 +465,31 @@ namespace AndroidConsolizer
             // Cutscene skip is now handled in OnUpdateTicked via GetState edge detection
             // (Start is suppressed at GetState level during events, so SMAPI doesn't see it)
 
-            // Journal button - Start opens Quest Log during gameplay
-            if (Config.EnableJournalButton && Game1.activeClickableMenu == null && Context.IsPlayerFree)
+            // Journal button - Start (when enabled) or Back/Select (always, as fallback)
+            // opens Quest Log during gameplay. Back is the lockout-proof fallback so
+            // users who unbind Start from the journal aren't stranded with no way in.
+            if (Game1.activeClickableMenu == null && Context.IsPlayerFree)
             {
-                if (e.Pressed.Contains(SButton.ControllerStart))
+                bool openJournal = false;
+
+                if (Config.EnableJournalButton && e.Pressed.Contains(SButton.ControllerStart))
                 {
                     this.Helper.Input.Suppress(SButton.ControllerStart);
+                    openJournal = true;
+                }
+                else if (e.Pressed.Contains(SButton.ControllerBack))
+                {
+                    // Back/Select isn't bound to anything else in our mod or in vanilla
+                    // gameplay, so it's safe as an always-on fallback.
+                    this.Helper.Input.Suppress(SButton.ControllerBack);
+                    openJournal = true;
+                }
+
+                if (openJournal)
+                {
                     OpenQuestLog();
                     if (Config.VerboseLogging)
-                        this.Monitor.Log("Start button: Opening Quest Log", LogLevel.Debug);
+                        this.Monitor.Log("Opening Quest Log", LogLevel.Debug);
                 }
             }
 
