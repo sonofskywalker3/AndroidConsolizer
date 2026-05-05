@@ -8,6 +8,7 @@ using Microsoft.Xna.Framework.Input;
 using StardewModdingAPI;
 using StardewValley;
 using StardewValley.Menus;
+using StardewValley.Triggers;
 
 namespace AndroidConsolizer.Patches
 {
@@ -399,6 +400,48 @@ namespace AndroidConsolizer.Patches
                         Monitor.Log($"Added {quantity}x {newItem.DisplayName} to inventory", LogLevel.Debug);
                 }
 
+                // Decrement stock the way vanilla does — HandleSynchedItemPurchase mutates the
+                // shared ItemStockInformation in place and pushes the new value into
+                // team.synchronizedShopStock so other farmhands see the depletion. Our previous
+                // code rebuilt the entry with `new ItemStockInformation(price, remaining, ...)`,
+                // which silently dropped SyncedKey, LimitedStockMode, ItemToSyncStack, and
+                // ActionsOnPurchase — breaking multiplayer sync after the first purchase and
+                // making 1.6+ shop-data action hooks fire only once before the entry was
+                // overwritten. Mirror vanilla ShopMenu.cs:1685-1691.
+                if (priceAndStock.Stock != int.MaxValue && !selectedItem.IsInfiniteStock())
+                {
+                    __instance.HandleSynchedItemPurchase(selectedItem, Game1.player, quantity);
+
+                    // Sync the linked display stack if the shop wires one (festival shops do this).
+                    if (priceAndStock.ItemToSyncStack != null)
+                        priceAndStock.ItemToSyncStack.Stack = priceAndStock.Stock;
+
+                    // Drop depleted items from the for-sale list — preserves our pre-existing
+                    // UX where sold-out items disappear from the shop instead of showing 0 stock.
+                    if (priceAndStock.Stock <= 0)
+                    {
+                        __instance.forSale.Remove(selectedItem);
+                        __instance.itemPriceAndStock.Remove(selectedItem);
+                        if (ModEntry.Config.VerboseLogging)
+                            Monitor.Log("Removed depleted item from shop", LogLevel.Debug);
+                    }
+                    else if (ModEntry.Config.VerboseLogging)
+                    {
+                        Monitor.Log($"Stock decremented to {priceAndStock.Stock} via HandleSynchedItemPurchase", LogLevel.Debug);
+                    }
+                }
+
+                // Run any 1.6+ shop-data ActionsOnPurchase hooks — used by content-pack /
+                // festival shops to spawn NPCs, mark quests, etc. Vanilla ShopMenu.cs:1693-1702.
+                if (priceAndStock.ActionsOnPurchase != null && priceAndStock.ActionsOnPurchase.Count > 0)
+                {
+                    foreach (string action in priceAndStock.ActionsOnPurchase)
+                    {
+                        if (!TriggerActionManager.TryRunAction(action, out var error, out var exception))
+                            Monitor.Log($"Shop {shopId} ignored invalid action '{action}' on purchase of '{selectedItem.QualifiedItemId}': {error}", LogLevel.Warn);
+                    }
+                }
+
                 // Invoke the shop's onPurchase callback if set. For storage shops (dresser,
                 // fish tank/aquarium) this routes to onDresserItemWithdrawn, which removes the
                 // original from heldItems — without it, the player gets a getOne() copy AND
@@ -419,31 +462,6 @@ namespace AndroidConsolizer.Patches
                     catch (Exception cbEx)
                     {
                         Monitor.Log($"ShopMenu onPurchase callback threw: {cbEx.Message}", LogLevel.Warn);
-                    }
-                }
-
-                // Update stock if limited
-                if (stock != int.MaxValue && stock > 0)
-                {
-                    int remaining = stock - quantity;
-                    if (remaining <= 0)
-                    {
-                        __instance.forSale.Remove(selectedItem);
-                        __instance.itemPriceAndStock.Remove(selectedItem);
-                        if (ModEntry.Config.VerboseLogging)
-                            Monitor.Log("Removed depleted item from shop", LogLevel.Debug);
-                    }
-                    else
-                    {
-                        var newStockInfo = new ItemStockInformation(
-                            priceAndStock.Price,
-                            remaining,
-                            priceAndStock.TradeItem,
-                            priceAndStock.TradeItemCount
-                        );
-                        __instance.itemPriceAndStock[selectedItem] = newStockInfo;
-                        if (ModEntry.Config.VerboseLogging)
-                            Monitor.Log($"Updated stock: {stock} -> {remaining}", LogLevel.Debug);
                     }
                 }
 
