@@ -1235,48 +1235,53 @@ namespace AndroidConsolizer.Patches
             }
         }
 
+        // The Try*Equip helpers below mirror the vanilla InventoryPage.receiveLeftClick
+        // pattern (InventoryPage.cs:308-518): apply PerformSpecialItemPlaceReplacement
+        // to convert cursor-side specials (Pan→Hat 71, etc.) before equipping, route
+        // through Game1.player.Equip<T>() so onUnequip/onEquip + buffs.Dirty fire,
+        // then apply PerformSpecialItemGrabReplacement to convert the displaced
+        // slot item back into its cursor-side form (Hat 71→Pan, etc.). Direct .Value
+        // writes skipped all of that and silently lost the Pan↔Hat conversion plus
+        // the Wedding Ring / Iridium Band special replacements.
         private static bool TryEquipHat(Item heldItem)
         {
-            if (heldItem is not Hat newHat)
+            Item placed = Utility.PerformSpecialItemPlaceReplacement(heldItem);
+            if (placed != null && placed is not Hat)
             {
                 Game1.playSound("cancel");
                 return true;
             }
 
-            Hat oldHat = Game1.player.hat.Value;
-            Game1.player.hat.Value = newHat;
-            Game1.player.CursorSlotItem = oldHat;
+            Item displaced = Utility.PerformSpecialItemGrabReplacement(
+                Game1.player.Equip((Hat)placed, Game1.player.hat));
+            Game1.player.CursorSlotItem = displaced;
 
-            if (oldHat == null)
+            if (displaced == null)
             {
                 IsHoldingItem = false;
                 SourceSlotId = -1;
             }
 
             Game1.playSound("grassyStep");
-            Monitor.Log($"InventoryManagement: Equipped hat {newHat.Name}" + (oldHat != null ? $", holding {oldHat.Name}" : ""), LogLevel.Info);
+            Monitor.Log($"InventoryManagement: Equipped hat {placed?.Name}" + (displaced != null ? $", holding {displaced.Name}" : ""), LogLevel.Info);
             return true;
         }
 
         private static bool TryEquipRing(Item heldItem, bool isLeft)
         {
-            if (heldItem is not Ring newRing)
+            Item placed = Utility.PerformSpecialItemPlaceReplacement(heldItem);
+            if (placed != null && placed is not Ring)
             {
                 Game1.playSound("cancel");
                 return true;
             }
 
             var ringField = isLeft ? Game1.player.leftRing : Game1.player.rightRing;
-            Ring oldRing = ringField.Value;
+            Item displaced = Utility.PerformSpecialItemGrabReplacement(
+                Game1.player.Equip((Ring)placed, ringField));
+            Game1.player.CursorSlotItem = displaced;
 
-            if (oldRing != null)
-                oldRing.onUnequip(Game1.player);
-
-            ringField.Value = newRing;
-            newRing.onEquip(Game1.player);
-            Game1.player.CursorSlotItem = oldRing;
-
-            if (oldRing == null)
+            if (displaced == null)
             {
                 IsHoldingItem = false;
                 SourceSlotId = -1;
@@ -1284,63 +1289,62 @@ namespace AndroidConsolizer.Patches
 
             Game1.playSound("crit");
             string slotName = isLeft ? "left" : "right";
-            Monitor.Log($"InventoryManagement: Equipped {slotName} ring {newRing.Name}" + (oldRing != null ? $", holding {oldRing.Name}" : ""), LogLevel.Info);
+            Monitor.Log($"InventoryManagement: Equipped {slotName} ring {placed?.Name}" + (displaced != null ? $", holding {displaced.Name}" : ""), LogLevel.Info);
             return true;
         }
 
         private static bool TryEquipBoots(Item heldItem)
         {
-            if (heldItem is not Boots newBoots)
+            Item placed = Utility.PerformSpecialItemPlaceReplacement(heldItem);
+            if (placed != null && placed is not Boots)
             {
                 Game1.playSound("cancel");
                 return true;
             }
 
-            Boots oldBoots = Game1.player.boots.Value;
+            Item displaced = Utility.PerformSpecialItemGrabReplacement(
+                Game1.player.Equip((Boots)placed, Game1.player.boots));
 
-            if (oldBoots != null)
-                oldBoots.onUnequip(Game1.player);
+            // Match vanilla InventoryPage.cs:403 — explicit onEquip re-call so the
+            // boots buff applies even when Equip<T>'s internal call was guarded by
+            // pre-game state (hasLoadedGame / dayOfMonth / IsLocalPlayer).
+            if (Game1.player.boots.Value != null)
+                Game1.player.boots.Value.onEquip(Game1.player);
 
-            Game1.player.boots.Value = newBoots;
-            newBoots.onEquip(Game1.player);
-            Game1.player.CursorSlotItem = oldBoots;
+            Game1.player.CursorSlotItem = displaced;
 
-            if (oldBoots == null)
+            if (displaced == null)
             {
                 IsHoldingItem = false;
                 SourceSlotId = -1;
             }
 
             Game1.playSound("sandyStep");
-            Monitor.Log($"InventoryManagement: Equipped boots {newBoots.Name}" + (oldBoots != null ? $", holding {oldBoots.Name}" : ""), LogLevel.Info);
+            Monitor.Log($"InventoryManagement: Equipped boots {placed?.Name}" + (displaced != null ? $", holding {displaced.Name}" : ""), LogLevel.Info);
             return true;
         }
 
         private static bool TryEquipClothing(Item heldItem, bool isShirt)
         {
-            if (heldItem is not Clothing newClothing)
+            Item placed = Utility.PerformSpecialItemPlaceReplacement(heldItem);
+            if (placed != null)
             {
-                Game1.playSound("cancel");
-                return true;
-            }
-
-            // Check clothing type matches the slot (0 = Shirt, 1 = Pants)
-            bool clothingIsShirt = (int)newClothing.clothesType.Value == 0;
-            if (clothingIsShirt != isShirt)
-            {
-                Game1.playSound("cancel");
-                if (ModEntry.Config.VerboseLogging)
-                    Monitor.Log($"InventoryManagement: {heldItem.Name} is {(clothingIsShirt ? "shirt" : "pants")}, wrong slot", LogLevel.Debug);
-                return true;
+                if (placed is not Clothing clothing
+                    || ((int)clothing.clothesType.Value == 0) != isShirt)
+                {
+                    Game1.playSound("cancel");
+                    if (ModEntry.Config.VerboseLogging)
+                        Monitor.Log($"InventoryManagement: {placed.Name} doesn't fit {(isShirt ? "shirt" : "pants")} slot", LogLevel.Debug);
+                    return true;
+                }
             }
 
             var clothingField = isShirt ? Game1.player.shirtItem : Game1.player.pantsItem;
-            Clothing oldClothing = clothingField.Value;
+            Item displaced = Utility.PerformSpecialItemGrabReplacement(
+                Game1.player.Equip((Clothing)placed, clothingField));
+            Game1.player.CursorSlotItem = displaced;
 
-            clothingField.Value = newClothing;
-            Game1.player.CursorSlotItem = oldClothing;
-
-            if (oldClothing == null)
+            if (displaced == null)
             {
                 IsHoldingItem = false;
                 SourceSlotId = -1;
@@ -1348,7 +1352,7 @@ namespace AndroidConsolizer.Patches
 
             Game1.playSound("sandyStep");
             string slotName = isShirt ? "shirt" : "pants";
-            Monitor.Log($"InventoryManagement: Equipped {slotName} {newClothing.Name}" + (oldClothing != null ? $", holding {oldClothing.Name}" : ""), LogLevel.Info);
+            Monitor.Log($"InventoryManagement: Equipped {slotName} {placed?.Name}" + (displaced != null ? $", holding {displaced.Name}" : ""), LogLevel.Info);
             return true;
         }
 
