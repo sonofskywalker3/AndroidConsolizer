@@ -922,30 +922,36 @@ namespace AndroidConsolizer.Patches
             else
                 _lsRightTicks = 0;
 
-            // Install sell-tab highlight override that greys out 0-price items.
-            // Vanilla's highlightItemToSell only checks category — items like Mixed Seeds
-            // pass the category check but have salePrice()=0. Our override also checks price,
-            // which both greys them out visually AND blocks vanilla's receiveLeftClick sell path.
-            //
-            // EXCEPT for storage shops (dresser, fish tank): deposits go through onSell, not
-            // cash-sell, so the price-zero rule doesn't apply. Applying our override there
-            // greyed out perfectly-valid clothing/fish in the inventory.
+            // Sell-tab highlight selection.
+            //   - Cash-sell shop sell tab: install HighlightItemToSellWithPriceCheck so
+            //     0-price items (e.g. Mixed Seeds) grey out and vanilla's receiveLeftClick
+            //     sell path also rejects them.
+            //   - Storage shop (dresser, fish tank) sell tab: vanilla's
+            //     `__instance.highlightItemToSell` greys out items the shop "won't take",
+            //     but for storage shops onSell accepts ANYTHING (vanilla quirk), so the
+            //     greying is just user-confusing. Force highlightAllItems to keep
+            //     everything selectable.
+            //   - Buy tab: revert to vanilla highlightItemToSell (the shop's default).
+            // v3.5.22 only restored vanilla on the storage path, which still greyed the
+            // inventory because the shop's own highlightItemToSell does the greying;
+            // v3.5.23 actively installs highlightAllItems for storage shops.
             if (InvVisibleField != null)
             {
                 bool onSellTab = (bool)InvVisibleField.GetValue(__instance);
                 bool isStorageShop = __instance.onSell != null;
-                if (onSellTab && !_highlightOverrideActive && !isStorageShop)
+                InventoryMenu.highlightThisItem desired;
+                if (onSellTab && isStorageShop)
+                    desired = InventoryMenu.highlightAllItems;
+                else if (onSellTab)
+                    desired = HighlightItemToSellWithPriceCheck;
+                else
+                    desired = __instance.highlightItemToSell;
+
+                if (__instance.inventory.highlightMethod != desired)
                 {
+                    __instance.inventory.highlightMethod = desired;
                     _highlightOverrideShop = __instance;
-                    __instance.inventory.highlightMethod = HighlightItemToSellWithPriceCheck;
-                    _highlightOverrideActive = true;
-                }
-                else if ((!onSellTab || isStorageShop) && _highlightOverrideActive)
-                {
-                    // Restore vanilla highlight when leaving sell tab or entering a storage shop.
-                    __instance.inventory.highlightMethod = __instance.highlightItemToSell;
-                    _highlightOverrideActive = false;
-                    _highlightOverrideShop = null;
+                    _highlightOverrideActive = (desired != __instance.highlightItemToSell);
                 }
             }
 
