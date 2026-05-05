@@ -414,9 +414,11 @@ namespace AndroidConsolizer.Patches
                 // ActionsOnPurchase — breaking multiplayer sync after the first purchase and
                 // making 1.6+ shop-data action hooks fire only once before the entry was
                 // overwritten. Mirror vanilla ShopMenu.cs:1685-1691.
+                bool stockChanged = false;
                 if (priceAndStock.Stock != int.MaxValue && !selectedItem.IsInfiniteStock())
                 {
                     __instance.HandleSynchedItemPurchase(selectedItem, Game1.player, quantity);
+                    stockChanged = true;
 
                     // Sync the linked display stack if the shop wires one (festival shops do this).
                     if (priceAndStock.ItemToSyncStack != null)
@@ -436,6 +438,14 @@ namespace AndroidConsolizer.Patches
                         Monitor.Log($"Stock decremented to {priceAndStock.Stock} via HandleSynchedItemPurchase", LogLevel.Debug);
                     }
                 }
+
+                // Refresh forSaleButtons so the cursor's snap component doesn't end up on a
+                // dead button reference. Critical for storage shops (dresser, aquarium) where
+                // each successful buy removes an item from forSale; without the rebuild, the
+                // cursor still points at the now-orphaned button — A-presses find no hovered
+                // item and "do nothing" until the user nudges the joystick to re-snap.
+                if (stockChanged)
+                    RebuildSaleButtonsAndRestoreSnap(__instance);
 
                 // Run any 1.6+ shop-data ActionsOnPurchase hooks — used by content-pack /
                 // festival shops to spawn NPCs, mark quests, etc. Vanilla ShopMenu.cs:1693-1702.
@@ -509,6 +519,37 @@ namespace AndroidConsolizer.Patches
         }
 
         /// <summary>
+        /// Rebuild the for-sale button list (refresh display after stock/heldItems change)
+        /// and restore the cursor snap by component ID. forSaleButtons IDs are position-
+        /// based, so re-snapping by the previous ID lands the cursor on whichever item is
+        /// now at that position (or first valid button if the previous ID is gone).
+        /// rebuildSaleButtons is private on Android — accessed via reflection.
+        /// </summary>
+        private static void RebuildSaleButtonsAndRestoreSnap(ShopMenu shop)
+        {
+            try
+            {
+                int prevSnapId = shop.currentlySnappedComponent?.myID ?? -1;
+                AccessTools.Method(typeof(ShopMenu), "rebuildSaleButtons")?.Invoke(shop, null);
+                if (prevSnapId != -1)
+                {
+                    var revived = shop.getComponentWithID(prevSnapId);
+                    if (revived != null)
+                    {
+                        shop.currentlySnappedComponent = revived;
+                        shop.snapCursorToCurrentSnappedComponent();
+                    }
+                    else if (shop.forSaleButtons != null && shop.forSaleButtons.Count > 0)
+                    {
+                        shop.currentlySnappedComponent = shop.forSaleButtons[0];
+                        shop.snapCursorToCurrentSnappedComponent();
+                    }
+                }
+            }
+            catch { /* best-effort — older builds may not expose rebuildSaleButtons */ }
+        }
+
+        /// <summary>
         /// Deposit an item into a storage shop (dresser, fish tank) by invoking onSell.
         /// Returns true if the item was deposited and removed from inventory.
         /// </summary>
@@ -527,15 +568,11 @@ namespace AndroidConsolizer.Patches
 
                 HoveredItemField?.SetValue(shop, null);
 
-                // Refresh the menu so the just-deposited item shows in the buy tab.
-                // Vanilla calls rebuildSaleButtons after onSell at ShopMenu.cs:857;
-                // without it, forSale stays stale until the user re-opens the menu.
-                // Access via reflection because rebuildSaleButtons is private on Android.
-                try
-                {
-                    AccessTools.Method(typeof(ShopMenu), "rebuildSaleButtons")?.Invoke(shop, null);
-                }
-                catch { /* best-effort; older Android builds may not have this method */ }
+                // Refresh the menu so the just-deposited item shows in the buy tab,
+                // and re-snap the cursor by ID so navigation doesn't end up on a dead
+                // button reference. Vanilla calls rebuildSaleButtons after onSell at
+                // ShopMenu.cs:857 (and switchTab(0) which re-snaps as a side effect).
+                RebuildSaleButtonsAndRestoreSnap(shop);
 
                 Game1.playSound("dwop");
                 Monitor.Log($"Deposited {sellItem.DisplayName} into storage shop", LogLevel.Info);
