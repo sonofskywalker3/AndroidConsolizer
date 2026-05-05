@@ -199,6 +199,19 @@ namespace AndroidConsolizer.Patches
                             return true;
                         }
 
+                        // Storage shops (dresser, fish tank): onSell deposits the item into the
+                        // container instead of selling for cash. Skipping this would destroy
+                        // clothing and pay the player gold.
+                        if (__instance.onSell != null)
+                        {
+                            if (TryDepositToStorageShop(__instance, sellItem))
+                                return false;
+                            // onSell returned false (rejected). Don't fall through to cash-sell —
+                            // dressers don't sell items for money.
+                            Game1.playSound("cancel");
+                            return false;
+                        }
+
                         // Check if this shop accepts the item (matches vanilla grayed-out logic)
                         if (!__instance.highlightItemToSell(sellItem))
                         {
@@ -448,9 +461,49 @@ namespace AndroidConsolizer.Patches
             return shop.inventory.actualInventory[slotIndex];
         }
 
+        /// <summary>
+        /// Deposit an item into a storage shop (dresser, fish tank) by invoking onSell.
+        /// Returns true if the item was deposited and removed from inventory.
+        /// </summary>
+        private static bool TryDepositToStorageShop(ShopMenu shop, Item sellItem)
+        {
+            try
+            {
+                if (shop.onSell == null) return false;
+
+                bool deposited = shop.onSell(sellItem);
+                if (!deposited) return false;
+
+                int idx = Game1.player.Items.IndexOf(sellItem);
+                if (idx >= 0)
+                    Game1.player.Items[idx] = null;
+
+                HoveredItemField?.SetValue(shop, null);
+                Game1.playSound("dwop");
+                Monitor.Log($"Deposited {sellItem.DisplayName} into storage shop", LogLevel.Info);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Monitor.Log($"TryDepositToStorageShop error: {ex.Message}", LogLevel.Error);
+                return false;
+            }
+        }
+
         /// <summary>Sell one unit of the given item. Returns true if sold successfully.</summary>
         private static bool SellOneItem(ShopMenu shop, Item sellItem)
         {
+            // Storage shops (dresser, fish tank): deposit instead of cash-sell.
+            // Y on a single piece of clothing is the same as A — there's no "sell one of a stack"
+            // for dressers because clothing rarely stacks.
+            if (shop.onSell != null)
+            {
+                if (TryDepositToStorageShop(shop, sellItem))
+                    return true;
+                Game1.playSound("cancel");
+                return false;
+            }
+
             // Check if this shop accepts the item (matches vanilla grayed-out logic)
             if (!shop.highlightItemToSell(sellItem))
             {
