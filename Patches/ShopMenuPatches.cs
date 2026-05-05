@@ -271,12 +271,18 @@ namespace AndroidConsolizer.Patches
                     return true;
                 }
 
-                // Verify it's actually a for-sale item
+                // Verify it's actually a for-sale item. If not, BLOCK vanilla — vanilla's
+                // receiveGamePadButton accesses forSale[N] using a stale index when the
+                // hovered item isn't in the price dict (happens with storage shops after
+                // a deposit refresh, or when hoveredItem points at a removed forSale entry),
+                // and crashes the update loop with ArgumentOutOfRangeException every tick.
+                // Originally returned true here; user testing showed the resulting crash storm.
                 if (!__instance.itemPriceAndStock.TryGetValue(selectedItem, out var priceAndStock))
                 {
                     if (ModEntry.Config.VerboseLogging)
-                        Monitor.Log($"No price info for {selectedItem.DisplayName} — passing A to vanilla", LogLevel.Trace);
-                    return true;
+                        Monitor.Log($"No price info for {selectedItem.DisplayName} — blocking vanilla A (would crash)", LogLevel.Trace);
+                    Game1.playSound("cancel");
+                    return false;
                 }
 
                 if (ModEntry.Config.VerboseLogging)
@@ -520,6 +526,17 @@ namespace AndroidConsolizer.Patches
                     Game1.player.Items[idx] = null;
 
                 HoveredItemField?.SetValue(shop, null);
+
+                // Refresh the menu so the just-deposited item shows in the buy tab.
+                // Vanilla calls rebuildSaleButtons after onSell at ShopMenu.cs:857;
+                // without it, forSale stays stale until the user re-opens the menu.
+                // Access via reflection because rebuildSaleButtons is private on Android.
+                try
+                {
+                    AccessTools.Method(typeof(ShopMenu), "rebuildSaleButtons")?.Invoke(shop, null);
+                }
+                catch { /* best-effort; older Android builds may not have this method */ }
+
                 Game1.playSound("dwop");
                 Monitor.Log($"Deposited {sellItem.DisplayName} into storage shop", LogLevel.Info);
                 return true;
@@ -909,18 +926,23 @@ namespace AndroidConsolizer.Patches
             // Vanilla's highlightItemToSell only checks category — items like Mixed Seeds
             // pass the category check but have salePrice()=0. Our override also checks price,
             // which both greys them out visually AND blocks vanilla's receiveLeftClick sell path.
+            //
+            // EXCEPT for storage shops (dresser, fish tank): deposits go through onSell, not
+            // cash-sell, so the price-zero rule doesn't apply. Applying our override there
+            // greyed out perfectly-valid clothing/fish in the inventory.
             if (InvVisibleField != null)
             {
                 bool onSellTab = (bool)InvVisibleField.GetValue(__instance);
-                if (onSellTab && !_highlightOverrideActive)
+                bool isStorageShop = __instance.onSell != null;
+                if (onSellTab && !_highlightOverrideActive && !isStorageShop)
                 {
                     _highlightOverrideShop = __instance;
                     __instance.inventory.highlightMethod = HighlightItemToSellWithPriceCheck;
                     _highlightOverrideActive = true;
                 }
-                else if (!onSellTab && _highlightOverrideActive)
+                else if ((!onSellTab || isStorageShop) && _highlightOverrideActive)
                 {
-                    // Restore vanilla highlight when leaving sell tab
+                    // Restore vanilla highlight when leaving sell tab or entering a storage shop.
                     __instance.inventory.highlightMethod = __instance.highlightItemToSell;
                     _highlightOverrideActive = false;
                     _highlightOverrideShop = null;
