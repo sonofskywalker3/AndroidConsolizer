@@ -958,6 +958,16 @@ namespace AndroidConsolizer
                 setValue: value => Config.EnableConsoleShipping = value
             );
 
+            configMenu.AddBoolOption(
+                mod: this.ModManifest,
+                name: () => "Suppress Right Stick in Overworld",
+                tooltip: () => "Stops the right stick from drifting the mouse cursor across the map during gameplay. " +
+                              "Vanilla Android maps right stick to cursor, which causes interact/sickle to target distant tiles. " +
+                              "Disable to restore vanilla behavior.",
+                getValue: () => Config.SuppressRightStickInOverworld,
+                setValue: value => Config.SuppressRightStickInOverworld = value
+            );
+
             // Standalone Features
             configMenu.AddSectionTitle(
                 mod: this.ModManifest,

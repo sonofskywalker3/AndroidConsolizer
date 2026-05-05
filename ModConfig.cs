@@ -43,6 +43,13 @@ namespace AndroidConsolizer
         /// <summary>Console-style shipping bin: A ships full stack, Y ships one item.</summary>
         public bool EnableConsoleShipping { get; set; } = true;
 
+        /// <summary>
+        /// Stops the right thumbstick from moving the mouse cursor during overworld gameplay.
+        /// Vanilla Android maps the right stick to cursor motion, which causes interact/sickle
+        /// to target tiles many squares away from the player. Disable to restore vanilla behavior.
+        /// </summary>
+        public bool SuppressRightStickInOverworld { get; set; } = true;
+
         /*********
         ** Standalone Features
         *********/

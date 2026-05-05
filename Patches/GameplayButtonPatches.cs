@@ -285,6 +285,23 @@ namespace AndroidConsolizer.Patches
                     );
                 }
 
+                // Zero out the right thumbstick during overworld gameplay (no active menu).
+                // Vanilla Android Game1.UpdateControlInput moves the mouse cursor by
+                // (rightStick * thumbstickToMouseModifier) every tick the stick is non-zero.
+                // The deltas accumulate, so a small nudge drifts the cursor many tiles away
+                // and interact/sickle then target the wrong tile.
+                if (ModEntry.Config?.SuppressRightStickInOverworld == true
+                    && Game1.activeClickableMenu == null
+                    && __result.ThumbSticks.Right != Vector2.Zero)
+                {
+                    __result = new GamePadState(
+                        new GamePadThumbSticks(__result.ThumbSticks.Left, Vector2.Zero),
+                        __result.Triggers,
+                        __result.Buttons,
+                        __result.DPad
+                    );
+                }
+
                 // Zero out left thumbstick on Options tab so the cursor doesn't free-roam.
                 // D-pad handles option-to-option navigation; left stick would just move
                 // the cursor off the options list and out of bounds.
