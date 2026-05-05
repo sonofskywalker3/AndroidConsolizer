@@ -1022,61 +1022,40 @@ namespace AndroidConsolizer.Patches
         {
             Item pickedUp = null;
 
+            // Take-off path: route through Game1.player.Equip<T>(null, slot) +
+            // Utility.PerformSpecialItemGrabReplacement, mirroring vanilla InventoryPage
+            // (line 369 ring, 399 boots, 431 shirt, 465 pants). This is what handles
+            // onUnequip + buffs.Dirty + Hat 71 -> Pan / Pan Hat variants -> Pan tool.
+            // The previous direct `slot.Value = null` writes skipped both the lifecycle
+            // and the special replacement, so e.g. taking off the Pan Hat left it as a
+            // Hat instead of converting back to a Pan. Pre-v3.5.24 also called onUnequip
+            // manually for boots/rings — Equip<T>'s internal Equip(old, new, equip) does
+            // that itself when hasLoadedGame && IsLocalPlayer (Farmer.cs:7110-7129).
             switch (slotId)
             {
                 case 101: // Hat
-                    if (Game1.player.hat.Value != null)
-                    {
-                        pickedUp = Game1.player.hat.Value;
-                        Game1.player.hat.Value = null;
-                    }
+                    pickedUp = Utility.PerformSpecialItemGrabReplacement(
+                        Game1.player.Equip<Hat>(null, Game1.player.hat));
                     break;
                 case 102: // Right Ring
-                {
-                    Ring ring = Game1.player.rightRing.Value;
-                    if (ring != null)
-                    {
-                        ring.onUnequip(Game1.player);
-                        Game1.player.rightRing.Value = null;
-                        pickedUp = ring;
-                    }
+                    pickedUp = Utility.PerformSpecialItemGrabReplacement(
+                        Game1.player.Equip<Ring>(null, Game1.player.rightRing));
                     break;
-                }
                 case 103: // Left Ring
-                {
-                    Ring ring = Game1.player.leftRing.Value;
-                    if (ring != null)
-                    {
-                        ring.onUnequip(Game1.player);
-                        Game1.player.leftRing.Value = null;
-                        pickedUp = ring;
-                    }
+                    pickedUp = Utility.PerformSpecialItemGrabReplacement(
+                        Game1.player.Equip<Ring>(null, Game1.player.leftRing));
                     break;
-                }
                 case 104: // Boots
-                {
-                    Boots boots = Game1.player.boots.Value;
-                    if (boots != null)
-                    {
-                        boots.onUnequip(Game1.player);
-                        Game1.player.boots.Value = null;
-                        pickedUp = boots;
-                    }
+                    pickedUp = Utility.PerformSpecialItemGrabReplacement(
+                        Game1.player.Equip<Boots>(null, Game1.player.boots));
                     break;
-                }
                 case 108: // Shirt
-                    if (Game1.player.shirtItem.Value != null)
-                    {
-                        pickedUp = Game1.player.shirtItem.Value;
-                        Game1.player.shirtItem.Value = null;
-                    }
+                    pickedUp = Utility.PerformSpecialItemGrabReplacement(
+                        Game1.player.Equip<Clothing>(null, Game1.player.shirtItem));
                     break;
                 case 109: // Pants
-                    if (Game1.player.pantsItem.Value != null)
-                    {
-                        pickedUp = Game1.player.pantsItem.Value;
-                        Game1.player.pantsItem.Value = null;
-                    }
+                    pickedUp = Utility.PerformSpecialItemGrabReplacement(
+                        Game1.player.Equip<Clothing>(null, Game1.player.pantsItem));
                     break;
                 case 106: // Organize/sort button — handle directly because Android's
                           // receiveLeftClick pass-through fires at mouse position, not
