@@ -1387,6 +1387,17 @@ namespace AndroidConsolizer.Patches
                 return;
             }
 
+            // Route through the menu's deposit callback when one is set. Cabin
+            // farmhand inventory, JunimoHut, AutoGrabber, and StorageFurniture
+            // opened via the chest path wire ItemGrabMenu.behaviorFunction to do
+            // stack-merge (AddItem), multiplayer NetCollection sync, and a menu
+            // refresh that preserves cursor by snap-id. Direct chestInv writes
+            // skip all of that. (Note: the GRAB-direction callback
+            // behaviorOnItemGrab is still skipped — see InvokeBehaviorOnItemGrab —
+            // because grabItemFromChest does NOT preserve snap.)
+            if (TryDepositViaCallback(menu, item, slotIndex))
+                return;
+
             int stackBefore = item.Stack;
 
             // Try stacking onto existing chest items first
@@ -1510,6 +1521,43 @@ namespace AndroidConsolizer.Patches
                 Game1.playSound("dwop");
                 if (ModEntry.Config.VerboseLogging)
                     Monitor.Log($"[ChestTransfer] Picked up 1x {one.DisplayName} from player for swap ({item?.Stack ?? 0} remain)", LogLevel.Debug);
+            }
+        }
+
+        /// <summary>Route a full-stack deposit through ItemGrabMenu.behaviorFunction when set.
+        /// Returns true if the callback handled the deposit. Used for menus where direct
+        /// chestInv writes skip required lifecycle (Cabin sync, StorageFurniture stack-merge).
+        ///
+        /// We mimic vanilla's heldItem-style invocation: remove the item from player inventory
+        /// first so the callback sees it as if cursor-held. The callback's overflow path
+        /// (addItemToInventory) puts any rejected remainder back in player inventory.
+        ///
+        /// IMPORTANT: After this returns true, the `menu` reference is stale — the callback
+        /// rebuilds Game1.activeClickableMenu. Do not access menu.heldItem / ItemsToGrabMenu
+        /// after invoking. The cursor is preserved via snap-id by the callbacks themselves.</summary>
+        private static bool TryDepositViaCallback(ItemGrabMenu menu, Item item, int slotIndex)
+        {
+            try
+            {
+                if (menu.shippingBin)
+                    return false; // ShippingBinPatches handles this code path
+
+                var behaviorField = AccessTools.Field(typeof(ItemGrabMenu), "behaviorFunction");
+                if (behaviorField == null) return false;
+                var callback = behaviorField.GetValue(menu) as Delegate;
+                if (callback == null) return false;
+
+                Game1.player.Items[slotIndex] = null;
+                callback.DynamicInvoke(item, Game1.player);
+                Game1.playSound("stoneStep");
+                if (ModEntry.Config.VerboseLogging)
+                    Monitor.Log($"[ChestTransfer] Deposited {item.Stack}x {item.DisplayName} via behaviorFunction", LogLevel.Debug);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Monitor.Log($"[ChestTransfer] behaviorFunction threw: {ex.Message} — falling back to direct write", LogLevel.Warn);
+                return false;
             }
         }
 
