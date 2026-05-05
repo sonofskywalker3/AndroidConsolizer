@@ -75,17 +75,8 @@ namespace AndroidConsolizer.Patches
         // Cached reflection for GameMenu junimoNoteIcon (Community Center tab icon)
         private static FieldInfo _junimoNoteIconField;
 
-        // Scrollbox tap simulation: two-frame tap gesture
-        // Phase 0 = idle, 1 = receiveLeftClick pending, 2 = releaseLeftClick pending
-        private static int _scrollboxTapPhase = 0;
-        private static int _scrollboxTapX, _scrollboxTapY;
-
         // Right stick initial-press detection for social tab
         private static bool _prevRightStickEngaged = false;
-
-        // Diagnostic: track child menu on SocialPage (gift log)
-        private static bool _dumpedChildMenu = false;
-        private static int _lastProfileMenuSnappedId = -999; // track snap changes in ProfileMenu
 
         // Cached reflection fields for CollectionsPage
         private static FieldInfo _collectionsField;       // Dictionary<int, List<List<ClickableTextureComponent>>>
@@ -158,11 +149,6 @@ namespace AndroidConsolizer.Patches
                 harmony.Patch(
                     original: AccessTools.Method(typeof(GameMenu), nameof(GameMenu.changeTab)),
                     postfix: new HarmonyMethod(typeof(GameMenuPatches), nameof(ChangeTab_Postfix))
-                );
-
-                harmony.Patch(
-                    original: AccessTools.Method(typeof(GameMenu), "draw", new[] { typeof(SpriteBatch) }),
-                    postfix: new HarmonyMethod(typeof(GameMenuPatches), nameof(Draw_Postfix))
                 );
 
                 harmony.Patch(
@@ -1073,27 +1059,6 @@ namespace AndroidConsolizer.Patches
                         }
                     }
                 }
-            }
-
-            // Scrollbox tap gesture (legacy, kept for compatibility)
-            if (_scrollboxTapPhase == 0) return;
-
-            var scrollArea = _socialScrollAreaField?.GetValue(__instance);
-            if (scrollArea == null) { _scrollboxTapPhase = 0; return; }
-
-            var scrollType = scrollArea.GetType();
-
-            if (_scrollboxTapPhase == 1)
-            {
-                var clickMethod = scrollType.GetMethod("receiveLeftClick", new[] { typeof(int), typeof(int) });
-                clickMethod?.Invoke(scrollArea, new object[] { _scrollboxTapX, _scrollboxTapY });
-                _scrollboxTapPhase = 2;
-            }
-            else if (_scrollboxTapPhase == 2)
-            {
-                var releaseMethod = scrollType.GetMethod("releaseLeftClick", new[] { typeof(int), typeof(int) });
-                releaseMethod?.Invoke(scrollArea, new object[] { _scrollboxTapX, _scrollboxTapY });
-                _scrollboxTapPhase = 0;
             }
         }
 
@@ -2325,129 +2290,6 @@ namespace AndroidConsolizer.Patches
         }
 
         /// <summary>
-        /// Draw the finger cursor on tabs where Android suppresses drawMouse.
-        /// Also runs diagnostics for child menus (gift log on SocialPage).
-        /// </summary>
-        private static void Draw_Postfix(GameMenu __instance, SpriteBatch b)
-        {
-            if (!ModEntry.Config.EnableGameMenuNavigation)
-                return;
-
-            try
-            {
-                // Diagnostic: detect and dump child menu on SocialPage (gift log)
-                if (__instance.pages != null && __instance.currentTab >= 0 && __instance.currentTab < __instance.pages.Count)
-                {
-                    var page = __instance.pages[__instance.currentTab];
-                    if (page != null && page.GetType().Name == "SocialPage")
-                    {
-                        // Check _childMenu via reflection
-                        var childMenuField = AccessTools.Field(page.GetType(), "_childMenu")
-                                          ?? AccessTools.Field(typeof(IClickableMenu), "_childMenu");
-                        if (childMenuField != null)
-                        {
-                            var childMenu = childMenuField.GetValue(page) as IClickableMenu;
-                            if (childMenu != null)
-                            {
-                                if (!_dumpedChildMenu)
-                                {
-                                    _dumpedChildMenu = true;
-                                    _lastProfileMenuSnappedId = -999;
-                                    DumpChildMenu(childMenu);
-                                }
-
-                                // Track snap component changes in ProfileMenu (log on change only)
-                                var snapped = childMenu.currentlySnappedComponent;
-                                int snappedId = snapped?.myID ?? -1;
-                                if (snappedId != _lastProfileMenuSnappedId)
-                                {
-                                    _lastProfileMenuSnappedId = snappedId;
-                                    if (snapped != null)
-                                        Monitor?.Log($"[ProfileDiag] Snap changed: ID={snapped.myID} name='{snapped.name}' bounds=({snapped.bounds.X},{snapped.bounds.Y},{snapped.bounds.Width},{snapped.bounds.Height}) mouse=({Game1.getMouseX()},{Game1.getMouseY()}) drawMouse={Game1.options.hardwareCursor}", LogLevel.Info);
-                                    else
-                                        Monitor?.Log($"[ProfileDiag] Snap changed: null, mouse=({Game1.getMouseX()},{Game1.getMouseY()})", LogLevel.Info);
-                                }
-                            }
-                            else
-                            {
-                                _dumpedChildMenu = false;
-                                _lastProfileMenuSnappedId = -999;
-                            }
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Monitor?.Log($"[GameMenu] Error in Draw_Postfix: {ex.Message}", LogLevel.Error);
-            }
-        }
-
-        /// <summary>Dump full diagnostic info for a child menu (gift log/profile).</summary>
-        private static void DumpChildMenu(IClickableMenu childMenu)
-        {
-            Monitor?.Log($"[GameMenuDiag] === Child menu detected ===", LogLevel.Info);
-            Monitor?.Log($"[GameMenuDiag] Type: {childMenu.GetType().FullName}", LogLevel.Info);
-            Monitor?.Log($"[GameMenuDiag] Bounds: ({childMenu.xPositionOnScreen},{childMenu.yPositionOnScreen},{childMenu.width},{childMenu.height})", LogLevel.Info);
-
-            var snapped = childMenu.currentlySnappedComponent;
-            if (snapped != null)
-                Monitor?.Log($"[GameMenuDiag] currentlySnappedComponent: ID={snapped.myID} bounds=({snapped.bounds.X},{snapped.bounds.Y},{snapped.bounds.Width},{snapped.bounds.Height}) name='{snapped.name}'", LogLevel.Info);
-            else
-                Monitor?.Log($"[GameMenuDiag] currentlySnappedComponent: null", LogLevel.Info);
-
-            var allComps = childMenu.allClickableComponents;
-            if (allComps != null)
-            {
-                Monitor?.Log($"[GameMenuDiag] allClickableComponents: count={allComps.Count}", LogLevel.Info);
-                for (int i = 0; i < allComps.Count; i++)
-                {
-                    var c = allComps[i];
-                    if (c == null) continue;
-                    Monitor?.Log($"[GameMenuDiag]   [{i}] ID={c.myID} name='{c.name}' bounds=({c.bounds.X},{c.bounds.Y},{c.bounds.Width},{c.bounds.Height}) neighbors L={c.leftNeighborID} R={c.rightNeighborID} U={c.upNeighborID} D={c.downNeighborID}", LogLevel.Info);
-                }
-            }
-            else
-                Monitor?.Log($"[GameMenuDiag] allClickableComponents: null", LogLevel.Info);
-
-            // ProfileMenu-specific diagnostics
-            if (childMenu.GetType().Name == "ProfileMenu")
-            {
-                Monitor?.Log($"[ProfileDiag] === ProfileMenu cursor diagnostic ===", LogLevel.Info);
-                Monitor?.Log($"[ProfileDiag] snappyMenus={Game1.options.snappyMenus} gamepadControls={Game1.options.gamepadControls} lastCursorMotionWasMouse={Game1.lastCursorMotionWasMouse}", LogLevel.Info);
-                Monitor?.Log($"[ProfileDiag] mouse=({Game1.getMouseX()},{Game1.getMouseY()}) hardwareCursor={Game1.options.hardwareCursor}", LogLevel.Info);
-
-                // Log clickableProfileItems
-                var profileItemsField = AccessTools.Field(childMenu.GetType(), "clickableProfileItems");
-                if (profileItemsField != null)
-                {
-                    var items = profileItemsField.GetValue(childMenu) as IList;
-                    if (items != null)
-                    {
-                        Monitor?.Log($"[ProfileDiag] clickableProfileItems: count={items.Count}", LogLevel.Info);
-                        for (int i = 0; i < Math.Min(items.Count, 20); i++)
-                        {
-                            var item = items[i] as ClickableComponent;
-                            if (item != null)
-                                Monitor?.Log($"[ProfileDiag]   item[{i}] ID={item.myID} name='{item.name}' bounds=({item.bounds.X},{item.bounds.Y},{item.bounds.Width},{item.bounds.Height}) neighbors L={item.leftNeighborID} R={item.rightNeighborID} U={item.upNeighborID} D={item.downNeighborID}", LogLevel.Info);
-                        }
-                        if (items.Count > 20)
-                            Monitor?.Log($"[ProfileDiag]   ... and {items.Count - 20} more items", LogLevel.Info);
-                    }
-                }
-                else
-                    Monitor?.Log($"[ProfileDiag] clickableProfileItems field not found", LogLevel.Warn);
-
-                // Log _currentCategory
-                var categoryField = AccessTools.Field(childMenu.GetType(), "_currentCategory");
-                if (categoryField != null)
-                    Monitor?.Log($"[ProfileDiag] _currentCategory={categoryField.GetValue(childMenu)}", LogLevel.Info);
-            }
-
-            // Enumerate all fields
-            DumpAllFields(childMenu, "ChildMenu");
-        }
-
         #region Diagnostic methods (verbose logging only)
 
         private static void DumpTabState(GameMenu menu, int tabIndex)
