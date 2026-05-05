@@ -53,7 +53,8 @@ namespace AndroidConsolizer
         /*********
         ** Standalone Features
         *********/
-        /// <summary>Whether Start button opens the Quest Log/Journal instead of inventory.</summary>
+        /// <summary>When true, tap Start opens the game menu (vanilla behaviour) and holding
+        /// Start for ~500ms opens the Quest Log/Journal. When false, Start is left alone.</summary>
         public bool EnableJournalButton { get; set; } = true;
 
         /// <summary>Whether Start button can skip cutscenes (press twice to skip).</summary>
