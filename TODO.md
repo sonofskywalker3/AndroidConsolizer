@@ -80,6 +80,73 @@ All items done. See `DONE.md` and `.planning/STATE.md` quick tasks table.
 
 ---
 
+## Nexus Feedback Release 2
+
+Pulled from Nexus comments + bug reports on 2026-05-05.
+
+### 50. FIXED (v3.5.12) — Right Stick Targets Distant Objects in Overworld
+- **Reporter:** Nexus user (DM), tested against multiple controller mods — confirms issue is specific to AndroidConsolizer.
+- **Bug:** Moving the right joystick during gameplay drives an invisible cursor that targets objects far away (a dozen+ tiles). Standing next to a tomato, a nudge of the right stick can latch onto a pepper across the field. Then pressing the interact button harvests the wrong crop, or the sickle refuses to harvest the crop the player is actually facing.
+- **Why this matters:** Silently breaks core gameplay (harvesting, tool use). User cannot tell where the cursor is pointing because nothing draws it.
+- **Root cause hypothesis:**
+  1. We do not yet have an intentional right-stick cursor (#12 is still TODO), so something is unintentionally feeding right-stick motion into mouse position.
+  2. Likely candidates: leftover `Game1.setMousePosition` / `GetMouseState` override from CarpenterMenu/JunimoNoteMenu work leaking into the overworld code path.
+  3. Could also be `Mouse.SetPosition`-style call in `GameplayButtonPatches` or `ButtonRemapper` reading right-stick axis.
+  4. Vanilla Android may also map right stick to cursor; if so we may be amplifying it (e.g. doubling the delta) rather than originating it.
+- **Investigation steps:**
+  1. Grep the codebase for `setMousePosition`, `Mouse.SetPosition`, `_overridingMousePosition`, `RightThumbstick` to find any code path that runs in overworld context (not gated to a menu).
+  2. Build a diagnostic patch: log `Game1.getMousePosition()` every tick when no menu is open, alongside the right-stick X/Y values, and see whether stick motion correlates with cursor jumps.
+  3. Test with `EnableRightStickCursor`-style toggles disabled — if the bug persists with all our right-stick code paths gated off, it is vanilla Android behavior and we need to dampen it.
+- **Files to check first:** `Patches/GameplayButtonPatches.cs`, `Patches/CarpenterMenuPatches.cs` (cleanup of `_overridingMousePosition` in `OnMenuClosed`), `ModEntry.cs` (UpdateTicked handlers), `ButtonRemapper.cs`.
+
+### 51. FIXED (v3.5.11) — Dresser Sold Clothes Instead of Storing
+- **Reporters:** TWO Nexus users — initial report 3 Mar 2026, confirmed by second user 11 Mar 2026 ("This happens to me as well… I accidentally sold a few clothes, but got them back with the android version of the item spawner mod").
+- **Bug:** Interacting with a dresser triggers shipping-bin behavior — clothes get *sold* instead of stored. Silent data loss.
+- **Root cause hypothesis:** `ShippingBinPatches` is matching too broadly. Dresser is likely an `IslandFurniture` / `StorageFurniture` subclass that shares some interface or check with shipping bin. Our patch may be hitting `ItemGrabMenu` for any reverseGrab=false menu that has a parent matching some condition we used for shipping bin.
+- **Investigation steps:**
+  1. Decompile `Furniture.checkForAction` / `StorageFurniture.checkForAction` on Android — confirm what menu the dresser opens and whether it shares a base class with shipping bin.
+  2. Audit `ShippingBinPatches.cs` prefixes — what context check do they use? Tighten so the patch only fires when source is actually a `ShippingBin`.
+- **Files:** `Patches/ShippingBinPatches.cs`, possibly `Patches/ItemGrabMenuPatches.cs`.
+
+### 52. FIXED (v3.5.15) — Quest Log Lockout (Back/Select Fallback)
+- **Reporter:** Nexus user, 15 Mar 2026.
+- **Bug:** If the user removes the "open quests" binding from the Start button (via remap/config), there is no other way to open the quest log with a controller.
+- **Fix:** Add a fallback chord (e.g. Select+Start, or a GMCM-configurable button) that always opens the quest log regardless of the Start binding. Or simply prevent the user from unbinding it without a replacement.
+- **Files:** `ModEntry.cs` (button event handling), GMCM config registration.
+
+### 53. FIXED (v3.5.14) — Bed Furniture Debounce
+- **Reporters:** 17 Feb 2026 + 15 Mar 2026 ("the fix for furniture placement seems to be fixed for the carpet but not for the bed").
+- **Bug:** Pressing X (place/pickup) on a bed places-and-immediately-picks-up in a loop. Carpet works fine. Disabling debounce in mod settings makes the bed un-placeable entirely.
+- **Why this is its own item:** `BedFurniture` is documented in MEMORY.md as bypassing `canBeRemoved` entirely — only `performRemoveAction` / `placementAction` fire. The current debounce flow is presumably gating on `canBeRemoved`, which is why beds slip through.
+- **Fix approach:** Extend the suppress-until-release flag to fire from `BedFurniture.performRemoveAction` and `placementAction` prefixes specifically (in addition to the existing `Furniture` prefixes). Verify it does not break placement of regular beds in the bedroom (only the in-world pickup/replace cycle).
+- **Files:** `Patches/CarpenterMenuPatches.cs` if furniture handling lives there, or wherever the debounce-until-release flag is defined (search for `SuppressFurnitureUntilRelease` or similar).
+
+### 54. Trigger Column-Skip Still Occurring on Gamesir X2 (v3.3.11 fix incomplete)
+- **Reporter:** Nexus user (Gamesir X2 controller), 6 Mar 2026.
+- **Bug:** Despite the v3.3.11 hall-effect trigger fix, this user still sees "the triggers are occasionally skipping 2 slots."
+- **Status:** Partial fix exists. The original report was on G Cloud (analog hall-effect triggers) — Gamesir X2 also has hall-effect triggers, so the same code path applies but is not fully reliable.
+- **Investigation steps:** Re-check the trigger debounce window. Look for whether the v3.3.11 fix is gated on a value (e.g. analog threshold) that does not match Gamesir X2's resting/peak readings. May need a SMAPI log from this user to see actual trigger values.
+
+### 55. VERIFIED (v3.5.15) — Release Zip Is Clean
+- v3.5.15 zip contains 3 entries: AndroidConsolizer.dll, AndroidControllerFix.dll (legacy), manifest.json. No logs, no images, no junk. ModBuildConfig defaults are filtering correctly. Issue was self-resolved between v3.5.4 and present.
+
+### 56. Random Freeze During Gameplay — Amazon Luna Controller
+- **Reporter:** Nexus user, 16 Feb 2026, confirmed during gameplay 26 Feb 2026 ("4:10pm during gameplay").
+- **SMAPI log:** https://smapi.io/log/987136a58b4e4936a3c8a77e418369f5
+- **Action:** Pull the log, look for the last entries before freeze, look for our patches in the stack or recurring exceptions.
+
+### 57. FIXED (v3.5.13) — Aquarium Duplicate Fish (Bug #1058739)
+- **Reporter:** easton777 on Nexus, 25 Mar 2026, against v3.5.10.
+- **Bug:** Pressing X (take-one) on the first fish placed in an aquarium gives the player the fish but leaves the original in the aquarium — duplication. Same behavior for decorative objects placed outside (example given: seasonal plant pot).
+- **Root cause hypothesis:** Our X-button take-one path is calling something like `TransferFromChest` / item-pickup that does not invoke the source container's removal hook. This mirrors the v3.4.78 bundle-reward fix where `behaviorOnItemGrab` had to be invoked via reflection. Aquariums and outdoor decoration containers likely have an analogous "remove from world" callback that is being skipped.
+- **Files:** `Patches/InventoryManagementPatches.cs` (X-button take-one flow), `Patches/ItemGrabMenuPatches.cs`.
+
+### 27 (cross-ref). Toolbar Resize Request — Bug #1050718
+- Nexus user throyiii filed Bug #1050718 ("Can't resize the toolbar") against v3.5.10 on 5 Mar 2026.
+- This maps directly onto existing TODO #27 (Toolbar Size Slider in Options Menu). No new item needed; bumping priority since there is now a public bug report.
+
+---
+
 ## Milestone 3: Overworld Cursor & Accessibility (v3.6) ← ACTIVE
 
 ### 12. Right Joystick Cursor Mode + Zoom Control
