@@ -536,20 +536,24 @@ namespace AndroidConsolizer.Patches
             {
                 int prevSnapId = shop.currentlySnappedComponent?.myID ?? -1;
                 AccessTools.Method(typeof(ShopMenu), "rebuildSaleButtons")?.Invoke(shop, null);
-                if (prevSnapId != -1)
-                {
-                    var revived = shop.getComponentWithID(prevSnapId);
-                    if (revived != null)
-                    {
-                        shop.currentlySnappedComponent = revived;
-                        shop.snapCursorToCurrentSnappedComponent();
-                    }
-                    else if (shop.forSaleButtons != null && shop.forSaleButtons.Count > 0)
-                    {
-                        shop.currentlySnappedComponent = shop.forSaleButtons[0];
-                        shop.snapCursorToCurrentSnappedComponent();
-                    }
-                }
+                if (prevSnapId == -1) return;
+
+                ClickableComponent newSnap = shop.getComponentWithID(prevSnapId);
+                if (newSnap == null && shop.forSaleButtons != null && shop.forSaleButtons.Count > 0)
+                    newSnap = shop.forSaleButtons[0];
+                if (newSnap == null) return;
+
+                shop.currentlySnappedComponent = newSnap;
+                shop.snapCursorToCurrentSnappedComponent();
+
+                // Refresh hoveredItem (the field our buy code reads to know what's under
+                // the cursor). vanilla sets it via performHoverAction at ShopMenu.cs:1422,
+                // matching the button at (x,y) to forSale[currentItemIndex + i]. Without
+                // this call, hoveredItem still references the just-removed item, so the
+                // next A-press hits the missing-price branch and cancels — visible to
+                // user as "first A picks up but second A on the highlighted item does
+                // nothing." (Reported on v3.5.26.)
+                shop.performHoverAction(newSnap.bounds.Center.X, newSnap.bounds.Center.Y);
             }
             catch { /* best-effort — older builds may not expose rebuildSaleButtons */ }
         }
