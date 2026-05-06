@@ -22,6 +22,7 @@ namespace AndroidConsolizer.Patches
         private static FieldInfo HoveredItemField;
         private static FieldInfo QuantityToBuyField;
         private static FieldInfo InventoryButtonField;
+        private static FieldInfo CurrentlySelectedItemField;
 
 
         /// <summary>Check if the active menu is a ShopMenu on the buy tab (right stick should be suppressed).</summary>
@@ -100,6 +101,11 @@ namespace AndroidConsolizer.Patches
             HoveredItemField = AccessTools.Field(typeof(ShopMenu), "hoveredItem");
             QuantityToBuyField = AccessTools.Field(typeof(ShopMenu), "quantityToBuy");
             InventoryButtonField = AccessTools.Field(typeof(ShopMenu), "inventoryButton");
+            // currentlySelectedItem is public on Android (ShopMenu.cs:89) but not exposed
+            // by the PC DLL — direct field access fails compile. AccessTools.Field hits it
+            // via reflection, which works on both. Same pattern as the Android vs PC DLL
+            // workarounds documented in CLAUDE.md.
+            CurrentlySelectedItemField = AccessTools.Field(typeof(ShopMenu), "currentlySelectedItem");
 
             try
             {
@@ -534,8 +540,47 @@ namespace AndroidConsolizer.Patches
         {
             try
             {
+                // Capture both anchors before rebuild:
+                //   - prevSnapId: drives cursor restoration (sell tab uses inventory
+                //     slot snap; regular shop buy tab uses forSaleButton snap).
+                //   - prevSelectedIndex: drives hoveredItem refresh on the storage-shop
+                //     buy tab, where vanilla down/up nav (ShopMenu.cs:943, 957) updates
+                //     currentlySelectedItem via setCurrentItem but NEVER touches
+                //     currentlySnappedComponent. The snap stays pinned to the initial
+                //     snapToDefaultClickableComponent target (myID=3546 = the original
+                //     forSaleButtons[0]). After we Remove the bought item, vanilla's
+                //     rebuildSaleButtons creates new buttons via `new ClickableComponent(
+                //     rect, name)` (ShopMenu.cs:2580) which leaves myID at the default
+                //     -500. getComponentWithID(3546) then returns the OLD button still
+                //     referenced from allClickableComponents — not in the new
+                //     forSaleButtons list — so the v3.5.28 forSaleButtons.IndexOf
+                //     approach returned -1 and silently skipped setCurrentItem.
+                //     hoveredItem stayed pointing at the just-bought (now-removed)
+                //     item, looping forever on the "No price info" recovery path.
                 int prevSnapId = shop.currentlySnappedComponent?.myID ?? -1;
+                int prevSelectedIndex = (CurrentlySelectedItemField != null)
+                    ? (int)CurrentlySelectedItemField.GetValue(shop)
+                    : -1;
+
                 AccessTools.Method(typeof(ShopMenu), "rebuildSaleButtons")?.Invoke(shop, null);
+
+                // Refresh hoveredItem at the same row the user was on. setCurrentItem
+                // (ShopMenu.cs:1380-1422) sets currentlySelectedItem, currentItem, and
+                // hoveredItem from a forSale index. After Remove, the next item slid up
+                // into the same row index, so re-calling with the saved index targets
+                // it directly — gives the user a quick chain-buy (A → A → A) without
+                // having to nudge the stick to re-prime hoveredItem.
+                if (prevSelectedIndex >= 0 && shop.forSale != null && shop.forSale.Count > 0)
+                {
+                    int newIndex = Math.Min(prevSelectedIndex, shop.forSale.Count - 1);
+                    try
+                    {
+                        AccessTools.Method(typeof(ShopMenu), "setCurrentItem")
+                            ?.Invoke(shop, new object[] { newIndex });
+                    }
+                    catch { /* best-effort */ }
+                }
+
                 if (prevSnapId == -1) return;
 
                 ClickableComponent newSnap = shop.getComponentWithID(prevSnapId);
@@ -545,33 +590,6 @@ namespace AndroidConsolizer.Patches
 
                 shop.currentlySnappedComponent = newSnap;
                 shop.snapCursorToCurrentSnappedComponent();
-
-                // Refresh hoveredItem (the field our buy code reads to identify what's
-                // under the cursor). On Android, performHoverAction is an empty override
-                // (ShopMenu.cs:1938-1940) — useless. The actual hoveredItem assignment
-                // lives in the private setCurrentItem(int index) at ShopMenu.cs:1380-1422,
-                // which sets currentlySelectedItem, currentItem, and hoveredItem from a
-                // forSale index. We figure out which forSale index the new snap maps to
-                // (forSaleButton position N -> forSale[currentItemIndex + N]) and call
-                // setCurrentItem via reflection. Reported on v3.5.27 ("snap moves but
-                // second A doesn't fire") because performHoverAction did nothing.
-                if (shop.forSaleButtons != null)
-                {
-                    int btnIndex = shop.forSaleButtons.IndexOf(newSnap as ClickableComponent);
-                    if (btnIndex >= 0)
-                    {
-                        int forSaleIndex = shop.currentItemIndex + btnIndex;
-                        if (forSaleIndex >= 0 && forSaleIndex < shop.forSale.Count)
-                        {
-                            try
-                            {
-                                AccessTools.Method(typeof(ShopMenu), "setCurrentItem")
-                                    ?.Invoke(shop, new object[] { forSaleIndex });
-                            }
-                            catch { /* best-effort */ }
-                        }
-                    }
-                }
             }
             catch { /* best-effort — older builds may not expose rebuildSaleButtons */ }
         }
