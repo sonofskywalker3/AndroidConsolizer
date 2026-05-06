@@ -570,9 +570,19 @@ namespace AndroidConsolizer.Patches
                 // into the same row index, so re-calling with the saved index targets
                 // it directly — gives the user a quick chain-buy (A → A → A) without
                 // having to nudge the stick to re-prime hoveredItem.
-                if (prevSelectedIndex >= 0 && shop.forSale != null && shop.forSale.Count > 0)
+                //
+                // Empty-then-filled case: if forSale was previously empty (or the user
+                // never navigated the buy tab), prevSelectedIndex is the vanilla initial
+                // -1 (ShopMenu.cs:691). After depositing into an empty dresser and
+                // pressing B back to the buy tab, the list now has items but nothing is
+                // selected — vanilla would require a down-press to seed the highlight.
+                // Default to row 0 in that case so a fresh-deposit dresser opens with
+                // the first stored item already selected and ready to A-withdraw.
+                if (shop.forSale != null && shop.forSale.Count > 0)
                 {
-                    int newIndex = Math.Min(prevSelectedIndex, shop.forSale.Count - 1);
+                    int newIndex = (prevSelectedIndex >= 0)
+                        ? Math.Min(prevSelectedIndex, shop.forSale.Count - 1)
+                        : 0;
                     try
                     {
                         AccessTools.Method(typeof(ShopMenu), "setCurrentItem")
