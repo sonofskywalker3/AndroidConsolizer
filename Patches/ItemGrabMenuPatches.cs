@@ -966,7 +966,12 @@ namespace AndroidConsolizer.Patches
                             {
                                 // Block deposits into reward menus (source_none = 0).
                                 // Same detection as above — reverseGrab is unreliable on Android.
-                                if (__instance.source == 0)
+                                // Also block deposits into the Auto-Grabber: vanilla wires
+                                // chest.grabItemFromInventory as behaviorFunction (Object.cs:3975),
+                                // so without this guard our A/Y deposit path happily transfers
+                                // player items into the grabber's chest. Console behaviour is
+                                // one-way (take only).
+                                if (__instance.source == 0 || IsAutoGrabber(__instance))
                                 {
                                     Game1.playSound("cancel");
                                     return false;
@@ -1256,6 +1261,19 @@ namespace AndroidConsolizer.Patches
         }
 
         /// <summary>Get the inventory list from the chest associated with this menu.</summary>
+        /// <summary>True when the menu's source is an Auto-Grabber. Detected via context
+        /// (set to the SObject in Object.CheckForActionOnAutoGrabber / grabItemFromAutoGrabber).
+        /// Auto-Grabber qualified id is (BC)165; name match is the safety net for mods.</summary>
+        private static bool IsAutoGrabber(ItemGrabMenu menu)
+        {
+            if (menu?.context is StardewValley.Object obj)
+            {
+                if (obj.QualifiedItemId == "(BC)165") return true;
+                if (obj.Name == "Auto-Grabber") return true;
+            }
+            return false;
+        }
+
         private static IList<Item> GetChestInventory(ItemGrabMenu menu)
         {
             try
