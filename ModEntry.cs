@@ -58,6 +58,12 @@ namespace AndroidConsolizer
         /// so the matching Release event doesn't also open the game menu.</summary>
         private bool _startHoldHandled = false;
 
+        /// <summary>Previous tick's RawStartPressed value, for polling-based edge detection.
+        /// Required because Start is suppressed at GetState level (so the vanilla code path
+        /// in Game1.UpdateControlInput can't open GameMenu instantly), which also hides the
+        /// press from SMAPI's OnButtonsChanged.</summary>
+        private bool _prevRawStartPressedJournal = false;
+
         /// <summary>Tick threshold to distinguish a tap from a hold on Start (~500ms at 60fps).</summary>
         private const int StartHoldThreshold = 30;
 
@@ -77,6 +83,16 @@ namespace AndroidConsolizer
                 return false;
             try { return (bool)EventSkippableField.GetValue(ev); }
             catch { return false; }
+        }
+
+        /// <summary>Whether the journal-button (hold Start = QuestLog) handling is active
+        /// this tick. Used by GameplayButtonPatches to suppress Start at GetState level
+        /// so the game's own UpdateControlInput can't open GameMenu instantly on press.</summary>
+        internal static bool IsJournalButtonHandlingActive()
+        {
+            return Config?.EnableJournalButton == true
+                && Game1.activeClickableMenu == null
+                && Context.IsPlayerFree;
         }
 
         /*********
@@ -230,16 +246,54 @@ namespace AndroidConsolizer
                     HandleCutsceneSkip();
             }
 
-            // Start press-and-hold: open Quest Log once the hold crosses the threshold.
-            // Released-without-hold is handled in OnButtonsChanged (opens GameMenu for the tap).
-            if (_startPressedTick >= 0 && !_startHoldHandled
-                && Game1.ticks - _startPressedTick >= StartHoldThreshold
-                && Game1.activeClickableMenu == null && Context.IsPlayerFree)
+            // Start press/release/hold detection — polled from RawStartPressed because Start is
+            // suppressed at GetState level (otherwise Game1.UpdateControlInput opens GameMenu the
+            // instant Start is pressed, defeating hold-vs-tap detection). The GetState-level
+            // suppression also hides the press from SMAPI events, so OnButtonsChanged can't see it.
+            if (Config.EnableJournalButton)
             {
-                _startHoldHandled = true;
-                OpenQuestLog();
-                if (Config.VerboseLogging)
-                    this.Monitor.Log("Start hold: Opening Quest Log", LogLevel.Debug);
+                bool rawStart = Patches.GameplayButtonPatches.RawStartPressed;
+                bool inGameplay = Game1.activeClickableMenu == null && Context.IsPlayerFree;
+
+                if (rawStart && !_prevRawStartPressedJournal)
+                {
+                    // Press edge — start the hold timer.
+                    if (inGameplay)
+                    {
+                        _startPressedTick = Game1.ticks;
+                        _startHoldHandled = false;
+                    }
+                }
+                else if (!rawStart && _prevRawStartPressedJournal)
+                {
+                    // Release edge — short tap opens GameMenu (vanilla behaviour) if no hold fired.
+                    if (_startPressedTick >= 0 && !_startHoldHandled && inGameplay)
+                    {
+                        Game1.activeClickableMenu = new GameMenu();
+                        if (Config.VerboseLogging)
+                            this.Monitor.Log("Start tap: Opening GameMenu", LogLevel.Debug);
+                    }
+                    _startPressedTick = -1;
+                    _startHoldHandled = false;
+                }
+                else if (_startPressedTick >= 0 && !_startHoldHandled
+                    && Game1.ticks - _startPressedTick >= StartHoldThreshold
+                    && inGameplay)
+                {
+                    // Hold crossed threshold — open Quest Log.
+                    _startHoldHandled = true;
+                    OpenQuestLog();
+                    if (Config.VerboseLogging)
+                        this.Monitor.Log("Start hold: Opening Quest Log", LogLevel.Debug);
+                }
+
+                _prevRawStartPressedJournal = rawStart;
+            }
+            else
+            {
+                _prevRawStartPressedJournal = false;
+                _startPressedTick = -1;
+                _startHoldHandled = false;
             }
 
             // Reset cutscene skip state when event ends or timeout expires
@@ -484,36 +538,9 @@ namespace AndroidConsolizer
                 HandleShopQuantityNonBumper(e, shopMenuNonBumper);
             }
 
-            // Cutscene skip is now handled in OnUpdateTicked via GetState edge detection
-            // (Start is suppressed at GetState level during events, so SMAPI doesn't see it)
-
-            // Start button: tap opens GameMenu (vanilla behaviour), hold opens Quest Log.
-            // Press-and-hold is needed because Back/Select doesn't register on Xbox Bluetooth
-            // controllers under Android (same problem as the triggers), so a fallback button
-            // would lock out exactly the users who already can't access half their inputs.
-            // Press tracking starts here; the threshold check fires from OnUpdateTicked,
-            // and the tap action fires on Release if no hold was registered.
-            if (Config.EnableJournalButton && Game1.activeClickableMenu == null && Context.IsPlayerFree)
-            {
-                if (e.Pressed.Contains(SButton.ControllerStart))
-                {
-                    _startPressedTick = Game1.ticks;
-                    _startHoldHandled = false;
-                    this.Helper.Input.Suppress(SButton.ControllerStart);
-                }
-                else if (e.Released.Contains(SButton.ControllerStart) && _startPressedTick >= 0)
-                {
-                    if (!_startHoldHandled)
-                    {
-                        // Short tap: open the standard game menu (what vanilla does on Start).
-                        Game1.activeClickableMenu = new GameMenu();
-                        if (Config.VerboseLogging)
-                            this.Monitor.Log("Start tap: Opening GameMenu", LogLevel.Debug);
-                    }
-                    _startPressedTick = -1;
-                    _startHoldHandled = false;
-                }
-            }
+            // Cutscene skip and Start tap-vs-hold are both handled in OnUpdateTicked via
+            // GetState edge detection (Start is suppressed at GetState level so the game
+            // can't open GameMenu instantly, which also hides the press from SMAPI events).
 
             // Toolbar navigation fix - only when NOT in a menu (during gameplay)
             if (Config.EnableConsoleToolbar && Game1.activeClickableMenu == null && Context.IsPlayerFree)
