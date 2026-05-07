@@ -36,6 +36,7 @@ namespace AndroidConsolizer.Patches
         private static float _cachedRawLeftStickY;
         private static float _cachedRawLeftTrigger;
         private static float _cachedRawRightTrigger;
+        private static bool _cachedRawStartPressed;
         private static int _cachedTick = -1;
 
         /// <summary>Suppress logical A in GetState output until the physical button is released.
@@ -45,6 +46,12 @@ namespace AndroidConsolizer.Patches
         /// <summary>True for one tick when Start is newly pressed during a skippable event.
         /// Consumed by ModEntry.OnUpdateTicked for cutscene skip handling.</summary>
         internal static bool StartPressedThisTick;
+
+        /// <summary>Raw Start state cached from GetState before suppression, polled by ModEntry
+        /// for press/release edge detection of the journal-button hold-vs-tap logic.
+        /// Needed because Start is suppressed at GetState level (Game1.UpdateControlInput
+        /// reads GamePad state directly, bypassing SMAPI), so OnButtonsChanged can't see it.</summary>
+        internal static bool RawStartPressed;
 
         /// <summary>Previous tick's raw Start state for edge detection.</summary>
         private static bool _prevStartPressed;
@@ -166,7 +173,14 @@ namespace AndroidConsolizer.Patches
         private static GamePadState ApplyButtonSuppression(GamePadState state)
         {
             bool suppressA = SuppressAUntilRelease;
-            bool suppressStart = ModEntry.IsCurrentEventSkippable() && state.Buttons.Start == ButtonState.Pressed;
+            // Suppress Start in two cases:
+            //  1. Skippable events: prevent the game's own skip handler from firing.
+            //  2. Journal-button gameplay: Game1.UpdateControlInput reads GamePad state directly
+            //     and opens GameMenu the instant Start is pressed, defeating our hold-vs-tap
+            //     detection in ModEntry. Zero Start at GetState so the game can't see the press;
+            //     ModEntry polls RawStartPressed to drive its own press/release/hold logic.
+            bool suppressStart = state.Buttons.Start == ButtonState.Pressed
+                && (ModEntry.IsCurrentEventSkippable() || ModEntry.IsJournalButtonHandlingActive());
 
             if (!suppressA && !suppressStart)
                 return state;
@@ -237,6 +251,7 @@ namespace AndroidConsolizer.Patches
                     RawLeftStickY = _cachedRawLeftStickY;
                     RawLeftTrigger = _cachedRawLeftTrigger;
                     RawRightTrigger = _cachedRawRightTrigger;
+                    RawStartPressed = _cachedRawStartPressed;
                     return;
                 }
 
@@ -246,6 +261,7 @@ namespace AndroidConsolizer.Patches
                 if (rawStartPressed && !_prevStartPressed && ModEntry.IsCurrentEventSkippable())
                     StartPressedThisTick = true;
                 _prevStartPressed = rawStartPressed;
+                RawStartPressed = rawStartPressed;
 
                 // Cache raw right stick Y before any suppression, so ShopMenuPatches can use it
                 RawRightStickY = __result.ThumbSticks.Right.Y;
@@ -374,6 +390,7 @@ namespace AndroidConsolizer.Patches
                     _cachedRawLeftStickY = RawLeftStickY;
                     _cachedRawLeftTrigger = RawLeftTrigger;
                     _cachedRawRightTrigger = RawRightTrigger;
+                    _cachedRawStartPressed = RawStartPressed;
                     _cachedTick = currentTick;
                     return;
                 }
@@ -400,6 +417,7 @@ namespace AndroidConsolizer.Patches
                     _cachedRawLeftStickY = RawLeftStickY;
                     _cachedRawLeftTrigger = RawLeftTrigger;
                     _cachedRawRightTrigger = RawRightTrigger;
+                    _cachedRawStartPressed = RawStartPressed;
                     _cachedTick = currentTick;
                     return;
                 }
