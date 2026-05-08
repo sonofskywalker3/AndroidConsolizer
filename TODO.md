@@ -294,7 +294,82 @@ Pulled from Nexus comments + bug reports on 2026-05-05.
 
 ---
 
-## Not Our Bug (Tracked for Reference)
+## Post-3.6 / 4.x Roadmap
+
+These items came out of the v3.6.0 cycle. None blocked the release; all are
+either follow-on enhancements, deferred polish, or open questions worth
+revisiting before the next milestone.
+
+### 62. Right-Stick to Move Furniture Ghost
+- **Source:** Original "console furniture placement" ask had two parts. v3.5.38–v3.5.39 covered part 1 (single ghost rectangle + translucent sprite). Part 2: right stick moves the ghost the way it moves the carpenter building ghost.
+- **Behaviour to match:** Picking up furniture should produce a ghost in front of the player. Right stick offsets the ghost relative to the player's facing tile (not the cursor). Walking still re-anchors the ghost to in-front-of-player. A places, B cancels (returns furniture to inventory).
+- **Implementation sketch:**
+  1. New `_furnitureGhostOffset` Vector2 in `FurniturePlacementPatches.cs`, accumulated each tick from `RawRightStickX/Y` (already cached in `GameplayButtonPatches`).
+  2. Patch `Game1.GetPlacementGrabTile` to add `_furnitureGhostOffset` when the player has a Furniture as `ActiveObject`.
+  3. Reset offset on placement success / B cancel / item swap. Reuse `OnFurnitureUpdateTicked` cadence in `CarpenterMenuPatches`.
+  4. Optional: add a configurable max-distance clamp so the ghost can't drift off-screen.
+- **Reuses:** Same pattern as `CarpenterMenuPatches` building-ghost cursor override. Code there is the gold standard for this pattern.
+- **Files:** `Patches/FurniturePlacementPatches.cs`, possibly `Patches/GameplayButtonPatches.cs` for stick polling.
+- **Config:** Probably gate behind the existing `EnableConsoleFurniturePlacement` flag — same feature, just the second half.
+
+### 63. Bed (and Other Furniture) Lands in First Inventory Slot
+- **Source:** User noted in passing during v3.5.35 testing — "the bed pops into the first available inventory slot in the entire inventory, not on the currently visible row."
+- **Root cause:** `GameLocation.removeQueuedFurniture` (Android decompile lines 7984-7999) iterates `player.Items[i]` from i=0 forward and drops the furniture into the first null slot. No preference for the active toolbar row.
+- **Fix approach:** Postfix on `removeQueuedFurniture` that detects when a furniture was just added to inventory at index ≥ visible row range, and swaps it into a null slot in the visible row if one exists. Or prefix that overrides the slot search.
+- **Risk:** Don't break inventory ordering for stack-merge cases. Check that the change only fires when the inserted slot was actually empty before.
+- **File:** Likely a new prefix on `removeQueuedFurniture` in `Patches/CarpenterMenuPatches.cs` or `Patches/InventoryManagementPatches.cs`.
+
+### 64. Diagnostic Logging Cleanup (v3.6.x)
+- **Source:** v3.5.33, v3.5.36, v3.5.37 added always-on INFO-level `[Bed]`, `[StartHold]`, `[Bed] canBePlacedHere` log lines for field debugging. Issues are now resolved — the logging clutters user logs every time furniture is interacted with or Start is pressed.
+- **Action:** Downgrade all `[Bed]` and `[StartHold]` Monitor.Log calls in `CarpenterMenuPatches.cs` and `Patches/GameplayButtonPatches.cs` from `LogLevel.Info` to `LogLevel.Debug`, gated on `Config.VerboseLogging`. Keep the patch-attach confirmation lines at Info (one-time at startup, useful for diagnosis).
+- **Specific call sites:**
+  - `FurnitureCanBeRemoved_Prefix` BLOCKED + allowing-pickup logs.
+  - `FurniturePerformRemoveAction_Prefix` BLOCKED + picking-up logs.
+  - `FurniturePlacementAction_Prefix` ENTRY + placing logs.
+  - `FurniturePlacementAction_Postfix` RESULT log.
+  - `RemoveQueuedFurniture_Prefix` BLOCKED log.
+  - `FurnitureCanBePlacedHere_Postfix` per-tile GREEN/RED log (this one was very chatty during placement preview — definitely needs to be VerboseLogging-gated or removed entirely now that the green-square map is replaced).
+  - `ApplyButtonSuppression` Start press-edge log.
+  - `OnUpdateTicked` PRESS / RELEASE / HOLD / TAP edges in ModEntry.cs.
+
+### 65. Open Question: Why Does removeQueuedFurniture Fire for Just-Placed Bed?
+- **Source:** v3.5.35 fix works (gates the removal cascade), but it doesn't explain WHY the bed even ends up in the queue when our `canBeRemoved` prefix returned false in the same tick. See DONE.md "#53 Bed Bouncing".
+- **Hypotheses (not yet tested):**
+  1. **Farm Type Manager's `HarmonyPatch_DisableFurniturePickup`** postfix on `Furniture.canBeRemoved` runs after our prefix. If FTM unconditionally writes `__result`, it could be overwriting our `false` back to `true`, allowing AttemptRemoval → queue → removeQueuedFurniture.
+  2. **Stale `BedFurniture.AttemptRemoval` mutex callback** from a tick BEFORE pickup, fires on a later tick after the user has placed the bed back, queuing the new bed by GUID.
+- **Why it matters:** If hypothesis 1 is correct, other Harmony postfix conflicts may exist where vanilla-style fixes don't hold. Worth knowing.
+- **Investigation:**
+  1. Check what version of FTM is installed; look at `HarmonyPatch_DisableFurniturePickup` source on GitHub.
+  2. Add a one-shot diagnostic patch that logs `__result` BEFORE and AFTER our prefix for `canBeRemoved` on bed, with a stack trace if `__result` flipped.
+  3. Or: temporarily uninstall FTM and see if the v3.5.34-style `performRemoveAction`-only gate is sufficient (would confirm hypothesis 1).
+- **Effort:** Low — purely diagnostic. Doesn't change the v3.5.35 fix either way. Worth doing if we see analogous issues elsewhere.
+
+### 66. Nexus Mod-Page Automation — Description and Version Field
+- **Source:** v3.6.0 release — Nexus V2 GraphQL API has no mutations to update mod description, summary, or mod-level version. Manual paste needed every release.
+- **What's automated already (`.github/workflows/publish-nexus.yml`):** ZIP file upload, file version, file_category=main, archive previous file. All works on `release.published`.
+- **What's NOT automated:** Mod description, mod-level version field (the one in the page header), changelog entry on the version-history page.
+- **Paths investigated and ruled out:**
+  - **V2 GraphQL mutations** (73 total): only `updateChangelog` is mod-related, and that's per-version changelog only. No description/summary/version mutations exist.
+  - **V1 REST API:** read-only for mod metadata.
+  - **`unex changelog`:** session cookie at `~/.nexus_session_cookie` expired May 5; would work if refreshed, but only covers the changelog entry, not description.
+  - **Python `requests` with Firefox cookies:** Cloudflare 403's the request (browser fingerprint mismatch).
+  - **Playwright Firefox + Firefox cookies:** Nexus session cookies were stale; signed-out fallback page rendered.
+  - **Python `browser_cookie3.chrome`:** Chrome 127+ app-bound encryption blocks even admin-elevated DPAPI access.
+  - **DevTools Console snippet:** Works in theory but auto-discovery fails because Nexus is an SPA — form fields not present at first paint, hydrate later. Live-paste of BBCode into the field by the user is faster than fighting the auto-detection.
+- **Best path forward (deferred):** Connect Playwright to user's running Chrome via remote-debugging port. Requires user to launch Chrome with `--remote-debugging-port=9222 --user-data-dir=<their profile>` (Chrome blocks debugging on default profile for security; needs a profile copy or `--remote-debugging-pipe`). Auth state and Cloudflare clearance preserved end-to-end.
+- **Workaround for now:** `release-notes/build-console-snippet.mjs` generates a single-paste BBCode file. PowerShell `Set-Clipboard` puts it on clipboard. User opens edit page in their already-logged-in Chrome, pastes, saves. ~30 seconds per release.
+- **Files:** `release-notes/update-nexus-mod-page.mjs`, `release-notes/build-console-snippet.mjs`, `release-notes/dump-firefox-cookies.py`, `release-notes/dump-chrome-cookies.py` — kept as reference for future automation attempts.
+
+### 67. Refresh Expired Nexus Session Cookie
+- **Status:** `~/.nexus_session_cookie` was set 2026-02-08 (per file mtime), confirmed expired by `unex check` on 2026-05-08.
+- **Effect:** `unex changelog` (which would post the per-version changelog entry on Nexus's version-history page) fails. We can still upload files via the V2 GraphQL upload action (uses API key, not cookie).
+- **Refresh process:** Per `unex refresh -s <cookie>` help — but that requires a still-valid cookie, which we don't have. Need to extract a fresh cookie from a logged-in browser (same blockers as #66) or capture it manually:
+  1. In Chrome, log in to Nexus.
+  2. F12 → Application → Cookies → `https://www.nexusmods.com` → find `nexusmods_session`.
+  3. Copy the value, write to `~/.nexus_session_cookie` (32-char hex string).
+- **When to do it:** Before next release if we want to also automate the changelog entry. Optional — file uploads work without it.
+
+
 
 ### 26. SMAPI Menu Button Position (G Cloud Title Screen)
 - SMAPI details and mod menu button positioned ~1/3 up screen instead of corner. Cannot tap or A-press them.

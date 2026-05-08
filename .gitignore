@@ -42,3 +42,5 @@ publish-nexus.ps1
 release-notes/.nexus-playwright-profile/
 release-notes/node_modules/
 release-notes/package-lock.json
+# Firefox-extracted Nexus cookies — contains session token, never commit
+release-notes/nexus-cookies.json
