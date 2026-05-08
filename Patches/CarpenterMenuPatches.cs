@@ -42,6 +42,10 @@ namespace AndroidConsolizer.Patches
         /// <summary>When true, all furniture interactions are blocked until the tool button is released.</summary>
         private static bool _suppressFurnitureUntilRelease = false;
 
+        /// <summary>Throttle state for the bed canBePlacedHere postfix — only log when (tile, result) changes.</summary>
+        private static Vector2? _lastBedCanPlaceTile = null;
+        private static bool _lastBedCanPlaceResult = false;
+
         // --- Joystick cursor/panning fields ---
         private static FieldInfo OnFarmField;      // bool — true when showing farm view
         private static FieldInfo FreezeField;      // bool — true during animations/transitions
@@ -338,6 +342,21 @@ namespace AndroidConsolizer.Patches
                     // Patching only performRemoveAction skips the cleanup but Remove() still
                     // strips the bed from the world. Patching removeQueuedFurniture itself stops
                     // the entire cascade for beds while the suppress flag is set.
+                    // Diagnostic: log canBePlacedHere result for beds, throttled by tile change.
+                    // canBePlacedHere is what drives the green/red placement-preview rendering,
+                    // so logging every distinct (tile, result) gives us the full validity map.
+                    var canBePlaced = AccessTools.Method(typeof(Furniture), nameof(Furniture.canBePlacedHere));
+                    if (canBePlaced == null)
+                        Monitor.Log("[Bed] AccessTools.Method(Furniture.canBePlacedHere) returned null — placement-preview diagnostic NOT attached.", LogLevel.Warn);
+                    else
+                    {
+                        harmony.Patch(
+                            original: canBePlaced,
+                            postfix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(FurnitureCanBePlacedHere_Postfix))
+                        );
+                        Monitor.Log("[Bed] Furniture.canBePlacedHere diagnostic postfix attached.", LogLevel.Info);
+                    }
+
                     var removeQueued = AccessTools.Method(typeof(GameLocation), "removeQueuedFurniture");
                     if (removeQueued == null)
                         Monitor.Log("[Bed] AccessTools.Method(GameLocation.removeQueuedFurniture) returned null — patch NOT attached.", LogLevel.Warn);
@@ -1600,6 +1619,23 @@ namespace AndroidConsolizer.Patches
                 return;
             var t = __instance.TileLocation;
             Monitor.Log($"[Bed] placementAction RESULT — returned={__result} TileLocation=({t.X},{t.Y}) inputTile=({x / 64},{y / 64}). tick={Game1.ticks}", LogLevel.Info);
+        }
+
+        /// <summary>
+        /// Diagnostic postfix on Furniture.canBePlacedHere — logs (tile, result) for BedFurniture
+        /// each time the result changes for a given tile. canBePlacedHere is what the placement-
+        /// preview renderer calls to decide green vs red, so the log effectively traces the
+        /// validity map the user is seeing on screen.
+        /// </summary>
+        private static void FurnitureCanBePlacedHere_Postfix(Furniture __instance, GameLocation l, Vector2 tile, bool __result)
+        {
+            if (!(__instance is BedFurniture))
+                return;
+            if (_lastBedCanPlaceTile.HasValue && _lastBedCanPlaceTile.Value == tile && _lastBedCanPlaceResult == __result)
+                return;
+            _lastBedCanPlaceTile = tile;
+            _lastBedCanPlaceResult = __result;
+            Monitor.Log($"[Bed] canBePlacedHere tile=({tile.X},{tile.Y}) → {(__result ? "GREEN" : "RED")} bed='{__instance.Name}' loc='{l?.Name}'. tick={Game1.ticks}", LogLevel.Info);
         }
     }
 }
