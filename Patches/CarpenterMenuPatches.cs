@@ -1498,11 +1498,20 @@ namespace AndroidConsolizer.Patches
         /// Prefix for Furniture.performRemoveAction — sets suppress flag after pickup
         /// so the immediate auto-placement is blocked until the button is released.
         /// </summary>
-        private static void FurniturePerformRemoveAction_Prefix(Furniture __instance)
+        private static bool FurniturePerformRemoveAction_Prefix(Furniture __instance)
         {
-            if (__instance is BedFurniture)
-                Monitor.Log($"[Bed] performRemoveAction on '{__instance.Name}' — setting suppress flag. tick={Game1.ticks}", LogLevel.Info);
+            bool isBed = __instance is BedFurniture;
+            if (_suppressFurnitureUntilRelease)
+            {
+                if (isBed)
+                    Monitor.Log($"[Bed] performRemoveAction on '{__instance.Name}' — BLOCKED (suppress flag set). tick={Game1.ticks}", LogLevel.Info);
+                return false;
+            }
+
+            if (isBed)
+                Monitor.Log($"[Bed] performRemoveAction on '{__instance.Name}' — picking up, setting suppress flag. tick={Game1.ticks}", LogLevel.Info);
             _suppressFurnitureUntilRelease = true;
+            return true;
         }
 
         /// <summary>
