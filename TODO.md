@@ -108,11 +108,11 @@ Pulled from Nexus comments + bug reports on 2026-05-05.
   2. Audit `ShippingBinPatches.cs` prefixes — what context check do they use? Tighten so the patch only fires when source is actually a `ShippingBin`.
 - **Files:** `Patches/ShippingBinPatches.cs`, possibly `Patches/ItemGrabMenuPatches.cs`.
 
-### 52. FIXED (v3.5.15) — Quest Log Lockout (Back/Select Fallback)
+### 52. FIXED (v3.5.31, verified on Odin) — Quest Log via Hold-Start
 - **Reporter:** Nexus user, 15 Mar 2026.
-- **Bug:** If the user removes the "open quests" binding from the Start button (via remap/config), there is no other way to open the quest log with a controller.
-- **Fix:** Add a fallback chord (e.g. Select+Start, or a GMCM-configurable button) that always opens the quest log regardless of the Start binding. Or simply prevent the user from unbinding it without a replacement.
-- **Files:** `ModEntry.cs` (button event handling), GMCM config registration.
+- **Bug:** Removing the "open quests" Start binding left no way to open the quest log with a controller. v3.5.15 added a Back/Select fallback that didn't register on Xbox Bluetooth controllers under Android.
+- **Final fix:** Tap Start = GameMenu (vanilla); Hold Start ≥30 ticks = Quest Log. v3.5.16 introduced the hold-vs-tap split; v3.5.31 fixed the press leaking past suppression (Game1.UpdateControlInput reads GamePad state directly, so SMAPI Input.Suppress was insufficient — needed GetState-level zeroing of Buttons.Start).
+- **Files:** `ModEntry.cs`, `Patches/GameplayButtonPatches.cs`, GMCM config registration.
 
 ### 53. FIXED (v3.5.14) — Bed Furniture Debounce
 - **Reporters:** 17 Feb 2026 + 15 Mar 2026 ("the fix for furniture placement seems to be fixed for the carpet but not for the bed").
