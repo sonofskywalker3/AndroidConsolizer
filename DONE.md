@@ -251,3 +251,69 @@ See `CONTROLLER_MATRIX.md` for full testing details by device.
 - **v3.4.35:** Replaced `receiveLeftClick` with `tryDepositItem()` (via reflection, Android-only) for one-press A donation instead of pick-up-then-deposit.
 - **v3.4.36:** `tryDepositItem` unconditionally sets `heldItem` before checking slots. If deposit fails (wrong item), phantom cursor appeared. Fixed by saving/restoring `heldItem` in finally block.
 - **File:** `Patches/JunimoNoteMenuPatches.cs`
+
+---
+
+## Nexus Feedback Release 2 (v3.5.11 – v3.6.0)
+
+### #50 Right Stick Cursor Drift in Overworld — v3.5.12
+- **Root cause:** Vanilla Android `Game1.UpdateControlInput` moves the mouse cursor by `(rightStick * thumbstickToMouseModifier)` every tick the stick is non-zero. Deltas accumulate, so a small nudge drifts the cursor many tiles away from the player; interact/sickle then target the wrong tile.
+- **Fix:** `GameplayButtonPatches.GetState_Postfix` zeros `__result.ThumbSticks.Right` when `Game1.activeClickableMenu == null && Config.SuppressRightStickInOverworld`. Right stick still works in menus that need it (shop scroll, social tab, etc.).
+- **Files:** `Patches/GameplayButtonPatches.cs`, `ModConfig.cs`
+- **Config:** `SuppressRightStickInOverworld` (default true)
+
+### #51 Dresser Destroying Clothes — v3.5.11
+- **Root cause:** `ShippingBinPatches` matched any `ItemGrabMenu` with `reverseGrab=false`. Dressers and aquariums also opened `ItemGrabMenu` with `reverseGrab=false`, so deposits routed through shipping-bin sell handlers — silently sold clothing instead of storing it.
+- **Fix:** Tightened the source check to require the menu's source object to actually be a `ShippingBin`. Storage-shop subclasses (dresser, fish tank) bypass shipping-bin handlers.
+- **File:** `Patches/ShippingBinPatches.cs`
+
+### #57 Aquarium Duplicating Fish — v3.5.13
+- **Root cause:** Console-style Y (take-one) path bypassed the source container's removal hook. Aquariums use `behaviorOnItemGrab` to clear their tank state; without that callback firing, the fish stayed in the tank AND was added to inventory.
+- **Fix:** Same pattern as the v3.4.78 bundle-reward fix — invoke `behaviorOnItemGrab` via reflection after the transfer. Same logic also covers other decorative-with-held-item containers.
+- **File:** `Patches/InventoryManagementPatches.cs`
+
+### #52 Quest Log via Hold-Start — v3.5.16, v3.5.31
+- **v3.5.15 attempt:** Added Back/Select fallback. Didn't register on Xbox Bluetooth controllers — locked out exactly the users it was meant to help.
+- **v3.5.16:** Tap Start = GameMenu (vanilla); Hold Start ≥30 ticks (~500ms) = Quest Log. State machine in `OnUpdateTicked`.
+- **v3.5.31 (final):** Tap detection failed because `Game1.UpdateControlInput` reads `GamePad.GetState()` directly (Game1.cs:14266-14283) and opens GameMenu the instant Start is pressed. SMAPI's `Input.Suppress` doesn't reach this path. Fix: extend `ApplyButtonSuppression` to zero `Buttons.Start` when journal-button handling is active, and switch press/release/hold detection to poll `RawStartPressed` cached from `GetState_Postfix` before suppression.
+- **Lesson:** Anywhere `Game1` reads `GamePad.GetState()` directly, SMAPI input suppression is invisible. Suppress at GetState level instead.
+- **Files:** `ModEntry.cs`, `Patches/GameplayButtonPatches.cs`
+- **Config:** `EnableJournalButton` (default true)
+
+### #53 Bed Bouncing Between Placed and Picked Up — v3.5.34, v3.5.35
+- Three-version chain. Each fix exposed the next layer.
+- **v3.5.14 attempt:** Patched `BedFurniture.canBeRemoved` directly (the `Furniture` base patch missed the override that didn't call base). Did not work — bed pickup doesn't always go through `canBeRemoved`.
+- **v3.5.34 attempt:** Gated `Furniture.performRemoveAction` on the suppress flag. Skipped the cleanup work but the caller — `GameLocation.removeQueuedFurniture` (GameLocation.cs:7974) — still ran `furniture.Remove(guid)` on the next line, removed the bed from the world, and added it back to inventory. Bed bounced.
+- **v3.5.35 fix:** Patched `GameLocation.removeQueuedFurniture` itself with a prefix that returns false when the queued GUID maps to a `BedFurniture` and the suppress flag is set. The whole cascade — `performRemoveAction` + `furniture.Remove(guid)` + inventory.Add — is skipped atomically.
+- **Open question (carried into 4.x):** Why does `removeQueuedFurniture` even fire for the just-placed bed when our `canBeRemoved` returned false? Two plausible causes: (a) Farm Type Manager's `HarmonyPatch_DisableFurniturePickup` postfix on `Furniture.canBeRemoved` overwrites our `__result` back to true after our prefix runs; (b) a stale `BedFurniture.AttemptRemoval` mutex callback from before pickup fires later. Both hypotheses are blocked by patching `removeQueuedFurniture`, so the v3.5.35 gate is correct regardless.
+- **Diagnostic chain:** v3.5.33 added always-on `[Bed]` and `[StartHold]` log lines, v3.5.36 added bed coordinates, v3.5.37 added per-tile `canBePlacedHere` results — combined trace from one Odin test session was decisive in moving the gate from `performRemoveAction` to `removeQueuedFurniture`.
+- **Files:** `Patches/CarpenterMenuPatches.cs`
+- **Config:** `EnableFurnitureDebounce` (default true)
+
+### Storage Shop Polish (#1, follow-ups #51 / #57) — v3.5.22 – v3.5.30
+- **Sell tab `highlightAllItems`** (v3.5.23): forced `highlightItem.Equals(item) = true` so all items appear sellable on the sell tab regardless of restrictive `highlightItemToSell` overrides. Without this, some clothing greyed out when nothing should.
+- **Vanilla deposit restrictions** (v3.5.26): per user testing on PC — dresser sell tab accepts only clothing/hat/boots/ring; aquarium sell tab accepts nothing (deposits via held-fish + world A only). Use vanilla `highlightItemToSell`, don't override.
+- **Re-snap after `rebuildSaleButtons`** (v3.5.25): when dresser/aquarium nav rebuilds the sale buttons mid-frame, `currentlySnappedComponent` becomes stale. Re-snap to the equivalent slot index after rebuild.
+- **`hoveredItem` refresh after rebuild** (v3.5.27 – v3.5.29): tried three approaches (snap restore, `setCurrentItem`, `currentlySelectedItem`). Final: refresh via `currentlySelectedItem`, the Android-correct path.
+- **Default buy-tab selection to row 0** (v3.5.30): when `forSale` was empty (e.g. after sell-tab restock), `currentItemIndex` could land on a non-existent row. Snap to row 0 to keep the cursor visible.
+- **File:** `Patches/ShopMenuPatches.cs`
+
+### Chest / Equipment / Shop / Fishing Plumbing — v3.5.18 – v3.5.21
+- **#58 chest deposits via `behaviorFunction`** (v3.5.18): bundle/quest hooks now get the deposit event.
+- **#59 equipment via `Farmer.Equip`** (v3.5.19) + **#9 equipment take-off via `Farmer.Equip` + grab-replacement** (v3.5.24): equip slots had three separate code paths; now all go through the game's own equip routine so callbacks (e.g. set-bonus changes) fire.
+- **#60 shop stock + `ActionsOnPurchase`** (v3.5.20): runs the post-purchase actions and synchronizes stock counts the way vanilla does.
+- **#61 fishing rod tackle via `Tool.attach`** (v3.5.21): attach routine called the same way vanilla does, so tackle effects (trap bobber, magnet) apply.
+- **Files:** `Patches/ItemGrabMenuPatches.cs`, `Patches/InventoryManagementPatches.cs`, `Patches/ShopMenuPatches.cs`, `Patches/FishingRodPatches.cs`
+
+### Auto-Grabber Block — v3.5.32
+- **Root cause:** Console-style A/Y deposits routed items into the Auto-Grabber's loot grid as if it were a chest. Auto-Grabber expects to OWN its contents (it grabs from connected machines and drops with right-click); player deposits broke that contract.
+- **Fix:** Detect Auto-Grabber by chest type at the deposit gate and refuse the transfer.
+- **File:** `Patches/InventoryManagementPatches.cs`
+
+### Console Furniture Placement — v3.5.38, v3.5.39
+- **Root cause of the UX confusion:** Vanilla Android `Object.drawPlacementBounds` falls through to a multi-tile green/red map when `Game1.options.weaponControl` doesn't match values 2/3/4/8 (which are touch-UI specific). The map shows every tile where the furniture's *top-left can land* — for a 2x3 bed that's a narrow region offset from where the bed visually sits, so users aim at where they expect the bed and see only red. v3.5.37 diagnostic logs from the user's bedroom confirmed this exactly: bed at TileLocation=(9,8), green tiles clustered at columns 1-3 above row 8.
+- **Fix (v3.5.38):** Harmony prefix on `Object.DrawRedGreenRectangleForPlacing` (mobile-only — resolved by string with `AccessTools.Method` so the project compiles against the PC `StardewValley.dll`). For `Furniture` instances when `EnableConsoleFurniturePlacement` is true, draws a single colored rectangle at `__instance.TileLocation` sized via `getTilesWide()`/`getTilesHigh()` and returns true. The early-return at `Object.cs:5234` then short-circuits the multi-tile map.
+- **Refinement (v3.5.39):** After the colored squares, call `__instance.draw(spriteBatch, tileX, tileY, 0.5f)` to render the actual furniture sprite translucently on top. SpriteBatch is in Deferred mode, so call order = render order — squares first, sprite on top with alpha showing the validity highlight through it. Matches console behaviour and the carpenter building ghost.
+- **Engine artifact reused:** The single-rectangle path was already in `Object.DrawRedGreenRectangleForPlacing` for tap/touch; we just bypass the `weaponControl` gate for controller-driven placement.
+- **File:** `Patches/FurniturePlacementPatches.cs` (new)
+- **Config:** `EnableConsoleFurniturePlacement` (default true)
