@@ -94,6 +94,18 @@ namespace AndroidConsolizer.Patches
                 }
             }
 
+            // Translucent furniture sprite over the colored squares — matches the console
+            // ghost (and the carpenter building ghost) so the user sees what they're about
+            // to place, with the validity highlight showing through.
+            try
+            {
+                furniture.draw(spriteBatch, (int)tile.X, (int)tile.Y, 0.5f);
+            }
+            catch
+            {
+                // Failsafe: never let a draw exception break placement preview rendering.
+            }
+
             Game1.isCheckingNonMousePlacement = false;
             __result = true;
             return false;
