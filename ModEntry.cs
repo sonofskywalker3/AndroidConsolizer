@@ -258,6 +258,7 @@ namespace AndroidConsolizer
                 if (rawStart && !_prevRawStartPressedJournal)
                 {
                     // Press edge — start the hold timer.
+                    this.Monitor.Log($"[StartHold] PRESS edge — inGameplay={inGameplay}, activeMenu={Game1.activeClickableMenu?.GetType().Name ?? "null"}, IsPlayerFree={Context.IsPlayerFree}, tick={Game1.ticks}", LogLevel.Info);
                     if (inGameplay)
                     {
                         _startPressedTick = Game1.ticks;
@@ -267,11 +268,12 @@ namespace AndroidConsolizer
                 else if (!rawStart && _prevRawStartPressedJournal)
                 {
                     // Release edge — short tap opens GameMenu (vanilla behaviour) if no hold fired.
+                    int heldTicks = _startPressedTick >= 0 ? Game1.ticks - _startPressedTick : -1;
+                    this.Monitor.Log($"[StartHold] RELEASE edge — heldTicks={heldTicks}, holdHandled={_startHoldHandled}, inGameplay={inGameplay}, activeMenu={Game1.activeClickableMenu?.GetType().Name ?? "null"}", LogLevel.Info);
                     if (_startPressedTick >= 0 && !_startHoldHandled && inGameplay)
                     {
+                        this.Monitor.Log("[StartHold] TAP fire — opening GameMenu.", LogLevel.Info);
                         Game1.activeClickableMenu = new GameMenu();
-                        if (Config.VerboseLogging)
-                            this.Monitor.Log("Start tap: Opening GameMenu", LogLevel.Debug);
                     }
                     _startPressedTick = -1;
                     _startHoldHandled = false;
@@ -281,10 +283,9 @@ namespace AndroidConsolizer
                     && inGameplay)
                 {
                     // Hold crossed threshold — open Quest Log.
+                    this.Monitor.Log($"[StartHold] HOLD threshold crossed at heldTicks={Game1.ticks - _startPressedTick} — opening Quest Log.", LogLevel.Info);
                     _startHoldHandled = true;
                     OpenQuestLog();
-                    if (Config.VerboseLogging)
-                        this.Monitor.Log("Start hold: Opening Quest Log", LogLevel.Debug);
                 }
 
                 _prevRawStartPressedJournal = rawStart;
