@@ -1,0 +1,10 @@
+{
+  "name": "androidconsolizer-release-notes",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Local tooling for Nexus Mods page updates. Not part of the AndroidConsolizer mod itself.",
+  "dependencies": {
+    "playwright": "^1.59.1"
+  }
+}

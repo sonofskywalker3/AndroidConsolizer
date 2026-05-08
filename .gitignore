@@ -28,8 +28,17 @@ sync/mods/
 sync/configs/
 sync/.last_sync
 
+# Test output (logs, screenshots pulled from device)
+test-output/
+
 # Dev artifacts / agent prompts
 AGENT_PROMPT_*.md
 CARPENTER_PAN_SPEC.md
 preview_button_icon.html
 publish-nexus.ps1
+
+# Playwright persistent browser profile for Nexus mod-page edits.
+# Contains login cookies — do NOT commit.
+release-notes/.nexus-playwright-profile/
+release-notes/node_modules/
+release-notes/package-lock.json
