@@ -312,7 +312,8 @@ namespace AndroidConsolizer.Patches
                     );
                     harmony.Patch(
                         original: AccessTools.Method(typeof(Furniture), "placementAction"),
-                        prefix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(FurniturePlacementAction_Prefix))
+                        prefix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(FurniturePlacementAction_Prefix)),
+                        postfix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(FurniturePlacementAction_Postfix))
                     );
 
                     // BedFurniture.canBeRemoved overrides the base method without calling base,
@@ -1527,7 +1528,12 @@ namespace AndroidConsolizer.Patches
             }
 
             if (isBed)
-                Monitor.Log($"[Bed] performRemoveAction on '{__instance.Name}' — picking up, setting suppress flag. tick={Game1.ticks}", LogLevel.Info);
+            {
+                var t = __instance.TileLocation;
+                int w = __instance.getTilesWide();
+                int h = __instance.getTilesHigh();
+                Monitor.Log($"[Bed] performRemoveAction on '{__instance.Name}' — picking up at TileLocation=({t.X},{t.Y}) size={w}x{h}. tick={Game1.ticks}", LogLevel.Info);
+            }
             _suppressFurnitureUntilRelease = true;
             return true;
         }
@@ -1559,7 +1565,7 @@ namespace AndroidConsolizer.Patches
             return true;
         }
 
-        private static bool FurniturePlacementAction_Prefix(Furniture __instance, ref bool __result)
+        private static bool FurniturePlacementAction_Prefix(Furniture __instance, GameLocation location, int x, int y, Farmer who, ref bool __result)
         {
             bool isBed = __instance is BedFurniture;
             if (_suppressFurnitureUntilRelease)
@@ -1573,9 +1579,27 @@ namespace AndroidConsolizer.Patches
             }
 
             if (isBed)
-                Monitor.Log($"[Bed] placementAction on '{__instance.Name}' — placing, setting suppress flag. tick={Game1.ticks}", LogLevel.Info);
+            {
+                int tx = x / 64, ty = y / 64;
+                int w = __instance.getTilesWide();
+                int h = __instance.getTilesHigh();
+                int bedside = ty + 1;
+                int status = -999;
+                try { status = __instance.GetAdditionalFurniturePlacementStatus(location, x, y, who); }
+                catch { /* ignore — diagnostic only */ }
+                var pTile = who?.Tile ?? Game1.player?.Tile ?? Microsoft.Xna.Framework.Vector2.Zero;
+                Monitor.Log($"[Bed] placementAction ENTRY — name='{__instance.Name}' rawXY=({x},{y}) tile=({tx},{ty}) bedSize={w}x{h} bedsideTileY={bedside} playerTile=({pTile.X},{pTile.Y}) loc='{location?.Name}' GetAdditionalFurniturePlacementStatus={status} (0=ok, -1=bedside not clear). tick={Game1.ticks}", LogLevel.Info);
+            }
             _suppressFurnitureUntilRelease = true;
             return true;
+        }
+
+        private static void FurniturePlacementAction_Postfix(Furniture __instance, int x, int y, bool __result)
+        {
+            if (!(__instance is BedFurniture))
+                return;
+            var t = __instance.TileLocation;
+            Monitor.Log($"[Bed] placementAction RESULT — returned={__result} TileLocation=({t.X},{t.Y}) inputTile=({x / 64},{y / 64}). tick={Game1.ticks}", LogLevel.Info);
         }
     }
 }
