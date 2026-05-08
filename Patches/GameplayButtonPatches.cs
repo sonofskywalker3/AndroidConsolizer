@@ -56,6 +56,9 @@ namespace AndroidConsolizer.Patches
         /// <summary>Previous tick's raw Start state for edge detection.</summary>
         private static bool _prevStartPressed;
 
+        /// <summary>Diagnostic: previous-call value to detect the Start press edge inside ApplyButtonSuppression.</summary>
+        private static bool _prevStartInSuppress;
+
         /// <summary>When set to a tick number, GetMouseState postfix will report LeftButton
         /// as Pressed for that tick, simulating a screen touch. Used for cutscene skip.</summary>
         internal static int SimulateTouchClickOnTick = -1;
@@ -179,8 +182,15 @@ namespace AndroidConsolizer.Patches
             //     and opens GameMenu the instant Start is pressed, defeating our hold-vs-tap
             //     detection in ModEntry. Zero Start at GetState so the game can't see the press;
             //     ModEntry polls RawStartPressed to drive its own press/release/hold logic.
-            bool suppressStart = state.Buttons.Start == ButtonState.Pressed
-                && (ModEntry.IsCurrentEventSkippable() || ModEntry.IsJournalButtonHandlingActive());
+            bool startPressed = state.Buttons.Start == ButtonState.Pressed;
+            bool journalActive = ModEntry.IsJournalButtonHandlingActive();
+            bool eventSkippable = ModEntry.IsCurrentEventSkippable();
+            bool suppressStart = startPressed && (eventSkippable || journalActive);
+
+            // Diagnostic: log once per Start press edge so we can see whether suppression engaged.
+            if (startPressed && !_prevStartInSuppress)
+                Monitor?.Log($"[StartHold] ApplyButtonSuppression press edge — startPressed=true, journalActive={journalActive}, eventSkippable={eventSkippable}, willSuppress={suppressStart}, tick={Game1.ticks}", LogLevel.Info);
+            _prevStartInSuppress = startPressed;
 
             if (!suppressA && !suppressStart)
                 return state;

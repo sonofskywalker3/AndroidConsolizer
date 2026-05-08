@@ -319,10 +319,17 @@ namespace AndroidConsolizer.Patches
                     // so the Furniture.canBeRemoved patch above never fires for beds. Without
                     // this dedicated patch, beds get picked up immediately after placement,
                     // bouncing in and out of inventory.
-                    harmony.Patch(
-                        original: AccessTools.Method(typeof(BedFurniture), nameof(BedFurniture.canBeRemoved)),
-                        prefix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(FurnitureCanBeRemoved_Prefix))
-                    );
+                    var bedCanBeRemoved = AccessTools.Method(typeof(BedFurniture), nameof(BedFurniture.canBeRemoved));
+                    if (bedCanBeRemoved == null)
+                        Monitor.Log("[Bed] AccessTools.Method(BedFurniture.canBeRemoved) returned null — patch NOT attached.", LogLevel.Warn);
+                    else
+                    {
+                        harmony.Patch(
+                            original: bedCanBeRemoved,
+                            prefix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(FurnitureCanBeRemoved_Prefix))
+                        );
+                        Monitor.Log($"[Bed] BedFurniture.canBeRemoved patch attached (declaring type: {bedCanBeRemoved.DeclaringType?.FullName}).", LogLevel.Info);
+                    }
 
                     Monitor.Log("Furniture debounce patches applied successfully.", LogLevel.Trace);
                 }
@@ -1470,13 +1477,19 @@ namespace AndroidConsolizer.Patches
         /// </summary>
         private static bool FurnitureCanBeRemoved_Prefix(Furniture __instance, ref bool __result)
         {
+            bool isBed = __instance is BedFurniture;
             if (_suppressFurnitureUntilRelease)
             {
-                if (ModEntry.Config.VerboseLogging)
+                if (isBed)
+                    Monitor.Log($"[Bed] canBeRemoved on '{__instance.Name}' — BLOCKED (suppress flag set), returning false.", LogLevel.Info);
+                else if (ModEntry.Config.VerboseLogging)
                     Monitor.Log($"[Furniture] BLOCKED canBeRemoved on '{__instance.Name}' — suppress until release", LogLevel.Debug);
                 __result = false;
                 return false;
             }
+
+            if (isBed)
+                Monitor.Log($"[Bed] canBeRemoved on '{__instance.Name}' — suppress flag NOT set, allowing pickup. tick={Game1.ticks}", LogLevel.Info);
 
             return true;
         }
@@ -1485,8 +1498,10 @@ namespace AndroidConsolizer.Patches
         /// Prefix for Furniture.performRemoveAction — sets suppress flag after pickup
         /// so the immediate auto-placement is blocked until the button is released.
         /// </summary>
-        private static void FurniturePerformRemoveAction_Prefix()
+        private static void FurniturePerformRemoveAction_Prefix(Furniture __instance)
         {
+            if (__instance is BedFurniture)
+                Monitor.Log($"[Bed] performRemoveAction on '{__instance.Name}' — setting suppress flag. tick={Game1.ticks}", LogLevel.Info);
             _suppressFurnitureUntilRelease = true;
         }
 
@@ -1496,14 +1511,19 @@ namespace AndroidConsolizer.Patches
         /// </summary>
         private static bool FurniturePlacementAction_Prefix(Furniture __instance, ref bool __result)
         {
+            bool isBed = __instance is BedFurniture;
             if (_suppressFurnitureUntilRelease)
             {
-                if (ModEntry.Config.VerboseLogging)
+                if (isBed)
+                    Monitor.Log($"[Bed] placementAction on '{__instance.Name}' — BLOCKED (suppress flag set). tick={Game1.ticks}", LogLevel.Info);
+                else if (ModEntry.Config.VerboseLogging)
                     Monitor.Log($"[Furniture] BLOCKED placementAction on '{__instance.Name}' — suppress until release", LogLevel.Debug);
                 __result = false;
                 return false;
             }
 
+            if (isBed)
+                Monitor.Log($"[Bed] placementAction on '{__instance.Name}' — placing, setting suppress flag. tick={Game1.ticks}", LogLevel.Info);
             _suppressFurnitureUntilRelease = true;
             return true;
         }
