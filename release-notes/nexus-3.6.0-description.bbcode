@@ -1,0 +1,164 @@
+[size=5][b]Android Consolizer[/b][/size]
+<br />Makes Android Stardew Valley's controller support work like the Nintendo Switch version. 90+ fixes across shops, inventory, chests, toolbar, Robin's building menu, Community Center bundles, furniture placement, and every game menu tab.
+<br />If you play on a handheld (Odin, Ayaneo, Retroid, etc.) or dock your phone/tablet to a TV, this mod makes the game actually playable without a touchscreen.
+<br />[size=4][b]What's New in v3.6 — Bug Fix Release[/b][/size]
+<br />Responding to Nexus user reports against 3.5. Every fix individually toggleable via GMCM.
+<br />[b]Bed bouncing fixed[/b] — Beds no longer pop back to inventory after placement. The fix needed three iterations to get right; the final gate sits at the actual removal queue rather than the cleanup hook.
+<br />[b]Right thumbstick no longer drifts the cursor[/b] — Vanilla Android maps the right stick to mouse motion in the overworld, which made interact and sickle target the wrong tile. New toggle (default on) suppresses it.
+<br />[b]Dresser stops destroying clothes[/b] — Storage shops (dresser, aquarium) are now isolated from the shipping-bin handler.
+<br />[b]Aquarium stops duplicating fish on take[/b] — Y-button take-one properly removes the fish from the tank.
+<br />[b]Quest Log via Hold Start[/b] — Tap Start opens the game menu (vanilla); hold Start ~½ second to open the Quest Log/Journal. Works on Xbox Bluetooth controllers where Back/Select doesn't register.
+<br />[b]Console Furniture Placement[/b] — New bonus feature: replaces the multi-tile green-square map (which marked where the furniture's [i]top-left corner[/i] could land — confusing for multi-tile pieces like beds) with a single ghost rectangle and a translucent furniture sprite. Matches console behaviour.
+<br />[b]Plus:[/b] storage shop polish (sell-tab highlighting, deposit restrictions, hover refresh, default selection), chest deposit hooks, equipment slot routing through Farmer.Equip, shop stock sync after purchase, fishing rod tackle attach via controller, Auto-Grabber A/Y deposit block.
+<br />[line]
+<br />[size=4][b]Controller Layout Support[/b][/size]
+<br />[list]
+<br />[*][b]Switch/Odin[/b]: A=right, B=bottom, X=top, Y=left
+<br />[*][b]Xbox[/b]: A=bottom, B=right, X=left, Y=top
+<br />[*][b]PlayStation[/b]: Cross=A, Circle=B, Square=X, Triangle=Y
+<br />[/list]
+<br />Two control styles:
+<br />[list]
+<br />[*][b]Switch style[/b]: Right button confirms, bottom cancels
+<br />[*][b]Xbox/PS style[/b]: Bottom button confirms, right cancels
+<br />[/list]
+<br />[line]
+<br />[size=4][b]Features[/b][/size]
+<br />[size=3][b]Toolbar (Console-Style)[/b][/size]
+<br />[list]
+<br />[*]12-slot toolbar rows instead of Android's chaotic scrolling
+<br />[*]LB/RB switches between rows (up to 3 with full backpack)
+<br />[*]LT/RT moves left/right within the current row
+<br />[*]Visual toolbar matches console layout
+<br />[/list]
+<br />[size=3][b]Shops[/b][/size]
+<br />[list]
+<br />[*]A button purchases on buy tab, sells entire stack on sell tab
+<br />[*]Y button sells one item (hold for rapid sell)
+<br />[*]LB/RB adjusts purchase quantity (hold to repeat)
+<br />[*]Right stick jumps 5 items at a time (hold to repeat)
+<br />[*]Y button icon shows tab-switch hint (adapts to controller layout)
+<br />[*]Sell price tooltip with gold coin icon next to selected item
+<br />[*]Non-sellable items (0g) greyed out on sell tab
+<br />[*]Visible cursor on both buy and sell tabs
+<br />[*]Works with every shop: Pierre, Robin, Marnie, Blacksmith upgrades, Desert Trader, recipes, Joja, dressers, aquariums, and more
+<br />[/list]
+<br />[size=3][b]Chests (Console-Style)[/b][/size]
+<br />[list]
+<br />[*]A transfers full stack between chest and inventory (instant, no selection step)
+<br />[*]Y transfers one item (hold for rapid transfer)
+<br />[*]X sorts chest contents
+<br />[*]RB snaps to Fill Stacks button
+<br />[*]All sidebar buttons reachable: Sort, Fill Stacks, Color Toggle, Sort Inventory, Trash, Close
+<br />[*]Full 7x3 color picker swatch navigation, B closes picker only (not the chest)
+<br />[*]Swap system when inventory is full — A picks up for displacement, place anywhere, B cancels
+<br />[*]X button deletion bug completely blocked (your iridium tools are safe)
+<br />[/list]
+<br />[size=3][b]Inventory (Console-Style)[/b][/size]
+<br />[list]
+<br />[*]A picks up entire stack to cursor, A again places or swaps
+<br />[*]Y picks up a single item from a stack (hold for continuous)
+<br />[*]X sorts inventory
+<br />[*]Held items render visually at cursor slot
+<br />[*]Tooltips on hover, equipment slot tooltips (hat, rings, boots, etc.)
+<br />[/list]
+<br />[size=3][b]Shipping Bin[/b][/size]
+<br />[list]
+<br />[*]A ships entire stack from selected slot
+<br />[*]Y ships one item
+<br />[*]"Last shipped" display updates properly
+<br />[/list]
+<br />[size=3][b]Furniture Placement (NEW in v3.6)[/b][/size]
+<br />[list]
+<br />[*]Single ghost rectangle shows exactly where the furniture will land
+<br />[*]Translucent furniture sprite rendered over the placement target — matches console
+<br />[*]Bed placement no longer bounces back to inventory
+<br />[*]Y no longer rapid-toggles — one press = one interaction
+<br />[/list]
+<br />[size=3][b]Robin's Building Menu[/b][/size]
+<br />[list]
+<br />[*]Menu no longer instantly closes when opened with controller
+<br />[*]Full joystick control in farm view — left stick moves cursor, pans viewport at edges
+<br />[*]Build mode: A confirms placement at cursor position
+<br />[*]Move mode: A selects building, move cursor, A confirms new location
+<br />[*]Demolish mode: A highlights building (green), A again confirms. Move off to deselect safely.
+<br />[*]Building skin picker navigable with controller
+<br />[/list]
+<br />[size=3][b]Community Center Bundles[/b][/size]
+<br />[list]
+<br />[*]Bundle overview: D-pad/thumbstick navigates bundles, A opens donation page
+<br />[*]Cursor remembers your position when returning from donation page
+<br />[*]Donation page: Navigate 6-column inventory grid, A donates items
+<br />[*]Navigate right into ingredient list to see what each slot needs
+<br />[*]Vault bundles: A on purchase button pays for the bundle
+<br />[*]Bundle rewards: Navigate to present, A opens rewards, A takes stacks
+<br />[*]Custom cursor drawn (Android suppresses the default one here)
+<br />[/list]
+<br />[size=3][b]Game Menu Tabs[/b][/size]
+<br />[list]
+<br />[*][b]Social[/b]: Navigate villager list, right stick fast scroll, A opens gift log, LB/RB switches villagers in gift log
+<br />[*][b]Collections[/b]: Grid navigation across items and sub-tabs, finger cursor
+<br />[*][b]Crafting[/b]: Finger cursor replaces red highlight
+<br />[*][b]Skills[/b]: Grid navigation across skill icons and level bars
+<br />[*][b]Animals[/b]: Navigate animal list
+<br />[*][b]Powers[/b]: Finger cursor replaces glow highlight
+<br />[*][b]Options[/b]: Left stick navigates, A activates, right stick scrolls, dropdowns work
+<br />[*][b]LT/RT[/b] switches between all tabs (console parity)
+<br />[/list]
+<br />[size=3][b]Other Fixes[/b][/size]
+<br />[list]
+<br />[*]Fishing rod bait/tackle: A picks up bait/tackle, Y on rod attaches or detaches
+<br />[*]Slingshot ammo: Same pattern — A picks up ammo, Y on slingshot attaches/detaches
+<br />[*]Cutscene skip: Press Start twice during skippable cutscenes
+<br />[*]Start button: Tap = Game Menu, Hold ~½ sec = Quest Log/Journal
+<br />[*]Right stick suppressed in overworld (no more cursor drift)
+<br />[*]GMCM controller navigation via our [url=https://github.com/sonofskywalker3/GenericModConfigMenu]controller-enabled GMCM fork[/url]
+<br />[/list]
+<br />[size=3][b]Bumper Mode[/b][/size]
+<br />For controllers where triggers aren't detected (e.g. Xbox via Bluetooth):
+<br />[list]
+<br />[*]D-Pad Up/Down switches toolbar rows, LB/RB moves within row
+<br />[*]LB/RB adjusts shop purchase quantity
+<br />[/list]
+<br />[line]
+<br />[size=4][b]Tested Controllers[/b][/size]
+<br />[list]
+<br />[*][b]AYN Odin Pro[/b] (built-in) — Fully working
+<br />[*][b]Ayaneo Pocket Air Mini[/b] (built-in) — Fully working
+<br />[*][b]EasySMX S10[/b] on tablet — Fully working
+<br />[*][b]Xbox Bluetooth[/b] — Working (triggers need bumper mode)
+<br />[*][b]Logitech G Cloud[/b] — Working (occasional double trigger)
+<br />[/list]
+<br />If you test on other hardware, let me know!
+<br />[line]
+<br />[size=4][b]Configuration[/b][/size]
+<br />Every feature is individually toggleable via [url=https://github.com/sonofskywalker3/GenericModConfigMenu/releases]Generic Mod Config Menu[/url] or config.json:
+<br />[list]
+<br />[*]Controller Layout (Switch / Xbox / PlayStation)
+<br />[*]Control Style (Switch-style or Xbox-style confirm/cancel)
+<br />[*]Console Chests (sorting, transfer, color picker, sidebar)
+<br />[*]Console Shops (A purchases, quantity control, sell tab)
+<br />[*]Console Toolbar (12-slot rows, bumper/trigger switching)
+<br />[*]Console Inventory (A/Y item management, bait/tackle)
+<br />[*]Console Shipping (A/Y ship controls)
+<br />[*]Console Menus (all game menu tab navigation)
+<br />[*]Console Furniture Placement (single ghost rectangle, NEW in v3.6)
+<br />[*]Suppress Right Stick in Overworld (NEW in v3.6)
+<br />[*]Carpenter Menu Fix
+<br />[*]Furniture Debounce
+<br />[*]Hold Start for Quest Log
+<br />[*]Bumper Mode
+<br />[*]And more
+<br />[/list]
+<br />[line]
+<br />[size=4][b]Requirements[/b][/size]
+<br />[list]
+<br />[*]Stardew Valley 1.6.15+ (Android)
+<br />[*][url=https://github.com/NRTnarathip/SMAPI-Android-1.6]SMAPI 4.0+ for Android[/url] by NRTnarathip
+<br />[*][url=https://github.com/sonofskywalker3/GenericModConfigMenu/releases]Generic Mod Config Menu[/url] (optional, recommended — our fork adds controller navigation)
+<br />[/list]
+<br />[line]
+<br />[size=4][b]Also by this author[/b][/size]
+<br />[url=https://www.nexusmods.com/stardewvalley/mods/42616][b]Nap Time[/b][/url] — Nap in bed to regain energy without ending the day. Configurable recovery speed and wake-up time cap. Works on PC and Android.
+<br />[line]
+<br />[url=https://github.com/sonofskywalker3/AndroidConsolizer]Source on GitHub[/url] | MIT License
