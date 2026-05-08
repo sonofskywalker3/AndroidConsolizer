@@ -66,6 +66,15 @@ namespace AndroidConsolizer
         /// <summary>Whether to debounce furniture Y-button interactions (prevents rapid toggle between placed and picked up).</summary>
         public bool EnableFurnitureDebounce { get; set; } = true;
 
+        /// <summary>
+        /// Replace the multi-tile green-square placement map (which marks every tile where the
+        /// furniture's top-left corner can land — confusing for multi-tile pieces like beds)
+        /// with a single colored ghost rectangle that shows exactly where the furniture will
+        /// land. Reuses Object.DrawRedGreenRectangleForPlacing, which already exists in the
+        /// engine but isn't activated on Android.
+        /// </summary>
+        public bool EnableConsoleFurniturePlacement { get; set; } = true;
+
         /// <summary>Whether to fix controller navigation on GameMenu tabs (Social, Animals, Crafting, Collections, Options).</summary>
         public bool EnableGameMenuNavigation { get; set; } = true;
 
