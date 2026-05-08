@@ -1,0 +1,17 @@
+Bug fix release responding to Nexus user reports. All fixes individually toggleable via GMCM.
+
+Fixed:
+- Bed bouncing on placement (#53) — beds now stay where you place them.
+- Right thumbstick drifting cursor in overworld (#50) — interact and sickle now hit the tile you're facing. New SuppressRightStickInOverworld toggle (default on).
+- Dresser destroying clothes (#51) — dresser now stores clothing instead of selling it.
+- Aquarium duplicating fish on take (#57) — Y-button take-one properly removes fish from the tank.
+- Quest Log via Hold-Start (#52) — tap Start opens GameMenu, hold Start opens Quest Log. Works on Xbox Bluetooth controllers.
+- Storage shop polish — dresser/aquarium navigation, sell tab highlighting, deposit restrictions, hover refresh, default buy-tab selection.
+- Chest deposits firing bundle/quest hooks (#58).
+- Equipment slot equip/unequip via Farmer.Equip with set-bonus callbacks (#59, #9).
+- Shop stock and post-purchase actions match vanilla (#60).
+- Fishing rod tackle attaches via controller (#61).
+- Auto-Grabber no longer accepts console-style A/Y deposits.
+
+Added:
+- Console Furniture Placement — single ghost rectangle plus translucent furniture sprite over the placement target, replacing the misleading multi-tile green map. New GMCM toggle (default on).
