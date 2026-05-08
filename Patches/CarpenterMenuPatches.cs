@@ -331,6 +331,24 @@ namespace AndroidConsolizer.Patches
                         Monitor.Log($"[Bed] BedFurniture.canBeRemoved patch attached (declaring type: {bedCanBeRemoved.DeclaringType?.FullName}).", LogLevel.Info);
                     }
 
+                    // Gate the actual removal pipeline. canBeRemoved is the standard gate, but
+                    // BedFurniture pickup goes through GameLocation.removeQueuedFurniture, which
+                    // calls performRemoveAction + furniture.Remove(guid) + inventory.Add.
+                    // Patching only performRemoveAction skips the cleanup but Remove() still
+                    // strips the bed from the world. Patching removeQueuedFurniture itself stops
+                    // the entire cascade for beds while the suppress flag is set.
+                    var removeQueued = AccessTools.Method(typeof(GameLocation), "removeQueuedFurniture");
+                    if (removeQueued == null)
+                        Monitor.Log("[Bed] AccessTools.Method(GameLocation.removeQueuedFurniture) returned null — patch NOT attached.", LogLevel.Warn);
+                    else
+                    {
+                        harmony.Patch(
+                            original: removeQueued,
+                            prefix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(RemoveQueuedFurniture_Prefix))
+                        );
+                        Monitor.Log("[Bed] GameLocation.removeQueuedFurniture patch attached.", LogLevel.Info);
+                    }
+
                     Monitor.Log("Furniture debounce patches applied successfully.", LogLevel.Trace);
                 }
                 catch (Exception ex)
@@ -1518,6 +1536,29 @@ namespace AndroidConsolizer.Patches
         /// Prefix for Furniture.placementAction — blocks auto-placement while suppressed,
         /// and sets suppress flag when placement goes through (to block re-pickup).
         /// </summary>
+        /// <summary>
+        /// Prefix for GameLocation.removeQueuedFurniture — when the queued GUID maps to a
+        /// BedFurniture and the suppress flag is set, skip the entire body. This blocks
+        /// performRemoveAction + furniture.Remove(guid) + inventory.Add atomically, which
+        /// is the actual removal cascade for beds (canBeRemoved + performRemoveAction prefixes
+        /// alone don't stop furniture.Remove from running inside removeQueuedFurniture).
+        /// </summary>
+        private static bool RemoveQueuedFurniture_Prefix(GameLocation __instance, Guid guid)
+        {
+            if (!_suppressFurnitureUntilRelease)
+                return true;
+            if (__instance?.furniture == null)
+                return true;
+            if (!__instance.furniture.TryGetValue(guid, out var furn))
+                return true;
+            if (furn is BedFurniture bed)
+            {
+                Monitor.Log($"[Bed] removeQueuedFurniture on '{bed.Name}' — BLOCKED (suppress flag set). tick={Game1.ticks}", LogLevel.Info);
+                return false;
+            }
+            return true;
+        }
+
         private static bool FurniturePlacementAction_Prefix(Furniture __instance, ref bool __result)
         {
             bool isBed = __instance is BedFurniture;
