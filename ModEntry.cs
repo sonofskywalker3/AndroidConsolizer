@@ -119,6 +119,7 @@ namespace AndroidConsolizer
             Patches.SlingshotPatches.Apply(harmony, this.Monitor);
             Patches.InventoryManagementPatches.Apply(harmony, this.Monitor);
             Patches.CarpenterMenuPatches.Apply(harmony, this.Monitor);
+            Patches.FurniturePlacementPatches.Apply(harmony, this.Monitor);
             Patches.JunimoNoteMenuPatches.Apply(harmony, this.Monitor);
             Patches.GameMenuPatches.Apply(harmony, this.Monitor);
             Patches.OptionsPagePatches.Apply(harmony, this.Monitor);
@@ -1074,6 +1075,14 @@ namespace AndroidConsolizer
                 tooltip: () => "Prevents Y button from rapidly toggling furniture between placed and picked up. Adds ~500ms cooldown between interactions.",
                 getValue: () => Config.EnableFurnitureDebounce,
                 setValue: value => Config.EnableFurnitureDebounce = value
+            );
+
+            configMenu.AddBoolOption(
+                mod: this.ModManifest,
+                name: () => "Console Furniture Placement",
+                tooltip: () => "Replace the misleading multi-tile green map (which marks where the furniture's top-left corner can land) with a single ghost rectangle showing exactly where the furniture will be placed. Matches console behavior.",
+                getValue: () => Config.EnableConsoleFurniturePlacement,
+                setValue: value => Config.EnableConsoleFurniturePlacement = value
             );
 
             configMenu.AddBoolOption(
