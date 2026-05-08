@@ -54,8 +54,11 @@ jobs:
         uses: Nexus-Mods/upload-action@main
         with:
           api_key: ${{ secrets.NEXUS_API_KEY }}
-          file_id: 41869
-          game_domain_name: stardewvalley
+          # Nexus file_group_id (NOT mod ID). Discovered via V2 GraphQL on the
+          # current main file. Stays stable across version updates as long as
+          # archive_existing_file is true so the action replaces in place.
+          file_group_id: 7118491
           filename: ${{ steps.zip.outputs.path }}
           version: ${{ steps.release.outputs.version }}
-          fileCategory: main
+          file_category: main
+          archive_existing_file: true
