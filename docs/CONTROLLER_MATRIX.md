@@ -7,6 +7,7 @@ This document tracks controller testing across different Android devices.
 | Device | OS | Notes |
 |--------|-----|-------|
 | AYN Odin Pro | Android | Primary test device |
+| NXTPaper 11 Plus | Android | Tablet, title screen UI mispositioned (SMAPI/GMCM — not our bug) |
 
 ## Controller Test Results
 
@@ -20,6 +21,12 @@ This document tracks controller testing across different Android devices.
 | **Nintendo Switch Pro Controller** | Bluetooth | ❌ Cannot Test | Will not pair with Odin |
 | **PlayStation DualShock 4 (PS4)** | Bluetooth | ⏳ To Test | |
 | **PlayStation DualSense (PS5)** | Bluetooth | ⏳ To Test | |
+
+### NXTPaper 11 Plus
+
+| Controller | Connection | Status | Notes |
+|------------|------------|--------|-------|
+| **EasySMX S10** | Bluetooth | ⚠️ Partial | Buttons reported reversed — see Known Issues below |
 
 ### 3rd Party Controllers (To Be Added)
 
@@ -43,6 +50,15 @@ This document tracks controller testing across different Android devices.
 
 ### Nintendo Switch Pro Controller
 - Pairing issues with AYN Odin Pro - needs testing on other Android devices
+
+### EasySMX S10 (NXTPaper 11 Plus)
+- Physical buttons are in Switch layout, but the controller reports them reversed (B=confirm, A=cancel, X/Y swapped)
+- Occurs with Switch layout + Switch style selected in mod settings
+- Likely the controller is reporting Xbox-style button codes despite having Switch-style physical labels
+- Controller has X mode and S mode — switching between them does NOT change the button reversal
+- Triggers work in S mode but NOT in X mode
+- **Workaround:** Try Xbox layout or Xbox style to compensate
+- **Only confirmed on:** NXTPaper 11 Plus — may be device-specific or controller-specific
 
 ## Future Test Devices
 
