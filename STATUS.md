@@ -1,0 +1,109 @@
+# AndroidConsolizer — Status
+
+**Shipped version:** 3.6.0 ("Bug Fix Release") — confirmed via `manifest.json` and last commit `b2b8ce0` on master.
+
+## Latest commits since release
+
+| SHA | Note |
+|-----|------|
+| `f466342` | docs: post-3.6 roadmap re-evaluation design |
+| `3c92994` | Add post-3.6 roadmap to TODO.md + Nexus tooling artifacts |
+| `378a2ee` | Add Playwright script for Nexus mod-page edits |
+| `17e282d` | Add Nexus description + changelog drafts for 3.6.0 |
+| `df7119b` | Fix Nexus publish workflow — schema migration to upload-action@main |
+| `b2b8ce0` | **v3.6.0: Bug Fix Release** |
+
+No uncommitted code changes blocking the next milestone.
+
+## Milestone state
+
+Roadmap was re-evaluated after v3.6.0 — see [`docs/superpowers/specs/2026-05-08-roadmap-reevaluation-design.md`](./docs/superpowers/specs/2026-05-08-roadmap-reevaluation-design.md) for full reasoning. The GSD-era M3 → M4 → M5 → M6 ordering has been replaced.
+
+| Release | Theme | Status |
+|---------|-------|--------|
+| v3.4.x | GameMenu Tabs | **Complete** |
+| v3.5.x → v3.6.0 | Chest & Item Polish + Bug Fix Release | **Complete** |
+| **v3.7.0** | **Bug Fix Release 2** | **Active — not started** |
+| v3.8.0 | Console Parity: Quick Wins | Pending |
+| v3.9.0 | Console Parity: Big Systems | Pending |
+| v4.0.0 | The Right Stick Update | Pending |
+| post-4.0 | Advanced Features | Pending |
+
+**Key roadmap shifts:**
+- **#12 cursor decoupled from #18 / #19.** Switch handles museum donations and geode breaking with snap-based navigation, no free cursor required. Bundling them with the cursor was a planning error.
+- **v3.7 is now a Bug Fix Release** (not the cursor release) — drains leftover Nexus + post-3.6 polish as fast 0.0.1 patches.
+- **v4.0 is "The Right Stick Update"** — the major bump is justified by the single feature class (right-stick cursor + zoom + #62 furniture move). Slingshot aim (#25b) is the explicit v3.9 exception because waiting for v4.0 would deny too many users a working ranged weapon.
+
+## What's pending right now
+
+See [`TODO.md`](./TODO.md) for full detail. High-level summary:
+
+**Active milestone (v3.7.0 — Bug Fix Release 2):**
+- #64 Diagnostic logging cleanup (downgrade `[Bed]`/`[StartHold]` Info → Debug)
+- #49 Reply to v2.0.0 user re: feature toggles (comms only)
+- #63 Bed lands in first inventory slot (should land on visible row)
+- #65 FTM diagnostic — why `removeQueuedFurniture` fires for just-placed bed
+- #54 Trigger column-skip on Gamesir / G Cloud (now self-reproducible)
+- #48 Y button overlap on Xbox/PS layout (chest/inventory)
+- #56 Random freeze on Amazon Luna controller (analyze existing log)
+
+**v3.8.0 — Console Parity: Quick Wins:** #22b dialogue defaults, #17 title cursor, #35 load game cursor, #39 monster eradication, #46 bundle highlight greying, #47 missed rewards chest, #27 toolbar size slider, #19 geode visual feedback.
+
+**v3.9.0 — Console Parity: Big Systems:** #18 museum donations (snap-based), #25 tool charging while moving, #25b slingshot aim (explicit right-stick rule exception).
+
+**v4.0.0 — The Right Stick Update:** #12 cursor MVP + zoom + acceleration + auto-hide, #62 right-stick to move furniture ghost.
+
+**Post-4.0 — Advanced Features:** #23 lock inventory slots, #24 layout profiles, #38 GMCM two-tier redesign.
+
+**Parked (Won't Fix unless re-reported):** #16 trash lid, #16d direct ghost, #15 disable touchscreen, #13c color cursor offset, #26 SMAPI menu button. Details in [`TODO.md`](./TODO.md).
+
+**Release tooling:** Formerly TODO #66 / #67 — now in [`docs/RELEASE_TOOLING.md`](./docs/RELEASE_TOOLING.md). Nexus mod-page description/version field still requires manual paste; `unex changelog` cookie expired and needs refresh before next release if changelog automation is wanted.
+
+## What's done
+
+[`DONE.md`](./DONE.md) is the technical reference — implementation notes, root causes, lessons. Major systems:
+
+- Shop purchasing, selling, quantity, inventory tab, scrolling (v2.7.5–v2.8.22)
+- Console-style chest transfer with A/Y, sidebar nav, color picker (v2.9.8–v2.9.34, v3.2.9–v3.3.13)
+- Equipment slot handling
+- CarpenterMenu — joystick panning, cursor, all build modes (v3.1.14–v3.1.44)
+- Furniture placement debounce (v3.1.13)
+- Community Center bundles — donation page, overview, ingredient list, reward menu (v3.2.26–v3.4.83)
+- Fishing rod bait/tackle + slingshot ammo (v2.7.1, v3.2.17)
+- Cutscene skip (v3.3.1)
+- Analog trigger multi-read fix (v3.3.2–v3.3.11)
+- Touch interrupt handling + drop zone (v3.2.9–v3.2.13)
+- 12-slot toolbar with row switching
+- Shipping bin controller support
+- All GameMenu tabs — Animals, Social (with right-stick scrolling and gift log), Collections, Crafting, Powers, Skills/Levels, Options, CC trigger nav (v3.3.17–v3.3.95)
+- Shop cursor fixes, CC bundle reward menu, equipment tooltips (v3.4.30–v3.4.83)
+- Nexus Feedback Release 2: right-stick drift, dresser fix, aquarium fix, hold-Start quest log, bed bouncing, console furniture placement (v3.5.11–v3.6.0)
+
+## Reference docs
+
+Reorganized under [`docs/`](./docs/):
+
+| Doc | When to read |
+|-----|--------------|
+| [`DONE.md`](./DONE.md) | Technical reference for completed work — root causes, file paths, lessons |
+| [`docs/POSTMORTEM.md`](./docs/POSTMORTEM.md) | v2.7.10 regression — read before refactoring inventory or extracting helpers |
+| [`docs/ANDROID_INVENTORY_NOTES.md`](./docs/ANDROID_INVENTORY_NOTES.md) | Before any inventory feature work |
+| [`docs/BUTTON_MAPPING_REFERENCE.md`](./docs/BUTTON_MAPPING_REFERENCE.md) | When working on button remapping or layout/style |
+| [`docs/CARPENTER_PAN_SPEC.md`](./docs/CARPENTER_PAN_SPEC.md) | CarpenterMenu joystick panning spec |
+| [`docs/CHESTNAV_SPEC.md`](./docs/CHESTNAV_SPEC.md) | Chest sidebar navigation wiring |
+| [`docs/SHIPPING_BIN_SPEC.md`](./docs/SHIPPING_BIN_SPEC.md) | Shipping bin implementation spec |
+| [`docs/CONTROLLER_MATRIX.md`](./docs/CONTROLLER_MATRIX.md) | Per-device controller compatibility matrix |
+| [`docs/CHANGELOG.md`](./docs/CHANGELOG.md) | Version-by-version changelog (may lag behind manifest) |
+
+Stale GSD-era subagent prompts archived under [`docs/archive/`](./docs/archive/).
+
+## Workflow
+
+Planning now follows the **Superpowers** workflow (replacing the older GSD scaffolding that was removed in this reorg):
+
+1. **Brainstorm** the next item from `TODO.md` — produces a design doc in [`docs/superpowers/specs/`](./docs/superpowers/specs/) named `YYYY-MM-DD-<topic>-design.md`.
+2. **Plan** — turn the spec into an implementation plan.
+3. **Execute** — implement against the plan, one `0.0.1` patch per change (per the project's commit rules).
+4. **Verify** — confirm via build + device test before marking done in `DONE.md`.
+
+Project conventions (mandatory diagnostic-first development, one-change-per-version commits, no refactoring inside bug fixes) live in [`.claude/CLAUDE.md`](./.claude/CLAUDE.md).
