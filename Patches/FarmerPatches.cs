@@ -73,6 +73,35 @@ namespace AndroidConsolizer.Patches
         {
             try
             {
+                // DIAGNOSTIC (#54 follow-up): log EVERY change to CurrentToolIndex on the main
+                // player, including silent ones we don't modify. Catches whoever is moving the
+                // slot between OnSaveLoaded and the next user input. Includes a stack-trace
+                // excerpt so the caller is identifiable. Gated on VerboseLogging.
+                if (__instance != null && __instance == Game1.player
+                    && (ModEntry.Config?.VerboseLogging ?? false))
+                {
+                    int curr = __instance.CurrentToolIndex;
+                    if (curr != value)
+                    {
+                        string[] frames = Environment.StackTrace.Split('\n');
+                        // Skip the first 2 frames (Environment.StackTrace + this method)
+                        // and take the next 6 callers — those are who actually triggered the setter.
+                        string trimmedStack = "";
+                        int start = Math.Min(2, frames.Length);
+                        int end = Math.Min(start + 6, frames.Length);
+                        for (int fi = start; fi < end; fi++)
+                        {
+                            string t = frames[fi].Trim();
+                            if (t.Length == 0) continue;
+                            trimmedStack += (trimmedStack.Length > 0 ? " | " : "") + t;
+                        }
+                        string ctx = Game1.activeClickableMenu?.GetType().Name ?? "null";
+                        Monitor?.Log(
+                            $"[ToolIdx] setter: old={curr} -> new={value} tick={Game1.ticks} menu={ctx} IsPlayerFree={Context.IsPlayerFree} | {trimmedStack}",
+                            LogLevel.Debug);
+                    }
+                }
+
                 // Only apply during gameplay for main player
                 if (Game1.activeClickableMenu != null || !Context.IsPlayerFree)
                     return true;
