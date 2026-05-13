@@ -1017,6 +1017,16 @@ namespace AndroidConsolizer
 
             configMenu.AddBoolOption(
                 mod: this.ModManifest,
+                name: () => "Pickup to Active Row",
+                tooltip: () => "Send new inventory items to the active toolbar row when there's space. " +
+                              "Forage, drops, gifts, and shop purchases never change your selected tool. " +
+                              "Furniture (bed, chair, etc.) gets auto-selected after pickup so you can re-place it.",
+                getValue: () => Config.EnablePickupToActiveRow,
+                setValue: value => Config.EnablePickupToActiveRow = value
+            );
+
+            configMenu.AddBoolOption(
+                mod: this.ModManifest,
                 name: () => "Console Inventory",
                 tooltip: () => "A picks up/places items, Y picks up one from stack, Y on fishing rod attaches/detaches bait and tackle.",
                 getValue: () => Config.EnableConsoleInventory,

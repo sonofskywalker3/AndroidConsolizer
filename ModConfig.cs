@@ -37,6 +37,17 @@ namespace AndroidConsolizer
         /// <summary>Console-style toolbar: 12-slot fixed toolbar with LB/RB row switching and LT/RT slot movement.</summary>
         public bool EnableConsoleToolbar { get; set; } = true;
 
+        /// <summary>
+        /// Steer new inventory items toward the active toolbar row.
+        /// Furniture: place into the active row if it has space; auto-select after pickup
+        /// (matches vanilla). If the active row is full, furniture lands wherever the game
+        /// puts it AND the visible row + selection follow it (so you can immediately re-place).
+        /// Non-furniture (forage, drops, gifts, shop purchases): land in the active row if
+        /// it has space; otherwise fall through to vanilla placement. Selection and visible
+        /// row are never disrupted for non-furniture, so you keep using your current tool.
+        /// </summary>
+        public bool EnablePickupToActiveRow { get; set; } = true;
+
         /// <summary>Console-style inventory: A picks up/places items, Y picks up one, fishing rod bait/tackle via Y.</summary>
         public bool EnableConsoleInventory { get; set; } = true;
 
