@@ -1518,16 +1518,16 @@ namespace AndroidConsolizer.Patches
             bool isBed = __instance is BedFurniture;
             if (_suppressFurnitureUntilRelease)
             {
-                if (isBed)
-                    Monitor.Log($"[Bed] canBeRemoved on '{__instance.Name}' — BLOCKED (suppress flag set), returning false.", LogLevel.Info);
-                else if (ModEntry.Config.VerboseLogging)
+                if (isBed && ModEntry.Config.VerboseLogging)
+                    Monitor.Log($"[Bed] canBeRemoved on '{__instance.Name}' — BLOCKED (suppress flag set), returning false.", LogLevel.Debug);
+                else if (!isBed && ModEntry.Config.VerboseLogging)
                     Monitor.Log($"[Furniture] BLOCKED canBeRemoved on '{__instance.Name}' — suppress until release", LogLevel.Debug);
                 __result = false;
                 return false;
             }
 
-            if (isBed)
-                Monitor.Log($"[Bed] canBeRemoved on '{__instance.Name}' — suppress flag NOT set, allowing pickup. tick={Game1.ticks}", LogLevel.Info);
+            if (isBed && ModEntry.Config.VerboseLogging)
+                Monitor.Log($"[Bed] canBeRemoved on '{__instance.Name}' — suppress flag NOT set, allowing pickup. tick={Game1.ticks}", LogLevel.Debug);
 
             return true;
         }
@@ -1541,17 +1541,17 @@ namespace AndroidConsolizer.Patches
             bool isBed = __instance is BedFurniture;
             if (_suppressFurnitureUntilRelease)
             {
-                if (isBed)
-                    Monitor.Log($"[Bed] performRemoveAction on '{__instance.Name}' — BLOCKED (suppress flag set). tick={Game1.ticks}", LogLevel.Info);
+                if (isBed && ModEntry.Config.VerboseLogging)
+                    Monitor.Log($"[Bed] performRemoveAction on '{__instance.Name}' — BLOCKED (suppress flag set). tick={Game1.ticks}", LogLevel.Debug);
                 return false;
             }
 
-            if (isBed)
+            if (isBed && ModEntry.Config.VerboseLogging)
             {
                 var t = __instance.TileLocation;
                 int w = __instance.getTilesWide();
                 int h = __instance.getTilesHigh();
-                Monitor.Log($"[Bed] performRemoveAction on '{__instance.Name}' — picking up at TileLocation=({t.X},{t.Y}) size={w}x{h}. tick={Game1.ticks}", LogLevel.Info);
+                Monitor.Log($"[Bed] performRemoveAction on '{__instance.Name}' — picking up at TileLocation=({t.X},{t.Y}) size={w}x{h}. tick={Game1.ticks}", LogLevel.Debug);
             }
             _suppressFurnitureUntilRelease = true;
             return true;
@@ -1578,7 +1578,8 @@ namespace AndroidConsolizer.Patches
                 return true;
             if (furn is BedFurniture bed)
             {
-                Monitor.Log($"[Bed] removeQueuedFurniture on '{bed.Name}' — BLOCKED (suppress flag set). tick={Game1.ticks}", LogLevel.Info);
+                if (ModEntry.Config.VerboseLogging)
+                    Monitor.Log($"[Bed] removeQueuedFurniture on '{bed.Name}' — BLOCKED (suppress flag set). tick={Game1.ticks}", LogLevel.Debug);
                 return false;
             }
             return true;
@@ -1589,15 +1590,15 @@ namespace AndroidConsolizer.Patches
             bool isBed = __instance is BedFurniture;
             if (_suppressFurnitureUntilRelease)
             {
-                if (isBed)
-                    Monitor.Log($"[Bed] placementAction on '{__instance.Name}' — BLOCKED (suppress flag set). tick={Game1.ticks}", LogLevel.Info);
-                else if (ModEntry.Config.VerboseLogging)
+                if (isBed && ModEntry.Config.VerboseLogging)
+                    Monitor.Log($"[Bed] placementAction on '{__instance.Name}' — BLOCKED (suppress flag set). tick={Game1.ticks}", LogLevel.Debug);
+                else if (!isBed && ModEntry.Config.VerboseLogging)
                     Monitor.Log($"[Furniture] BLOCKED placementAction on '{__instance.Name}' — suppress until release", LogLevel.Debug);
                 __result = false;
                 return false;
             }
 
-            if (isBed)
+            if (isBed && ModEntry.Config.VerboseLogging)
             {
                 int tx = x / 64, ty = y / 64;
                 int w = __instance.getTilesWide();
@@ -1607,7 +1608,7 @@ namespace AndroidConsolizer.Patches
                 try { status = __instance.GetAdditionalFurniturePlacementStatus(location, x, y, who); }
                 catch { /* ignore — diagnostic only */ }
                 var pTile = who?.Tile ?? Game1.player?.Tile ?? Microsoft.Xna.Framework.Vector2.Zero;
-                Monitor.Log($"[Bed] placementAction ENTRY — name='{__instance.Name}' rawXY=({x},{y}) tile=({tx},{ty}) bedSize={w}x{h} bedsideTileY={bedside} playerTile=({pTile.X},{pTile.Y}) loc='{location?.Name}' GetAdditionalFurniturePlacementStatus={status} (0=ok, -1=bedside not clear). tick={Game1.ticks}", LogLevel.Info);
+                Monitor.Log($"[Bed] placementAction ENTRY — name='{__instance.Name}' rawXY=({x},{y}) tile=({tx},{ty}) bedSize={w}x{h} bedsideTileY={bedside} playerTile=({pTile.X},{pTile.Y}) loc='{location?.Name}' GetAdditionalFurniturePlacementStatus={status} (0=ok, -1=bedside not clear). tick={Game1.ticks}", LogLevel.Debug);
             }
             _suppressFurnitureUntilRelease = true;
             return true;
@@ -1617,8 +1618,10 @@ namespace AndroidConsolizer.Patches
         {
             if (!(__instance is BedFurniture))
                 return;
+            if (!ModEntry.Config.VerboseLogging)
+                return;
             var t = __instance.TileLocation;
-            Monitor.Log($"[Bed] placementAction RESULT — returned={__result} TileLocation=({t.X},{t.Y}) inputTile=({x / 64},{y / 64}). tick={Game1.ticks}", LogLevel.Info);
+            Monitor.Log($"[Bed] placementAction RESULT — returned={__result} TileLocation=({t.X},{t.Y}) inputTile=({x / 64},{y / 64}). tick={Game1.ticks}", LogLevel.Debug);
         }
 
         /// <summary>
@@ -1631,11 +1634,13 @@ namespace AndroidConsolizer.Patches
         {
             if (!(__instance is BedFurniture))
                 return;
+            if (!ModEntry.Config.VerboseLogging)
+                return;
             if (_lastBedCanPlaceTile.HasValue && _lastBedCanPlaceTile.Value == tile && _lastBedCanPlaceResult == __result)
                 return;
             _lastBedCanPlaceTile = tile;
             _lastBedCanPlaceResult = __result;
-            Monitor.Log($"[Bed] canBePlacedHere tile=({tile.X},{tile.Y}) → {(__result ? "GREEN" : "RED")} bed='{__instance.Name}' loc='{l?.Name}'. tick={Game1.ticks}", LogLevel.Info);
+            Monitor.Log($"[Bed] canBePlacedHere tile=({tile.X},{tile.Y}) → {(__result ? "GREEN" : "RED")} bed='{__instance.Name}' loc='{l?.Name}'. tick={Game1.ticks}", LogLevel.Debug);
         }
     }
 }

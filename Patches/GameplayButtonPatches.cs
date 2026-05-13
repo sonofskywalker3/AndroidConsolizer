@@ -188,8 +188,8 @@ namespace AndroidConsolizer.Patches
             bool suppressStart = startPressed && (eventSkippable || journalActive);
 
             // Diagnostic: log once per Start press edge so we can see whether suppression engaged.
-            if (startPressed && !_prevStartInSuppress)
-                Monitor?.Log($"[StartHold] ApplyButtonSuppression press edge — startPressed=true, journalActive={journalActive}, eventSkippable={eventSkippable}, willSuppress={suppressStart}, tick={Game1.ticks}", LogLevel.Info);
+            if (startPressed && !_prevStartInSuppress && (ModEntry.Config?.VerboseLogging ?? false))
+                Monitor?.Log($"[StartHold] ApplyButtonSuppression press edge — startPressed=true, journalActive={journalActive}, eventSkippable={eventSkippable}, willSuppress={suppressStart}, tick={Game1.ticks}", LogLevel.Debug);
             _prevStartInSuppress = startPressed;
 
             if (!suppressA && !suppressStart)
