@@ -51,12 +51,30 @@ namespace AndroidConsolizer
         /// <summary>Track the last known CurrentToolIndex to detect external changes.</summary>
         private int lastToolIndex = -1;
 
-        /// <summary>Track trigger states for edge detection.</summary>
-        private bool wasLeftTriggerDown = false;
-        private bool wasRightTriggerDown = false;
+        /// <summary>Trigger "pressed" state — set true on rising edge above TriggerPressThreshold,
+        /// cleared only after TriggerReleaseConfirmTicks consecutive ticks below TriggerReleaseThreshold.
+        /// The release-confirmation streak absorbs hall-effect signal dropouts mid-pull, where the
+        /// analog value briefly returns to ~0 for 1-3 ticks even while the user is still holding
+        /// the trigger physically — without this, each dropout produces a spurious press edge on
+        /// the way back up (the "2-slot skip" bug, #54).</summary>
+        private bool _leftTriggerPressed = false;
+        private bool _rightTriggerPressed = false;
+        private int _leftTriggerReleaseStreak = 0;
+        private int _rightTriggerReleaseStreak = 0;
 
-        /// <summary>Threshold for trigger activation (0.0 to 1.0).</summary>
-        private const float TriggerThreshold = 0.5f;
+        /// <summary>Threshold the trigger value must exceed to count as a press (rising edge).</summary>
+        private const float TriggerPressThreshold = 0.5f;
+
+        /// <summary>Threshold the trigger value must fall below to count toward release confirmation.
+        /// Lower than press threshold to add hysteresis — values fluttering around 0.5 stay in the
+        /// pressed state and don't produce spurious edges.</summary>
+        private const float TriggerReleaseThreshold = 0.15f;
+
+        /// <summary>Consecutive ticks below TriggerReleaseThreshold required to confirm a release.
+        /// Empirically tuned against G Cloud + Gamesir hall-effect dropouts: worst observed dropout
+        /// in a single physical pull was 3 ticks, so 4 absorbs all observed cases. Caps tap rate at
+        /// ~15/sec which is well above any human tap cadence.</summary>
+        private const int TriggerReleaseConfirmTicks = 4;
 
         /// <summary>The slot index we set on the last trigger press. Persists across presses
         /// to serve as the base for the next trigger move. Cleared after grace period expires
@@ -348,8 +366,10 @@ namespace AndroidConsolizer
             if (!Config.EnableConsoleToolbar || Game1.activeClickableMenu != null || !Context.IsPlayerFree)
             {
                 // Reset trigger states when not in gameplay
-                wasLeftTriggerDown = false;
-                wasRightTriggerDown = false;
+                _leftTriggerPressed = false;
+                _rightTriggerPressed = false;
+                _leftTriggerReleaseStreak = 0;
+                _rightTriggerReleaseStreak = 0;
                 return;
             }
 
@@ -412,39 +432,75 @@ namespace AndroidConsolizer
                 this.Monitor.Log($"Triggers raw: LT={leftTrigger:F2}, RT={rightTrigger:F2}", LogLevel.Debug);
             }
 
-            bool isLeftTriggerDown = leftTrigger > TriggerThreshold;
-            bool isRightTriggerDown = rightTrigger > TriggerThreshold;
-
             // Use _triggerSlotTarget as base — it persists our last trigger-set position
             // and is immune to the game's corruption. OnUpdateTicking enforces it before
             // Game.Update each tick, so the game can never compound moves.
             int baseIndex = _triggerSlotTarget >= 0 ? _triggerSlotTarget : player.CurrentToolIndex;
             int positionInRow = baseIndex % 12;
 
-            // Left trigger - move left (on press edge)
-            if (isLeftTriggerDown && !wasLeftTriggerDown)
+            // LEFT TRIGGER state machine
+            if (leftTrigger > TriggerPressThreshold)
             {
-                int newPosition = positionInRow - 1;
-                if (newPosition < 0) newPosition = 11; // Wrap to end of row
-                int newIndex = rowStart + newPosition;
-                player.CurrentToolIndex = newIndex;
-                _triggerSlotTarget = newIndex;
-                Game1.playSound("shwip");
-                if (Config.VerboseLogging)
-                    this.Monitor.Log($"LT (direct): Position {positionInRow} -> {newPosition}, Index {baseIndex} -> {newIndex}", LogLevel.Debug);
+                if (!_leftTriggerPressed)
+                {
+                    _leftTriggerPressed = true;
+                    int newPosition = positionInRow - 1;
+                    if (newPosition < 0) newPosition = 11; // Wrap to end of row
+                    int newIndex = rowStart + newPosition;
+                    player.CurrentToolIndex = newIndex;
+                    _triggerSlotTarget = newIndex;
+                    Game1.playSound("shwip");
+                    if (Config.VerboseLogging)
+                        this.Monitor.Log($"LT (direct): Position {positionInRow} -> {newPosition}, Index {baseIndex} -> {newIndex}", LogLevel.Debug);
+                }
+                _leftTriggerReleaseStreak = 0;
             }
-
-            // Right trigger - move right (on press edge)
-            if (isRightTriggerDown && !wasRightTriggerDown)
+            else if (leftTrigger < TriggerReleaseThreshold)
             {
-                int newPosition = positionInRow + 1;
-                if (newPosition > 11) newPosition = 0; // Wrap to start of row
-                int newIndex = rowStart + newPosition;
-                player.CurrentToolIndex = newIndex;
-                _triggerSlotTarget = newIndex;
-                Game1.playSound("shwip");
-                if (Config.VerboseLogging)
-                    this.Monitor.Log($"RT (direct): Position {positionInRow} -> {newPosition}, Index {baseIndex} -> {newIndex}", LogLevel.Debug);
+                if (_leftTriggerPressed)
+                {
+                    _leftTriggerReleaseStreak++;
+                    if (_leftTriggerReleaseStreak >= TriggerReleaseConfirmTicks)
+                    {
+                        _leftTriggerPressed = false;
+                        _leftTriggerReleaseStreak = 0;
+                    }
+                }
+            }
+            // else: between thresholds — hysteresis band, keep current state, don't accumulate streak
+
+            // Recompute base AFTER LT may have moved it, so RT-same-tick uses the new position.
+            baseIndex = _triggerSlotTarget >= 0 ? _triggerSlotTarget : player.CurrentToolIndex;
+            positionInRow = baseIndex % 12;
+
+            // RIGHT TRIGGER state machine
+            if (rightTrigger > TriggerPressThreshold)
+            {
+                if (!_rightTriggerPressed)
+                {
+                    _rightTriggerPressed = true;
+                    int newPosition = positionInRow + 1;
+                    if (newPosition > 11) newPosition = 0; // Wrap to start of row
+                    int newIndex = rowStart + newPosition;
+                    player.CurrentToolIndex = newIndex;
+                    _triggerSlotTarget = newIndex;
+                    Game1.playSound("shwip");
+                    if (Config.VerboseLogging)
+                        this.Monitor.Log($"RT (direct): Position {positionInRow} -> {newPosition}, Index {baseIndex} -> {newIndex}", LogLevel.Debug);
+                }
+                _rightTriggerReleaseStreak = 0;
+            }
+            else if (rightTrigger < TriggerReleaseThreshold)
+            {
+                if (_rightTriggerPressed)
+                {
+                    _rightTriggerReleaseStreak++;
+                    if (_rightTriggerReleaseStreak >= TriggerReleaseConfirmTicks)
+                    {
+                        _rightTriggerPressed = false;
+                        _rightTriggerReleaseStreak = 0;
+                    }
+                }
             }
 
             // Post-Update correction: undo any game moves this tick
@@ -454,10 +510,6 @@ namespace AndroidConsolizer
                     this.Monitor.Log($"Slot correction: game moved to {player.CurrentToolIndex}, correcting to {_triggerSlotTarget}", LogLevel.Debug);
                 player.CurrentToolIndex = _triggerSlotTarget;
             }
-
-
-            wasLeftTriggerDown = isLeftTriggerDown;
-            wasRightTriggerDown = isRightTriggerDown;
         }
 
         /// <summary>Raised when buttons are pressed or released.</summary>
