@@ -1,11 +1,13 @@
 # AndroidConsolizer — Status
 
-**Shipped version:** 3.6.5 — local master through `21ed48c`. Not yet pushed to Nexus.
+**Shipped version (local):** 3.6.7. Not yet pushed to Nexus. Last released to Nexus is still 3.6.0.
 
-## Latest commits since release
+## Latest commits since v3.6.0
 
 | SHA | Note |
 |-----|------|
+| `5d54708` | **v3.6.7:** Diagnostic — log every CurrentToolIndex setter change with stack trace |
+| `965cd3b` | **v3.6.6:** #54 Trigger release-confirmation state machine fixes dropout-bounce |
 | `8952c7e` | docs: drop #56 (Luna freeze) — cold case |
 | `9c362e8` | docs: mark #63 done across v3.6.3 — v3.6.5 |
 | `21ed48c` | **v3.6.5:** Non-furniture pickups steer into the active toolbar row (#63 finish) |
@@ -26,7 +28,7 @@ Roadmap was re-evaluated after v3.6.0 — see [`docs/superpowers/specs/2026-05-0
 |---------|-------|--------|
 | v3.4.x | GameMenu Tabs | **Complete** |
 | v3.5.x → v3.6.0 | Chest & Item Polish + Bug Fix Release | **Complete** |
-| **v3.7.0** | **Bug Fix Release 2** | **Active — 4 of 7 done (v3.6.1 – v3.6.5 local)** |
+| **v3.7.0** | **Bug Fix Release 2** | **Active — 5 of 6 done (v3.6.1 – v3.6.7 local); only #65 + #48 remaining** |
 | v3.8.0 | Console Parity: Quick Wins | Pending |
 | v3.9.0 | Console Parity: Big Systems | Pending |
 | v4.0.0 | The Right Stick Update | Pending |
@@ -45,8 +47,9 @@ See [`TODO.md`](./TODO.md) for full detail. High-level summary:
 - ✅ #64 Diagnostic logging cleanup — **v3.6.2**
 - ✅ #49 Reply to v2.0.0 user re: feature toggles — sent on Nexus, no version bump
 - ✅ #63 Pickup steers into the active toolbar row — **v3.6.3 / v3.6.4 / v3.6.5**
+- ✅ #54 Trigger column-skip — **v3.6.6** (hysteresis + 4-tick release confirmation; verified on G Cloud analog 37% → 18% spurious, Gamesir X2 digital 0% spurious)
+- ➕ Diagnostic-only — **v3.6.7** (CurrentToolIndex setter stack-trace logging, in place to catch a one-off observation that didn't reproduce)
 - ⚪ #65 FTM diagnostic — why `removeQueuedFurniture` fires for just-placed bed
-- ⚪ #54 Trigger column-skip on Gamesir / G Cloud (now self-reproducible)
 - ⚪ #48 Y button overlap on Xbox/PS layout (chest/inventory)
 - 🗑 #56 Luna freeze — **dropped 2026-05-13** (cold case; only artifact was a clean v3.3.0 startup log, no freeze captured)
 

@@ -400,3 +400,26 @@ Headline release: shop-cursor fixes, CarpenterMenu polish, CC bundle reward menu
 - **Plumbing:** Added `ModEntry.SetCurrentToolbarRow(int)` static helper backed by a singleton `_instance` captured in `Entry()`, so static patch helpers can update the row without reflection.
 - **Files:** `ModConfig.cs`, `ModEntry.cs`, `Patches/CarpenterMenuPatches.cs`, `Patches/FarmerPatches.cs`
 - **Config:** `EnablePickupToActiveRow` (default true)
+
+### #54 Trigger Column-Skip on Gamesir / G Cloud — v3.6.6
+- **Reporters:** Nexus user with Gamesir X2 (6 Mar 2026, "occasionally skipping 2 slots") + Gamesir X5 Lite user (17 Feb 2026, "still jumps 2 slot" after v3.3.11). Author has both Gamesir X2 + G Cloud and reproduced.
+- **Diagnostic data (v3.6.5 baseline, G Cloud):** Of 103 trigger edges in a 30-second test, **~37% were spurious**:
+  - 15 dropout-bounce (LT held at 1.0 but value briefly dropped to 0.01 for 1-3 ticks mid-pull — each dropout flipped `wasLeftTriggerDown=false`, so when value returned the edge detector fired again. The single physical pull registered as two slot moves.)
+  - 23 threshold-flutter (analog value oscillated around the 0.5 threshold during slow pulls)
+- **Root cause:** Single-bool edge detector (`isLeftTriggerDown = leftTrigger > 0.5`, fire on `!wasLeftTriggerDown && isLeftTriggerDown`) has no protection against signal bounce or short dropouts. Hall-effect triggers don't have mechanical detents, so the analog signal can briefly drop to zero even while the user is physically holding the trigger.
+- **Fix:** Replaced `wasLeftTriggerDown/wasRightTriggerDown` booleans with a two-threshold state machine + per-side release-confirmation streak:
+  - **Press threshold 0.5** — rising edge enters pressed state, fires move
+  - **Release threshold 0.15** — hysteresis absorbs threshold-flutter (values oscillating between 0.3 and 0.7 stay pressed)
+  - **Release confirmation 4 ticks** — must see 4 consecutive ticks below release threshold to enter released state; 1-3 tick dropouts can't flip it
+- **Verification:**
+  - G Cloud (analog hall-effect): 37% spurious → 18% spurious. Threshold-flutter went 22% → 7% (75% reduction); dropout-bounce went 15% → 12%. Some dropouts last 5+ ticks and still leak through — acceptable since they're rare and unverified-to-perceive.
+  - Gamesir X2 + Galaxy S26 Ultra: 65 edges, **0% spurious**. Note: X2 reports pure binary 0.0/1.0 (it's **digital**, not analog — only the X2 Pro is the analog hall-effect model). Hysteresis is dead weight on digital lines but release-confirmation absorbs single-tick electrical glitches.
+- **Same root pattern probably explains the X5 Lite reporter's "still jumps 2 slot" complaint after v3.3.11** — that controller is also digital and would have been hit by single-tick dropouts on the digital line.
+- **Files:** `ModEntry.cs`
+
+### Diagnostic: CurrentToolIndex Setter Logging — v3.6.7
+- **Source:** Investigating a one-off observation during #63 testing where the toolbar cursor appeared to jump 2 slots on the FIRST trigger pull after save load. Existing `CurrentToolIndex_Prefix` only logged when AC modified the value — silent pass-through writes weren't traced. Couldn't be reproduced in subsequent sessions, but the diagnostic stays in place to catch it if it recurs.
+- **What it does:** `FarmerPatches.CurrentToolIndex_Prefix` now logs every setter call where `value != current` on the main player (gated on `VerboseLogging`). Includes old/new values, tick, `Game1.activeClickableMenu` type, `Context.IsPlayerFree`, and a 6-frame stack trace excerpt that names the caller.
+- **Confirmed behaviors in capture:** `OnSaveLoaded` re-equip cycle (`0 → 1 → 0`), `SaveGame.getLoadEnumerator` setting `-1` momentarily during load, every `HandleTriggersDirectly` press edge.
+- **No behavior change.** Just observability.
+- **Files:** `Patches/FarmerPatches.cs`

@@ -24,13 +24,6 @@ Drain the leftover Nexus queue and post-3.6 polish as fast 0.0.1 patches. No mul
   3. Or: temporarily uninstall FTM and see if the v3.5.34-style `performRemoveAction`-only gate is sufficient (would confirm hypothesis 1).
 - **Effort:** Low — purely diagnostic. Doesn't change the v3.5.35 fix either way. Worth doing if we see analogous issues elsewhere.
 
-### 54. Trigger Column-Skip on Gamesir / G Cloud (v3.3.11 fix incomplete)
-- **Reporter:** Nexus user (Gamesir X2 controller), 6 Mar 2026. **Now self-reproducible** — author has both Gamesir and G Cloud and observes the same behaviour.
-- **Bug:** Despite v3.3.11 hall-effect trigger fix, "the triggers are occasionally skipping 2 slots."
-- **Status:** Partial fix exists. Original report was on G Cloud (analog hall-effect triggers); Gamesir X2 also has hall-effect triggers, so the same code path applies but is not fully reliable.
-- **Diagnostic-first plan:** Build a patch that logs raw and processed trigger values when crossing threshold, on author's Gamesir + G Cloud. Then tune the debounce window or threshold based on what the actual readings look like. Same methodology as bed bouncing (#53).
-- **Files:** `Patches/GameplayButtonPatches.cs`, `ModEntry.cs`.
-
 ### 48. Xbox/PS Layout — Y Button Overlap in Chests and Inventory
 - **Reporter:** Nexus user, tested on v3.3 and v3.4.
 - **Bug:** On Xbox/PS layout, pressing Y (top physical button) both picks up a single item from a stack AND sorts the inventory/chest. The two actions fire simultaneously, so every single-item pickup also rearranges the container.
