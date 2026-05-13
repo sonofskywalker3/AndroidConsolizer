@@ -12,13 +12,6 @@ Shipped: **v3.6.0** (Bug Fix Release). Roadmap structure was re-evaluated post-3
 
 Drain the leftover Nexus queue and post-3.6 polish as fast 0.0.1 patches. No multi-patch feature arc — every item should be small, well-scoped, and individually shippable. Ordered by cost-to-investigate so quick wins ship first.
 
-### 63. Bed (and Other Furniture) Lands in First Inventory Slot
-- **Source:** User noted in passing during v3.5.35 testing — "the bed pops into the first available inventory slot in the entire inventory, not on the currently visible row."
-- **Root cause:** `GameLocation.removeQueuedFurniture` (Android decompile lines 7984-7999) iterates `player.Items[i]` from i=0 forward and drops the furniture into the first null slot. No preference for the active toolbar row.
-- **Fix approach:** Postfix on `removeQueuedFurniture` that detects when a furniture was just added to inventory at index ≥ visible row range, and swaps it into a null slot in the visible row if one exists. Or prefix that overrides the slot search.
-- **Risk:** Don't break inventory ordering for stack-merge cases. Check that the change only fires when the inserted slot was actually empty before.
-- **File:** Likely a new prefix on `removeQueuedFurniture` in `Patches/CarpenterMenuPatches.cs` or `Patches/InventoryManagementPatches.cs`.
-
 ### 65. FTM Diagnostic — Why Does removeQueuedFurniture Fire for Just-Placed Bed?
 - **Source:** v3.5.35 fix works (gates the removal cascade), but it doesn't explain WHY the bed even ends up in the queue when our `canBeRemoved` prefix returned false in the same tick. See `DONE.md` "#53 Bed Bouncing".
 - **Hypotheses (not yet tested):**

@@ -386,3 +386,17 @@ Headline release: shop-cursor fixes, CarpenterMenu polish, CC bundle reward menu
 - **Kept at Info:** Patch-attach confirmations (`[Bed] BedFurniture.canBeRemoved patch attached`, `... canBePlacedHere diagnostic postfix attached`, `... removeQueuedFurniture patch attached`) — one-time at mod load, useful when triaging "is my patch even attached?"
 - **Kept at Warn:** The matching `AccessTools.Method(...) returned null` failure lines for each of the three Bed patches.
 - **Files:** `ModEntry.cs`, `Patches/CarpenterMenuPatches.cs`, `Patches/GameplayButtonPatches.cs`
+
+### #63 Pickup Steers Into the Active Toolbar Row — v3.6.3, v3.6.4, v3.6.5
+- **Source:** User noted in passing during v3.5.35 testing — "the bed pops into the first available inventory slot in the entire inventory, not on the currently visible row." Reproduced 2026-05-13: on row 2, bed landed at row 0 slot 5 while `CurrentToolIndex` got bounced to the same-column slot in row 2 by the toolbar row lock. Two slots looked the same but weren't.
+- **Root causes:**
+  - `GameLocation.removeQueuedFurniture` (Android decompile GameLocation.cs:7974) scans only slots 0-11 for a null and sets `CurrentToolIndex = i` (still in row 0). Hard-coded loop bound.
+  - `Farmer.addItemToInventory(Item, List<Item>)` (Farmer.cs:4240) scans `0..maxItems` for the first null, so pickups always pile into row 0 regardless of the player's active row. Same root pattern, broader surface (forage, drops, gifts, shop purchases).
+- **Fix (split across three patches, gated on `Config.EnablePickupToActiveRow`, default true):**
+  - **v3.6.3:** Add `EnablePickupToActiveRow` to `ModConfig` + GMCM toggle. No behavior change — just scaffolding.
+  - **v3.6.4:** Furniture postfix on `removeQueuedFurniture`. Extended the existing prefix with `out Furniture __state` to capture the just-placed furniture (the body removes it from the location's furniture dict, so postfix needs the reference up front). If active row has a null → swap furniture there + `CurrentToolIndex` follows. If active row is full → leave furniture wherever the game put it AND update `currentToolbarRow` + `CurrentToolIndex` to its slot, so the player can immediately re-place. Matches vanilla "auto-select on pickup" semantic.
+  - **v3.6.5:** Non-furniture postfix on `Farmer.addItemToInventory(Item, List<Item>)`. If item ref findable in `player.Items` (i.e., not stack-merged) and outside active row, swap into a null slot in the active row. **Never touches `CurrentToolIndex` or `currentToolbarRow`** — pickups must never disrupt your selected tool. Active-row-full → vanilla wins.
+- **Key UX distinction:** Furniture is your held tool until you place it again, so it needs to be selected. Forage, drops, gifts, shop purchases never disrupt your current tool.
+- **Plumbing:** Added `ModEntry.SetCurrentToolbarRow(int)` static helper backed by a singleton `_instance` captured in `Entry()`, so static patch helpers can update the row without reflection.
+- **Files:** `ModConfig.cs`, `ModEntry.cs`, `Patches/CarpenterMenuPatches.cs`, `Patches/FarmerPatches.cs`
+- **Config:** `EnablePickupToActiveRow` (default true)
