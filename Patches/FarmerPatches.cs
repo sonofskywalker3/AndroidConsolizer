@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using HarmonyLib;
 using StardewModdingAPI;
 using StardewValley;
@@ -32,6 +33,26 @@ namespace AndroidConsolizer.Patches
                     original: setter,
                     prefix: new HarmonyMethod(typeof(FarmerPatches), nameof(CurrentToolIndex_Prefix))
                 );
+
+                // Patch Farmer.addItemToInventory(Item, List<Item>) to steer new items into the
+                // active toolbar row when there's space. Vanilla scans 0..maxItems for the first
+                // null, so pickups always pile into row 0 regardless of the player's active row.
+                var addItem = AccessTools.Method(
+                    typeof(Farmer),
+                    nameof(Farmer.addItemToInventory),
+                    new[] { typeof(Item), typeof(List<Item>) }
+                );
+                if (addItem == null)
+                {
+                    Monitor.Log("Farmer.addItemToInventory(Item, List<Item>) not found — pickup-to-active-row not attached.", LogLevel.Warn);
+                }
+                else
+                {
+                    harmony.Patch(
+                        original: addItem,
+                        postfix: new HarmonyMethod(typeof(FarmerPatches), nameof(AddItemToInventory_Postfix))
+                    );
+                }
 
                 Monitor.Log("Farmer patches applied successfully.", LogLevel.Trace);
             }
@@ -117,6 +138,53 @@ namespace AndroidConsolizer.Patches
             }
 
             return true; // Continue with (possibly modified) value
+        }
+
+        /// <summary>
+        /// Postfix for Farmer.addItemToInventory(Item, List&lt;Item&gt;) — steer non-furniture
+        /// pickups (forage, drops, gifts, shop purchases, etc.) into the active toolbar row
+        /// when there's an open slot. Vanilla scans from index 0, so without this patch every
+        /// pickup piles into row 0 regardless of which row the player is currently using.
+        ///
+        /// Unlike the furniture path (CarpenterMenuPatches.RemoveQueuedFurniture_Postfix), this
+        /// NEVER touches CurrentToolIndex or the visible row — the player keeps whatever tool
+        /// they have selected. When the active row is full, the item stays wherever vanilla
+        /// placed it (no row switch).
+        ///
+        /// Stack-merge case: if the item was fully merged into an existing stack, the item
+        /// reference won't be findable in player.Items and the postfix no-ops.
+        /// </summary>
+        private static void AddItemToInventory_Postfix(Farmer __instance, Item item)
+        {
+            try
+            {
+                if (ModEntry.Config?.EnablePickupToActiveRow != true) return;
+                if (__instance == null || __instance != Game1.player) return;
+                if (item == null) return;
+                var items = __instance.Items;
+                if (items == null) return;
+                int landedAt = items.IndexOf(item);
+                if (landedAt < 0) return; // stack-merged or rejected
+                int row = CurrentToolbarRow;
+                int rowStart = row * 12;
+                int rowEnd = rowStart + 12;
+                if (landedAt >= rowStart && landedAt < rowEnd) return; // already in active row
+                if (rowEnd > items.Count) return; // safety: row beyond inventory bounds
+                for (int i = rowStart; i < rowEnd; i++)
+                {
+                    if (items[i] == null)
+                    {
+                        items[i] = item;
+                        items[landedAt] = null;
+                        return; // CurrentToolIndex intentionally untouched
+                    }
+                }
+                // Active row full → leave item wherever vanilla put it.
+            }
+            catch (Exception ex)
+            {
+                Monitor?.Log($"AddItemToInventory_Postfix error: {ex.Message}", LogLevel.Error);
+            }
         }
     }
 }
