@@ -6,6 +6,9 @@
     <LangVersion>latest</LangVersion>
     <Nullable>disable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
+    <!-- Legacy pre-rename test project (own .csproj, references nonexistent ..\AndroidControllerFix\Logic\*).
+         Must be excluded so the main project's SDK auto-discovery doesn't pull its .cs files in. -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);AndroidControllerFix.Tests\**</DefaultItemExcludes>
   </PropertyGroup>
 
   <ItemGroup>
