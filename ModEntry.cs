@@ -26,6 +26,25 @@ namespace AndroidConsolizer
         /// <summary>The mod's monitor instance for global access.</summary>
         internal static IMonitor ModMonitor;
 
+        /// <summary>Singleton instance so static patch helpers can poke instance state
+        /// (e.g. currentToolbarRow) without resorting to reflection.</summary>
+        private static ModEntry _instance;
+
+        /// <summary>Set the active toolbar row from a static patch context. Clamps to
+        /// the player's available row count and mirrors to FarmerPatches.CurrentToolbarRow
+        /// so the row lock sees the updated value on the next tick.</summary>
+        internal static void SetCurrentToolbarRow(int row)
+        {
+            if (_instance == null) return;
+            if (row < 0) row = 0;
+            int maxItems = Game1.player?.maxItems?.Value ?? 12;
+            int maxRows = maxItems / 12;
+            if (maxRows < 1) maxRows = 1;
+            if (row >= maxRows) row = maxRows - 1;
+            _instance.currentToolbarRow = row;
+            Patches.FarmerPatches.CurrentToolbarRow = row;
+        }
+
         /// <summary>The current toolbar row (0, 1, or 2) that the player should be locked to.</summary>
         private int currentToolbarRow = 0;
 
@@ -102,6 +121,7 @@ namespace AndroidConsolizer
         /// <param name="helper">Provides simplified APIs for writing mods.</param>
         public override void Entry(IModHelper helper)
         {
+            _instance = this;
             ModHelper = helper;
             ModMonitor = this.Monitor;
             Config = helper.ReadConfig<ModConfig>();
