@@ -254,6 +254,55 @@ See `CONTROLLER_MATRIX.md` for full testing details by device.
 
 ---
 
+## Milestone 2: Chest & Item Interaction Polish (v3.4.47 – v3.4.83)
+
+Headline release: shop-cursor fixes, CarpenterMenu polish, CC bundle reward menu controller support, equipment tooltips. All items previously tracked as 34a-e / 40a-c / 41a-f / 42 / 43 / 44 / 45.
+
+### #34 CarpenterMenu — Remaining Issues
+- **34a (v3.4.48):** Style picker A on arrows now cycles skins instead of exiting.
+- **34b (v3.4.49, v3.4.64):** Ghost centers on cursor. v3.4.64: ghost tracks cursor continuously (no two-press), zoom-correct offset, direct `_drawAtX/_drawAtY` setting.
+- **34c (v3.4.64):** Dead zone in bottom-right corner — could not reproduce on TCL (zoom=1.875). Likely resolved by zoom correction in v3.4.64.
+- **34d (v3.4.47):** `_overridingMousePosition` now cleared in `OnMenuClosed()`. Chest interface works after build menu.
+- **34e (v3.4.64):** Building placement now works at all zoom levels. Was using unscaled offset (`tileWidth * 32`) instead of zoom-scaled (`tileWidth * 32 * zoom`). Ghost tracks cursor in real time, single A press to build.
+- **File:** `Patches/CarpenterMenuPatches.cs`
+
+### #40 Shop Cursor Fixes
+- **40a (v3.4.57):** Sell tab cursor missing at Blacksmith and Joja. Root cause: `Game1.mouseCursorTransparency=0` at these shops (=1 at others). Fix: draw cursor ourselves when transparency < 0.01, at `Game1.getMouseX/Y()` (same position vanilla uses).
+- **40b (v3.4.59-v3.4.62):** Buy tab cursor missing. Root cause: `drawMouse()` skipped when `SnappyMenus && !inventoryVisible`. Fix: draw cursor at `forSaleButton` matching `hoveredItem` (`getMouseX/Y` and `currentlySnappedComponent` both unreliable on Android buy tab).
+- **40c (v3.4.60):** Left stick hold-to-repeat. Root cause: game's `directionKeyPolling` only fires repeat for `childMenu`/`textEntry`, not `activeClickableMenu`. Fix: track stick direction in `Update_Postfix`, 15-tick delay then 4-tick repeat matching game timing.
+- **File:** `Patches/ShopMenuPatches.cs`
+
+### #41 Community Center Bundle — Completed Bundle Issues
+- **41a (v3.4.67):** Completed bundle icon now shows correct completion state on overview. Root cause: our `SyncHighlightedBundle` was calling `sprite.reset()` on all non-highlighted bundles, reverting completed bundles from frame 14 (completed icon) back to frame 0 (incomplete). Fix: skip sprite reset and hover animation for completed bundles.
+- **41b (v3.4.72):** Bundle reward no longer redeemable multiple times. Root cause: `rewardGrabbed()` doesn't reliably clear `BundleRewards` on Android. Fix: when controller A opens rewards menu, save pending bundle indices. On overview re-entry, force-clear those `BundleRewards` entries and null `presentButton` before `InitOverviewNavigation` runs.
+- **41c (v3.4.69):** Bundle reward gift (`presentButton`) now navigable with controller. Added `presentButton` to `allClickableComponents` in `InitOverviewNavigation` with ID 105, wired into spatial neighbor graph.
+- **41d (v3.4.70):** Hover animation and tooltip now clear when navigating from a bundle to a non-bundle component (`presentButton`, area buttons). `SyncHighlightedBundle` was returning early when target wasn't a Bundle — now resets all non-complete bundle sprites and sets `highlightedBundle = -1` before returning.
+- **41e (v3.4.78):** Cursor visible in reward menu. ItemGrabMenu cursor handling already applied; the fix for 41f (adding `!reverseGrab` deposit block and `behaviorOnItemGrab` callback) made the reward menu fully functional with controller.
+- **41f (v3.4.76-v3.4.83):** Reward menu controller support fully working. Multiple issues fixed across versions:
+  - Present disappeared on B-close: `ClearPendingRewards` force-cleared ALL `BundleRewards`. Fix (v3.4.76): track actual grabs via `rewardGrabbed` postfix, only clear grabbed indices.
+  - Deposits into reward menu: our `TransferToChest` bypassed `reverseGrab` check. Fix (v3.4.78): added `!reverseGrab` guard.
+  - `rewardGrabbed` callback never fired via controller: our `TransferFromChest` bypassed `behaviorOnItemGrab`. Fix (v3.4.78): invoke callback via reflection after transfers.
+  - RT/LT switching to GameMenu from walked-in CC rooms: Fix (v3.4.79): added `fromGameMenu` check.
+  - Y (take-one) blocked on reward menus (v3.4.83): rewards are all-or-nothing per stack. Plays cancel sound.
+- **File:** `Patches/JunimoNoteMenuPatches.cs`
+
+### #42 Equipment Slot Tooltips Missing — v3.4.63
+- Android's `InventoryPage.draw()` stripped `drawToolTip` call. Added draw postfix that reads equipment directly from player data based on snapped component ID (hat=101, rings=102-103, boots=104, shirt=108, pants=109, trinkets=120+).
+- **File:** `Patches/InventoryPagePatches.cs`
+
+### #43 Sell Tooltip for Non-Object Items — v3.4.58
+- Sell price tooltip now works for all item types (weapons, rings, boots). Replaced `is not Object` early return with unified price logic: `sellToStorePrice()` for `Object`, `salePrice() / 2` for everything else.
+
+### #44 Zero-Price Items Greyed Out on Sell Tab — v3.4.58
+- Items with sell price 0 (Mixed Seeds, Mixed Flower Seeds) now greyed out on sell tab via `highlightMethod` override. Vanilla's `receiveLeftClick` sell path checks `highlightItemToSell` before selling, so greying out blocks both touch-sim and gamepad sell paths.
+
+### #45 Purchase Button on Cash Bundles (Vault) — v3.4.74
+- Vault bundles have a `purchaseButton` (`myID=797`) instead of ingredient slots. Game's `doSpecificBundlePageJoystick` uses highlight-based two-step A, but we use cursor-based single-press A.
+- Fix: `HandlePurchaseAPress` overrides `GetMouseState` to `purchaseButton` center, calls `releaseLeftClick`. `Draw_Prefix`/`Draw_Postfix` draw cursor at `purchaseButton` when on donation page.
+- **File:** `Patches/JunimoNoteMenuPatches.cs`
+
+---
+
 ## Nexus Feedback Release 2 (v3.5.11 – v3.6.0)
 
 ### #50 Right Stick Cursor Drift in Overworld — v3.5.12
@@ -317,3 +366,19 @@ See `CONTROLLER_MATRIX.md` for full testing details by device.
 - **Engine artifact reused:** The single-rectangle path was already in `Object.DrawRedGreenRectangleForPlacing` for tap/touch; we just bypass the `weaponControl` gate for controller-driven placement.
 - **File:** `Patches/FurniturePlacementPatches.cs` (new)
 - **Config:** `EnableConsoleFurniturePlacement` (default true)
+
+---
+
+## Bug Fix Release 2 (v3.6.1 – v3.7.0)
+
+### Build Fix: Legacy Test Folder Exclusion — v3.6.1
+- **Problem:** The untracked, pre-rename `AndroidControllerFix.Tests/` folder (Feb 2026, holds its own xUnit `.csproj`) was being pulled into the main project's SDK auto-discovery, breaking `dotnet build AndroidConsolizer.csproj` with 206 `Fact`/`FactAttribute` errors. v3.6.0 must have been built with stale obj/ caches; clean rebuild fails.
+- **Fix:** Added `<DefaultItemExcludes>$(DefaultItemExcludes);AndroidControllerFix.Tests\**</DefaultItemExcludes>` to `AndroidConsolizer.csproj`. The legacy test project's files no longer get compiled into the main mod assembly.
+- **File:** `AndroidConsolizer.csproj`
+
+### #64 Diagnostic Logging Cleanup — v3.6.2
+- **Source:** v3.5.33, v3.5.36, v3.5.37 added always-on Info-level `[Bed]`, `[StartHold]`, `[Bed] canBePlacedHere` logs while debugging bed-bouncing (#53) and journal-button hold (#52). Those root causes are now resolved; the logging just clutters every furniture interaction and Start press.
+- **Fix:** All `[Bed]` and `[StartHold]` calls in `CarpenterMenuPatches.cs`, `GameplayButtonPatches.cs`, and `ModEntry.cs` downgraded `LogLevel.Info` → `LogLevel.Debug` and gated on `Config.VerboseLogging`. Same pattern as the pre-existing non-bed `[Furniture] BLOCKED ...` lines (line 1524 of `CarpenterMenuPatches.cs` was already this pattern).
+- **Kept at Info:** Patch-attach confirmations (`[Bed] BedFurniture.canBeRemoved patch attached`, `... canBePlacedHere diagnostic postfix attached`, `... removeQueuedFurniture patch attached`) — one-time at mod load, useful when triaging "is my patch even attached?"
+- **Kept at Warn:** The matching `AccessTools.Method(...) returned null` failure lines for each of the three Bed patches.
+- **Files:** `ModEntry.cs`, `Patches/CarpenterMenuPatches.cs`, `Patches/GameplayButtonPatches.cs`

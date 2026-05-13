@@ -12,19 +12,6 @@ Shipped: **v3.6.0** (Bug Fix Release). Roadmap structure was re-evaluated post-3
 
 Drain the leftover Nexus queue and post-3.6 polish as fast 0.0.1 patches. No multi-patch feature arc — every item should be small, well-scoped, and individually shippable. Ordered by cost-to-investigate so quick wins ship first.
 
-### 64. Diagnostic Logging Cleanup (v3.6.x)
-- **Source:** v3.5.33, v3.5.36, v3.5.37 added always-on INFO-level `[Bed]`, `[StartHold]`, `[Bed] canBePlacedHere` log lines for field debugging. Issues are now resolved — the logging clutters user logs every time furniture is interacted with or Start is pressed.
-- **Action:** Downgrade all `[Bed]` and `[StartHold]` `Monitor.Log` calls in `CarpenterMenuPatches.cs` and `Patches/GameplayButtonPatches.cs` from `LogLevel.Info` to `LogLevel.Debug`, gated on `Config.VerboseLogging`. Keep patch-attach confirmation lines at Info (one-time at startup, useful for diagnosis).
-- **Specific call sites:**
-  - `FurnitureCanBeRemoved_Prefix` BLOCKED + allowing-pickup logs.
-  - `FurniturePerformRemoveAction_Prefix` BLOCKED + picking-up logs.
-  - `FurniturePlacementAction_Prefix` ENTRY + placing logs.
-  - `FurniturePlacementAction_Postfix` RESULT log.
-  - `RemoveQueuedFurniture_Prefix` BLOCKED log.
-  - `FurnitureCanBePlacedHere_Postfix` per-tile GREEN/RED log (very chatty during placement preview — definitely needs to be VerboseLogging-gated or removed entirely).
-  - `ApplyButtonSuppression` Start press-edge log.
-  - `OnUpdateTicked` PRESS / RELEASE / HOLD / TAP edges in `ModEntry.cs`.
-
 ### 49. Respond to v2.0.0 User — Furniture Debounce Availability
 - **Reporter:** Nexus user on v2.0.0, using Switch Controls mod separately.
 - **Status:** Already solved in current version. `EnableFurnitureDebounce` has been a separate toggle since v3.2.0, and `EnableButtonRemapping` was added in v3.5.0 to disable A/B and X/Y swaps independently.
