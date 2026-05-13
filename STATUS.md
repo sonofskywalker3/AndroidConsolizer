@@ -1,19 +1,22 @@
 # AndroidConsolizer — Status
 
-**Shipped version:** 3.6.0 ("Bug Fix Release") — confirmed via `manifest.json` and last commit `b2b8ce0` on master.
+**Shipped version:** 3.6.5 — local master through `21ed48c`. Not yet pushed to Nexus.
 
 ## Latest commits since release
 
 | SHA | Note |
 |-----|------|
-| `f466342` | docs: post-3.6 roadmap re-evaluation design |
-| `3c92994` | Add post-3.6 roadmap to TODO.md + Nexus tooling artifacts |
-| `378a2ee` | Add Playwright script for Nexus mod-page edits |
-| `17e282d` | Add Nexus description + changelog drafts for 3.6.0 |
-| `df7119b` | Fix Nexus publish workflow — schema migration to upload-action@main |
-| `b2b8ce0` | **v3.6.0: Bug Fix Release** |
+| `8952c7e` | docs: drop #56 (Luna freeze) — cold case |
+| `9c362e8` | docs: mark #63 done across v3.6.3 — v3.6.5 |
+| `21ed48c` | **v3.6.5:** Non-furniture pickups steer into the active toolbar row (#63 finish) |
+| `33b6e61` | **v3.6.4:** Furniture pickup steers into the active toolbar row (#63 part 2) |
+| `39e740a` | **v3.6.3:** Add EnablePickupToActiveRow toggle (scaffolding) |
+| `14d96de` | docs: mark #49 (Nexus reply re feature toggles) as sent |
+| `7e7f325` | **v3.6.2:** #64 Diagnostic logging cleanup — Bed/StartHold Info -> Debug |
+| `2fead04` | **v3.6.1:** Exclude AndroidControllerFix.Tests/ from main project build |
+| `b2b8ce0` | **v3.6.0:** Bug Fix Release |
 
-No uncommitted code changes blocking the next milestone.
+Uncommitted: `<EnableModDeploy>false</EnableModDeploy>` line in `AndroidConsolizer.csproj` (pre-existing, intentional — prevents PC mod-folder deploys; AC is Android-only).
 
 ## Milestone state
 
@@ -23,7 +26,7 @@ Roadmap was re-evaluated after v3.6.0 — see [`docs/superpowers/specs/2026-05-0
 |---------|-------|--------|
 | v3.4.x | GameMenu Tabs | **Complete** |
 | v3.5.x → v3.6.0 | Chest & Item Polish + Bug Fix Release | **Complete** |
-| **v3.7.0** | **Bug Fix Release 2** | **Active — not started** |
+| **v3.7.0** | **Bug Fix Release 2** | **Active — 4 of 7 done (v3.6.1 – v3.6.5 local)** |
 | v3.8.0 | Console Parity: Quick Wins | Pending |
 | v3.9.0 | Console Parity: Big Systems | Pending |
 | v4.0.0 | The Right Stick Update | Pending |
@@ -39,13 +42,13 @@ Roadmap was re-evaluated after v3.6.0 — see [`docs/superpowers/specs/2026-05-0
 See [`TODO.md`](./TODO.md) for full detail. High-level summary:
 
 **Active milestone (v3.7.0 — Bug Fix Release 2):**
-- #64 Diagnostic logging cleanup (downgrade `[Bed]`/`[StartHold]` Info → Debug)
-- #49 Reply to v2.0.0 user re: feature toggles (comms only)
-- #63 Bed lands in first inventory slot (should land on visible row)
-- #65 FTM diagnostic — why `removeQueuedFurniture` fires for just-placed bed
-- #54 Trigger column-skip on Gamesir / G Cloud (now self-reproducible)
-- #48 Y button overlap on Xbox/PS layout (chest/inventory)
-- #56 Random freeze on Amazon Luna controller (analyze existing log)
+- ✅ #64 Diagnostic logging cleanup — **v3.6.2**
+- ✅ #49 Reply to v2.0.0 user re: feature toggles — sent on Nexus, no version bump
+- ✅ #63 Pickup steers into the active toolbar row — **v3.6.3 / v3.6.4 / v3.6.5**
+- ⚪ #65 FTM diagnostic — why `removeQueuedFurniture` fires for just-placed bed
+- ⚪ #54 Trigger column-skip on Gamesir / G Cloud (now self-reproducible)
+- ⚪ #48 Y button overlap on Xbox/PS layout (chest/inventory)
+- 🗑 #56 Luna freeze — **dropped 2026-05-13** (cold case; only artifact was a clean v3.3.0 startup log, no freeze captured)
 
 **v3.8.0 — Console Parity: Quick Wins:** #22b dialogue defaults, #17 title cursor, #35 load game cursor, #39 monster eradication, #46 bundle highlight greying, #47 missed rewards chest, #27 toolbar size slider, #19 geode visual feedback.
 
