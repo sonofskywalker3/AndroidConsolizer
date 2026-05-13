@@ -12,12 +12,6 @@ Shipped: **v3.6.0** (Bug Fix Release). Roadmap structure was re-evaluated post-3
 
 Drain the leftover Nexus queue and post-3.6 polish as fast 0.0.1 patches. No multi-patch feature arc — every item should be small, well-scoped, and individually shippable. Ordered by cost-to-investigate so quick wins ship first.
 
-### 49. Respond to v2.0.0 User — Furniture Debounce Availability
-- **Reporter:** Nexus user on v2.0.0, using Switch Controls mod separately.
-- **Status:** Already solved in current version. `EnableFurnitureDebounce` has been a separate toggle since v3.2.0, and `EnableButtonRemapping` was added in v3.5.0 to disable A/B and X/Y swaps independently.
-- **Action:** Reply on Nexus explaining they can upgrade to v3.5+ and set `EnableButtonRemapping: false` to get just the fixes without interfering with their Switch Controls mod. All features are individually toggleable via GMCM or `config.json`.
-- **Note:** Comms-only task. Doesn't consume a version bump.
-
 ### 63. Bed (and Other Furniture) Lands in First Inventory Slot
 - **Source:** User noted in passing during v3.5.35 testing — "the bed pops into the first available inventory slot in the entire inventory, not on the currently visible row."
 - **Root cause:** `GameLocation.removeQueuedFurniture` (Android decompile lines 7984-7999) iterates `player.Items[i]` from i=0 forward and drops the furniture into the first null slot. No preference for the active toolbar row.

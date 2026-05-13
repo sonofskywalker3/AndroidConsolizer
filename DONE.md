@@ -376,6 +376,10 @@ Headline release: shop-cursor fixes, CarpenterMenu polish, CC bundle reward menu
 - **Fix:** Added `<DefaultItemExcludes>$(DefaultItemExcludes);AndroidControllerFix.Tests\**</DefaultItemExcludes>` to `AndroidConsolizer.csproj`. The legacy test project's files no longer get compiled into the main mod assembly.
 - **File:** `AndroidConsolizer.csproj`
 
+### #49 Nexus Reply — Furniture Debounce Toggle Availability (no version bump)
+- Replied to a v2.0.0 user who was running the Switch Controls mod alongside Android Consolizer and asked about cherry-picking just the furniture-debounce fix. Pointed them at `EnableFurnitureDebounce` (separate toggle since v3.2.0) and `EnableButtonRemapping: false` (added v3.5.0) so they can drop the A/B X/Y swap layer without losing the rest.
+- **Comms-only.** No code change.
+
 ### #64 Diagnostic Logging Cleanup — v3.6.2
 - **Source:** v3.5.33, v3.5.36, v3.5.37 added always-on Info-level `[Bed]`, `[StartHold]`, `[Bed] canBePlacedHere` logs while debugging bed-bouncing (#53) and journal-button hold (#52). Those root causes are now resolved; the logging just clutters every furniture interaction and Start press.
 - **Fix:** All `[Bed]` and `[StartHold]` calls in `CarpenterMenuPatches.cs`, `GameplayButtonPatches.cs`, and `ModEntry.cs` downgraded `LogLevel.Info` → `LogLevel.Debug` and gated on `Config.VerboseLogging`. Same pattern as the pre-existing non-bed `[Furniture] BLOCKED ...` lines (line 1524 of `CarpenterMenuPatches.cs` was already this pattern).
