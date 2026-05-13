@@ -364,7 +364,8 @@ namespace AndroidConsolizer.Patches
                     {
                         harmony.Patch(
                             original: removeQueued,
-                            prefix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(RemoveQueuedFurniture_Prefix))
+                            prefix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(RemoveQueuedFurniture_Prefix)),
+                            postfix: new HarmonyMethod(typeof(CarpenterMenuPatches), nameof(RemoveQueuedFurniture_Postfix))
                         );
                         Monitor.Log("[Bed] GameLocation.removeQueuedFurniture patch attached.", LogLevel.Info);
                     }
@@ -1568,10 +1569,17 @@ namespace AndroidConsolizer.Patches
         /// is the actual removal cascade for beds (canBeRemoved + performRemoveAction prefixes
         /// alone don't stop furniture.Remove from running inside removeQueuedFurniture).
         /// </summary>
-        private static bool RemoveQueuedFurniture_Prefix(GameLocation __instance, Guid guid)
+        private static bool RemoveQueuedFurniture_Prefix(GameLocation __instance, Guid guid, out Furniture __state)
         {
+            __state = null;
             if (!_suppressFurnitureUntilRelease)
+            {
+                // Body will run — capture the furniture so the postfix can locate
+                // it in player.Items after the game removes it from the location dict.
+                if (__instance?.furniture != null && __instance.furniture.TryGetValue(guid, out var f))
+                    __state = f;
                 return true;
+            }
             if (__instance?.furniture == null)
                 return true;
             if (!__instance.furniture.TryGetValue(guid, out var furn))
@@ -1583,6 +1591,55 @@ namespace AndroidConsolizer.Patches
                 return false;
             }
             return true;
+        }
+
+        /// <summary>
+        /// Postfix for GameLocation.removeQueuedFurniture — steer the just-picked-up furniture
+        /// into the active toolbar row when possible. Vanilla only scans slots 0-11 for a null,
+        /// so on Android with a non-zero active row the furniture lands in row 0 and the row
+        /// lock then bounces CurrentToolIndex into the active row at the wrong column.
+        ///
+        /// Behaviour (gated on Config.EnablePickupToActiveRow):
+        ///   - Active row has a null slot → swap furniture into it; CurrentToolIndex follows.
+        ///   - Active row is full → leave furniture wherever the game put it, but update the
+        ///     visible row and CurrentToolIndex so the player can immediately re-place it.
+        /// </summary>
+        private static void RemoveQueuedFurniture_Postfix(Furniture __state)
+        {
+            if (__state == null)
+                return;
+            if (ModEntry.Config?.EnablePickupToActiveRow != true)
+                return;
+            var player = Game1.player;
+            if (player?.Items == null)
+                return;
+            int landedAt = player.Items.IndexOf(__state);
+            if (landedAt < 0)
+                return; // game didn't actually place it (e.g., inventory rejected)
+            int row = FarmerPatches.CurrentToolbarRow;
+            int rowStart = row * 12;
+            int rowEnd = rowStart + 12;
+            if (landedAt >= rowStart && landedAt < rowEnd)
+                return; // already in active row
+            // Try to swap into the active row.
+            if (rowEnd <= player.Items.Count)
+            {
+                for (int i = rowStart; i < rowEnd; i++)
+                {
+                    if (player.Items[i] == null)
+                    {
+                        player.Items[i] = __state;
+                        player.Items[landedAt] = null;
+                        player.CurrentToolIndex = i;
+                        return;
+                    }
+                }
+            }
+            // Active row is full — accept the slot the game chose, but make it visible
+            // and selected so the player can re-place immediately.
+            int landedRow = landedAt / 12;
+            ModEntry.SetCurrentToolbarRow(landedRow);
+            player.CurrentToolIndex = landedAt;
         }
 
         private static bool FurniturePlacementAction_Prefix(Furniture __instance, GameLocation location, int x, int y, Farmer who, ref bool __result)
