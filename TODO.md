@@ -42,12 +42,6 @@ Drain the leftover Nexus queue and post-3.6 polish as fast 0.0.1 patches. No mul
   4. Test: does disabling `EnableButtonRemapping` fix the overlap?
 - **Files:** `ButtonRemapper.cs`, `Patches/GameplayButtonPatches.cs`, `Patches/ItemGrabMenuPatches.cs`, `Patches/InventoryPagePatches.cs`.
 
-### 56. Random Freeze During Gameplay — Amazon Luna Controller
-- **Reporter:** Nexus user, 16 Feb 2026, confirmed during gameplay 26 Feb 2026 ("4:10pm during gameplay").
-- **SMAPI log:** https://smapi.io/log/987136a58b4e4936a3c8a77e418369f5
-- **Action:** Pull the log, look for the last entries before freeze, look for our patches in the stack or recurring exceptions.
-- **Note:** Treated as an investigation rather than a guaranteed patch. May not yield a fix.
-
 ---
 
 ## v3.8.0 — Console Parity: Quick Wins
