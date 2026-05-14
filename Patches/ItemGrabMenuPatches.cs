@@ -691,6 +691,10 @@ namespace AndroidConsolizer.Patches
                 // Remap button based on configured button style
                 Buttons remapped = ButtonRemapper.Remap(b);
 
+                // [XYDiag] #48 — log X/Y presses reaching the chest handler, with raw identity.
+                if (ModEntry.Config.VerboseLogging && (b == Buttons.X || b == Buttons.Y))
+                    Monitor.Log($"[XYDiag] ItemGrabMenu.receiveGamePadButton b={b} | raw(X={GameplayButtonPatches.RawXPressed},Y={GameplayButtonPatches.RawYPressed}) tick={Game1.ticks}", LogLevel.Debug);
+
                 // Log all button presses in chest menu for debugging
                 if (ModEntry.Config.VerboseLogging)
                     Monitor.Log($"ItemGrabMenu button: {b} (remapped={remapped}), pickerOpen={_colorPickerOpen}, swapHeld={_swapHeldItem != null}", LogLevel.Debug);

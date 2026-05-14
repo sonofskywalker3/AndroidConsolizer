@@ -535,6 +535,13 @@ namespace AndroidConsolizer
             {
                 // Note: Y button hold-repeat is handled via polling in InventoryManagementPatches.OnUpdateTicked
 
+                // [XYDiag] #48 — log X/Y reaching OnButtonsChanged (SMAPI events), with raw identity.
+                if (Config.VerboseLogging
+                    && (e.Pressed.Contains(SButton.ControllerX) || e.Pressed.Contains(SButton.ControllerY)))
+                {
+                    this.Monitor.Log($"[XYDiag] OnButtonsChanged pressed=[{string.Join(",", e.Pressed)}] | raw(X={Patches.GameplayButtonPatches.RawXPressed},Y={Patches.GameplayButtonPatches.RawYPressed}) tick={Game1.ticks}", LogLevel.Debug);
+                }
+
                 foreach (var button in e.Pressed)
                 {
                     // CRITICAL: Always suppress raw ControllerX in inventory to prevent Android deletion bug
