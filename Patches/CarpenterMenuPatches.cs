@@ -336,12 +336,18 @@ namespace AndroidConsolizer.Patches
                         Monitor.Log($"[Bed] BedFurniture.canBeRemoved patch attached (declaring type: {bedCanBeRemoved.DeclaringType?.FullName}).", LogLevel.Info);
                     }
 
-                    // Gate the actual removal pipeline. canBeRemoved is the standard gate, but
-                    // BedFurniture pickup goes through GameLocation.removeQueuedFurniture, which
-                    // calls performRemoveAction + furniture.Remove(guid) + inventory.Add.
-                    // Patching only performRemoveAction skips the cleanup but Remove() still
-                    // strips the bed from the world. Patching removeQueuedFurniture itself stops
-                    // the entire cascade for beds while the suppress flag is set.
+                    // Gate the actual removal pipeline. canBeRemoved looks like the standard
+                    // gate, but for beds it is structurally insufficient: bed removal is
+                    // ASYNCHRONOUS. canBeRemoved is checked once, synchronously, at the caller
+                    // site (GameLocation.cs:7904) — then AttemptRemoval -> NetMutex.RequestLock
+                    // -> onLockAcquired -> removal_action -> furnitureToRemove.Add(guid) ->
+                    // NetMutexQueue -> removeQueuedFurniture runs over the NEXT ~2 ticks with no
+                    // further canBeRemoved check. Our suppress flag isn't set until
+                    // performRemoveAction, which runs INSIDE removeQueuedFurniture at the end of
+                    // that chain — so a stale RequestLock callback from before the flag latched
+                    // can fire after the bed is re-placed and queue it by its new GUID (bounce).
+                    // removeQueuedFurniture is the only synchronous choke point downstream of
+                    // the async chain, so that's where we gate. See DONE.md "#53 Bed Bouncing".
                     // Diagnostic: log canBePlacedHere result for beds, throttled by tile change.
                     // canBePlacedHere is what drives the green/red placement-preview rendering,
                     // so logging every distinct (tile, result) gives us the full validity map.
@@ -1513,6 +1519,11 @@ namespace AndroidConsolizer.Patches
         /// <summary>
         /// Prefix for Furniture.canBeRemoved — blocks re-pickup while tool button is held
         /// after a previous furniture interaction (placement or pickup).
+        ///
+        /// NOTE: for BedFurniture this gate is necessary but NOT sufficient — bed removal is
+        /// async and bypasses this check after the first tick (see RemoveQueuedFurniture_Prefix
+        /// below for the full explanation). This prefix handles non-bed furniture and the
+        /// first-tick bed check; RemoveQueuedFurniture_Prefix is the actual bed-bounce fix.
         /// </summary>
         private static bool FurnitureCanBeRemoved_Prefix(Furniture __instance, ref bool __result)
         {
@@ -1565,9 +1576,17 @@ namespace AndroidConsolizer.Patches
         /// <summary>
         /// Prefix for GameLocation.removeQueuedFurniture — when the queued GUID maps to a
         /// BedFurniture and the suppress flag is set, skip the entire body. This blocks
-        /// performRemoveAction + furniture.Remove(guid) + inventory.Add atomically, which
-        /// is the actual removal cascade for beds (canBeRemoved + performRemoveAction prefixes
-        /// alone don't stop furniture.Remove from running inside removeQueuedFurniture).
+        /// performRemoveAction + furniture.Remove(guid) + inventory.Add atomically.
+        ///
+        /// This is the real fix for bed bouncing. Bed removal is asynchronous: canBeRemoved
+        /// is gated once at the caller (GameLocation.cs:7904), but AttemptRemoval ->
+        /// NetMutex.RequestLock fires a callback that resolves ~1 tick later, which calls
+        /// removal_action -> furnitureToRemove.Add(guid); NetMutexQueue then processes that
+        /// job ~1 more tick later, finally invoking removeQueuedFurniture — with NO re-check
+        /// of canBeRemoved anywhere in the chain. A RequestLock callback queued before our
+        /// suppress flag latched can land after the bed has been re-placed and remove the
+        /// fresh bed by its new GUID. removeQueuedFurniture is the only synchronous choke
+        /// point downstream of that async chain. See DONE.md "#53 Bed Bouncing".
         /// </summary>
         private static bool RemoveQueuedFurniture_Prefix(GameLocation __instance, Guid guid, out Furniture __state)
         {
