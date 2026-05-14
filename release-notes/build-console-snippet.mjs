@@ -1,9 +1,10 @@
 // Build a single-paste DevTools Console snippet that fills the Nexus mod
-// edit form with the v3.6.0 description and version. Embeds the BBCode
+// edit form with the current description and version. Embeds the BBCode
 // as a JS string literal so the user only needs to paste once.
+// Bump DESCRIPTION_FILE below when cutting a new release.
 //
 // Usage:
-//   node build-console-snippet.mjs > nexus-3.6.0-console-snippet.js
+//   node build-console-snippet.mjs > nexus-3.7.0-console-snippet.js
 
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
@@ -13,7 +14,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const PROJECT_ROOT = resolve(__dirname, '..');
 
-const description = readFileSync(resolve(__dirname, 'nexus-3.6.0-description.bbcode'), 'utf8');
+const DESCRIPTION_FILE = 'nexus-3.7.0-description.bbcode';
+const description = readFileSync(resolve(__dirname, DESCRIPTION_FILE), 'utf8');
 const version = JSON.parse(readFileSync(join(PROJECT_ROOT, 'manifest.json'), 'utf8')).Version;
 
 // JSON.stringify safely escapes for embedding in a JS string literal.
