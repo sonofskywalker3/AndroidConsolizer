@@ -29,6 +29,11 @@ namespace AndroidConsolizer.Patches
         internal static float RawLeftTrigger;
         internal static float RawRightTrigger;
 
+        /// <summary>Raw (pre-swap) X/Y button state cached from GetState, for the #48 X/Y diagnostic.
+        /// Lets downstream input handlers log whether they received swapped or raw button identity.</summary>
+        internal static bool RawXPressed;
+        internal static bool RawYPressed;
+
         /// <summary>Cached swapped GamePadState to ensure all GetState() calls within the same tick return identical results.</summary>
         private static GamePadState? _cachedState;
         private static float _cachedRawRightStickY;
@@ -37,7 +42,13 @@ namespace AndroidConsolizer.Patches
         private static float _cachedRawLeftTrigger;
         private static float _cachedRawRightTrigger;
         private static bool _cachedRawStartPressed;
+        private static bool _cachedRawXPressed;
+        private static bool _cachedRawYPressed;
         private static int _cachedTick = -1;
+
+        /// <summary>Previous-tick raw X/Y state for the #48 diagnostic's press-edge detection.</summary>
+        private static bool _prevRawX;
+        private static bool _prevRawY;
 
         /// <summary>Suppress logical A in GetState output until the physical button is released.
         /// Set by ItemGrabMenuPatches when A on Close X closes a chest.</summary>
@@ -262,6 +273,8 @@ namespace AndroidConsolizer.Patches
                     RawLeftTrigger = _cachedRawLeftTrigger;
                     RawRightTrigger = _cachedRawRightTrigger;
                     RawStartPressed = _cachedRawStartPressed;
+                    RawXPressed = _cachedRawXPressed;
+                    RawYPressed = _cachedRawYPressed;
                     return;
                 }
 
@@ -283,6 +296,10 @@ namespace AndroidConsolizer.Patches
                 // Cache raw trigger values before suppression, so HandleTriggersDirectly can use them
                 RawLeftTrigger = __result.Triggers.Left;
                 RawRightTrigger = __result.Triggers.Right;
+
+                // Cache raw (pre-swap) X/Y button state for the #48 X/Y diagnostic.
+                RawXPressed = __result.Buttons.X == ButtonState.Pressed;
+                RawYPressed = __result.Buttons.Y == ButtonState.Pressed;
 
                 // Zero out right thumbstick when ShopMenu is on buy tab.
                 // This prevents vanilla (and Game1's scroll-wheel conversion) from scrolling
@@ -390,6 +407,19 @@ namespace AndroidConsolizer.Patches
                         swapXY = inMenu;   // Xbox/PS: swap in menus only (gameplay uses raw X/Y)
                 }
 
+                // [XYDiag] #48 diagnostic — on each raw X/Y press edge, log what the swap
+                // decision is and what button identity the game will end up seeing. This is
+                // the anchor line: every other [XYDiag] line can be lined up against it by tick.
+                if (ModEntry.Config?.VerboseLogging == true
+                    && ((RawXPressed && !_prevRawX) || (RawYPressed && !_prevRawY)))
+                {
+                    bool diagGameSeesX = swapXY ? RawYPressed : RawXPressed;
+                    bool diagGameSeesY = swapXY ? RawXPressed : RawYPressed;
+                    Monitor?.Log($"[XYDiag] GetState: rawX={RawXPressed} rawY={RawYPressed} -> gameSeesX={diagGameSeesX} gameSeesY={diagGameSeesY} | swapXY={swapXY} swapAB={swapAB} menu={Game1.activeClickableMenu?.GetType().Name ?? "none"} tick={Game1.ticks}", LogLevel.Debug);
+                }
+                _prevRawX = RawXPressed;
+                _prevRawY = RawYPressed;
+
                 // Nothing to do if no swapping needed
                 if (!swapXY && !swapAB)
                 {
@@ -401,6 +431,8 @@ namespace AndroidConsolizer.Patches
                     _cachedRawLeftTrigger = RawLeftTrigger;
                     _cachedRawRightTrigger = RawRightTrigger;
                     _cachedRawStartPressed = RawStartPressed;
+                    _cachedRawXPressed = RawXPressed;
+                    _cachedRawYPressed = RawYPressed;
                     _cachedTick = currentTick;
                     return;
                 }
@@ -428,6 +460,8 @@ namespace AndroidConsolizer.Patches
                     _cachedRawLeftTrigger = RawLeftTrigger;
                     _cachedRawRightTrigger = RawRightTrigger;
                     _cachedRawStartPressed = RawStartPressed;
+                    _cachedRawXPressed = RawXPressed;
+                    _cachedRawYPressed = RawYPressed;
                     _cachedTick = currentTick;
                     return;
                 }
@@ -461,6 +495,8 @@ namespace AndroidConsolizer.Patches
                 _cachedRawLeftStickY = RawLeftStickY;
                 _cachedRawLeftTrigger = RawLeftTrigger;
                 _cachedRawRightTrigger = RawRightTrigger;
+                _cachedRawXPressed = RawXPressed;
+                _cachedRawYPressed = RawYPressed;
                 _cachedTick = currentTick;
             }
             catch
