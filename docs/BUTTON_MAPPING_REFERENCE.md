@@ -59,9 +59,7 @@ Android's default: X=Tool, Y=Craft
 
 **Note:** X/Y swap logic is OPPOSITE of A/B swap logic because X and Y have different position relationships between layouts.
 
-**Important:** In **menus**, X and Y are NOT swapped. Menu actions are always:
-- **X button** = Sort
-- **Y button** = Add to Stacks (chest), Ship One (shipping bin)
+**Important — menu X/Y, corrected 2026-05-14 (#48 closure):** the *logical* menu actions are constant — **X button = Sort**, **Y button = Add to Stacks (chest) / Ship One (shipping bin)**. But which *physical* button triggers them depends on layout: **Switch layout does NOT swap X/Y in menus; Xbox/PS layout DOES** (`GameplayButtonPatches.GetState_Postfix`, `swapXY = inMenu`). So on Xbox/PS the physical top button (Y) sorts and the physical left button (X) adds-to-stacks. This swap is intentional and confirmed correct on-device — see `DONE.md` "#48". `ButtonRemapper.Remap` is now a pure no-op; all X/Y swapping happens at the `GetState` level. The per-combination tables above predate this rework — trust the code and `DONE.md` over their menu rows.
 
 ---
 
@@ -284,18 +282,18 @@ These are the **logical actions** that should happen, regardless of which physic
 
 ### For the Code
 
-When implementing, remember:
+When implementing, remember (corrected 2026-05-14, #48 closure — the items below describe the *current* code; older tables in this doc may not):
 
-1. **A/B swap** affects: Confirm, Cancel, Purchase, Exit actions (in ALL contexts)
-2. **X/Y swap for GAMEPLAY only**: Use Tool, Crafting Menu are swapped based on layout/style
-3. **Menu X/Y actions are NEVER swapped**: Sort is always X button, Add to Stacks/Ship One is always Y button
-4. **Shipping Bin** uses Confirm button (A after remapping) for Ship Stack, Y for Ship One
+1. **A/B swap** affects: Confirm, Cancel, Purchase, Exit actions (in ALL contexts). Done at the `GamePad.GetState` level (`GameplayButtonPatches.GetState_Postfix`), layout-vs-style.
+2. **X/Y swap** is also done at the `GetState` level, layout-only: **Switch layout swaps X/Y during gameplay** (menus untouched); **Xbox/PS layout swaps X/Y in menus** (gameplay untouched). See `GetState_Postfix` — the inline `swapXY` block is the authoritative logic.
+3. **Logical menu actions are constant**: Sort = X button, Add to Stacks / Ship One = Y button. The *physical* button that triggers them depends on the layout swap above.
+4. **Shipping Bin** uses Confirm button (A after remapping) for Ship Stack, Y for Ship One.
 
 ### Architecture
 
-- `ButtonRemapper.cs` handles A/B swapping for menu patches (ShouldSwapXY always returns false)
-- `GameplayButtonPatches.cs` handles X/Y swapping during gameplay based on layout/style
-- This separation ensures menu actions stay consistent while gameplay feels correct for each style
+- **`ButtonRemapper.cs` is a no-op pass-through** — kept only so old call sites compile. It does NOT swap anything; both `Remap` overloads return their input unchanged.
+- **`GameplayButtonPatches.GetState_Postfix` is the single source of truth** for both A/B and X/Y swapping — it rewrites the `GamePadState` before any game or mod code reads it.
+- Swap decisions: `ShouldSwapAB()` (layout vs. style) and the inline `swapXY` block (layout + whether a menu is open).
 
 ### Swap Logic Summary
 
