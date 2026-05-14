@@ -1,0 +1,10 @@
+Focused follow-up to 3.6.0 — two controller-handling fixes plus log cleanup. All fixes individually toggleable via GMCM.
+
+Fixed:
+- Picked-up items land in the active toolbar row (#63) — furniture, forage, drops, gifts, and shop purchases now go into the toolbar row you're currently viewing instead of always row 0. New Pickup To Active Row toggle (default on).
+- Triggers no longer skip two toolbar slots (#54) — a single trigger pull occasionally moved two slots on Gamesir/G Cloud controllers. Trigger handling rebuilt as a two-threshold state machine with release confirmation; verified on analog (G Cloud) and digital (Gamesir X2) triggers.
+
+Changed:
+- Reduced diagnostic log noise — leftover [Bed]/[StartHold] debug lines downgraded to Debug level and gated behind Verbose Logging.
+
+Also closed by investigation, no code change: confirmed the 3.6.0 bed-bouncing fix is structurally correct; the reported Xbox/PS X/Y button overlap no longer reproduces on current code.
