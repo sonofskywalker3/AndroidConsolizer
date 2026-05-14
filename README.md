@@ -1,124 +1,119 @@
 # Android Consolizer
 
-A SMAPI mod that brings console-style controller support to Android Stardew Valley. Play with a controller like you would on Nintendo Switch - 12-slot toolbar rows, proper shop purchasing, chest management, and more.
+A SMAPI mod that makes Android Stardew Valley's controller support work like the Nintendo Switch version. 90+ fixes across shops, inventory, chests, toolbar, Robin's building menu, Community Center bundles, furniture placement, and every game menu tab.
 
-## Current Version: 3.5.0 — The Chest & Menu Polish Release
+If you play on a handheld (Odin, Ayaneo, Retroid, etc.) or dock your phone/tablet to a TV, this mod makes the game actually playable without a touchscreen.
 
-## Features
+## Current Version: 3.7.0 — Bug Fix Release 2
 
-### Controller Layout Support
+## What's New in v3.7.0
+
+A focused follow-up to v3.6. Both fixes individually toggleable via GMCM.
+
+**Picked-up items land in the active toolbar row** — Furniture, forage, drops, gifts, and shop purchases now go into the toolbar row you're currently viewing, instead of always dropping into row 0 where you can't see them. Picked-up furniture (your held tool until you place it) moves the selection to follow; ordinary pickups never disturb your selected tool. New toggle, on by default.
+
+**Triggers no longer skip toolbar slots** — On Gamesir and Logitech G Cloud controllers, a single trigger pull occasionally jumped two toolbar slots instead of one. Hall-effect triggers briefly read zero mid-pull and some digital triggers glitch for a single frame; trigger handling is now a two-threshold state machine with a release-confirmation window that rides through those dropouts. Verified on both analog and digital triggers.
+
+**Plus:** reduced diagnostic log noise — leftover debug lines from the v3.5 investigations are now quiet during normal play.
+
+## Controller Layout Support
+
 - **Switch/Odin**: A=right, B=bottom, X=top, Y=left
 - **Xbox**: A=bottom, B=right, X=left, Y=top
 - **PlayStation**: Cross=A, Circle=B, Square=X, Triangle=Y
 
-### Control Style Options
-- **Switch style**: Right button confirms, bottom button cancels
-- **Xbox/PS style**: Bottom button confirms, right button cancels
+Two control styles:
 
-### Toolbar Navigation (Console-Style)
-- **12-slot toolbar rows** instead of Android's chaotic scrolling toolbar
-- **LB/RB**: Switch between toolbar rows (up to 3 rows with full backpack)
-- **LT/RT**: Move left/right within the current row
+- **Switch style**: Right button confirms, bottom cancels
+- **Xbox/PS style**: Bottom button confirms, right cancels
+
+## Features
+
+### Toolbar (Console-Style)
+- 12-slot toolbar rows instead of Android's chaotic scrolling
+- LB/RB switches between rows (up to 3 with full backpack)
+- LT/RT moves left/right within the current row
 - Visual toolbar matches console layout
+- Picked-up items land in the row you're currently viewing
 
-### Bumper Mode (For Controllers with Trigger Issues)
-When "Use Bumpers Instead of Triggers" is enabled:
-- **Toolbar**: D-Pad Up/Down switches rows, LB/RB moves within row
-- **Shops**: LB/RB adjusts purchase quantity
-- Enable this if your controller's triggers aren't detected (e.g., Xbox via Bluetooth)
+### Shops
+- A button purchases on buy tab, sells entire stack on sell tab
+- Y button sells one item (hold for rapid sell)
+- LB/RB adjusts purchase quantity (hold to repeat)
+- Right stick jumps 5 items at a time (hold to repeat)
+- Y button icon shows tab-switch hint (adapts to controller layout)
+- Sell price tooltip with gold coin icon next to selected item
+- Non-sellable items (0g) greyed out on sell tab
+- Visible cursor on both buy and sell tabs
+- Works with every shop: Pierre, Robin, Marnie, Blacksmith upgrades, Desert Trader, recipes, Joja, dressers, aquariums, and more
 
-### Shop Fixes
-- **A button (buy tab)**: Purchase items from any shop
-- **A button (sell tab)**: Sell entire stack
-- **Y button (sell tab)**: Sell one item (hold Y for rapid sell)
-- **LB/RB**: Adjust purchase quantity (+/-1 in bumper mode, +/-10 otherwise), hold to repeat
-- **Right stick**: Jump 5 items at a time on buy tab (hold to repeat)
-- **Y button icon**: Visual tab-switch hint on the inventory button (adapts to controller layout)
-- Touch tab-switch button blocked when controller is connected (prevents accidental taps)
-- Sell price tooltip with gold coin icon appears next to selected item on sell tab (all item types — weapons, rings, boots, not just objects)
-- Non-sellable items (0g value) greyed out on sell tab
-- Visible cursor on both buy and sell tabs (fixes Android's missing cursor at Blacksmith, Joja, and other shops)
-- Left stick hold-to-repeat navigation on buy/sell tabs (15-tick delay, 4-tick repeat)
-- Supports trade-item shops (Desert Trader), tool upgrades, recipes, and all special purchases
-- Respects available stock, player money, and trade item requirements
+### Chests (Console-Style)
+- A transfers full stack between chest and inventory (instant, no selection step)
+- Y transfers one item (hold for rapid transfer)
+- X sorts chest contents
+- RB snaps to Fill Stacks button
+- All sidebar buttons reachable: Sort, Fill Stacks, Color Toggle, Sort Inventory, Trash, Close
+- Full 7x3 color picker swatch navigation, B closes picker only (not the chest)
+- Swap system when inventory is full — A picks up for displacement, place anywhere, B cancels
+- X button deletion bug completely blocked (your iridium tools are safe)
 
-### Chest Controls (Console-Style)
-- **A button**: Instantly transfer full stack between chest and inventory (no selection step)
-- **Y button**: Transfer one item (hold Y for rapid single-item transfer)
-- **X button**: Sort chest contents
-- **RB**: Snap cursor to Fill Stacks button
-- **Sidebar buttons**: Sort Chest, Fill Stacks, Color Toggle, Sort Inventory, Trash, Close X — all reachable via controller navigation
-- **Color picker**: Full 7x3 swatch grid navigation when picker is open. B closes picker only (not the chest)
-- **Swap system**: When inventory is full, A picks up an item for displacement swap — place it anywhere with A, and the displaced item returns to the source. B cancels.
-- **X button deletion bug fixed**: The vanilla Android bug where X deletes items is completely blocked
+### Inventory (Console-Style)
+- A picks up entire stack to cursor, A again places or swaps
+- Y picks up a single item from a stack (hold for continuous)
+- X sorts inventory
+- Held items render visually at cursor slot
+- Tooltips on hover, equipment slot tooltips (hat, rings, boots, etc.)
 
-### Inventory Fixes
-- **X button**: Sort your inventory
-- **Equipment tooltips**: Hovering over equipment slots (hat, rings, boots, shirt, pants, trinkets) shows item stats
-
-### Shipping Bin Fix (Console-Style)
-- **A button**: Ship entire stack from selected inventory slot
-- **Y button**: Ship one item from selected inventory slot
+### Shipping Bin
+- A ships entire stack from selected slot
+- Y ships one item
 - "Last shipped" display updates properly
-- No more drag-and-drop - just select and ship
 
-### Console-Style Inventory Management
-- **A button on item**: Pick up entire stack to cursor (like Nintendo Switch)
-- **A button on slot**: Place or swap item (empty slot places, occupied slot swaps)
-- **Y button on stack**: Pick up a single item from a stack
-- **Hold Y**: Continuously pick up single items from the stack
-- Held items render visually at the cursor slot
-- Tooltips appear on hover when navigating with controller
-- Fishing rod tooltips shown when holding bait or tackle
+### Furniture Placement
+- Single ghost rectangle shows exactly where the furniture will land
+- Translucent furniture sprite rendered over the placement target — matches console
+- Bed placement no longer bounces back to inventory
+- Y no longer rapid-toggles — one press = one interaction
 
-### Carpenter Menu (Robin's Build Menu)
-- Prevents Robin's building menu from instantly closing when opened with controller
-- **Full joystick control in farm view** — Build, Move, and Demolish all work with the controller
-  - Left stick moves a visible cursor across the farm, panning the viewport at screen edges
-  - Building ghost tracks cursor in real time at all zoom levels
-  - **Build mode**: Press A to confirm placement at your cursor position
-  - **Move mode**: Press A to select a building, move cursor to new location, press A to confirm
-  - **Demolish mode**: Press A on a building to highlight it (green), press A again to confirm demolition. Move cursor off the building to deselect without demolishing.
-  - Touch still works normally alongside the joystick cursor
-- **Building skin picker**: Navigate skin options with controller, A cycles appearances
+### Robin's Building Menu
+- Menu no longer instantly closes when opened with controller
+- Full joystick control in farm view — left stick moves cursor, pans viewport at edges
+- Build mode: A confirms placement at cursor position
+- Move mode: A selects building, move cursor, A confirms new location
+- Demolish mode: A highlights building (green), A again confirms. Move off to deselect safely.
+- Building skin picker navigable with controller
 
-### Community Center Bundle Navigation
-- **Full controller support** for the Community Center JunimoNoteMenu
-- **Bundle overview**: Navigate between bundles with D-Pad/thumbstick, A opens the donation page
-  - Cursor remembers which bundle you were viewing when returning from the donation page
-  - LB/RB switches between Community Center rooms (vanilla behavior)
-  - Completed bundle icons display correctly (no false incomplete states)
-- **Donation page**: Navigate inventory with D-Pad/thumbstick (6-column grid), A donates items
-  - Right from the last inventory column enters the ingredient list zone
-  - Navigate ingredients to see what each bundle slot needs (tooltip shows item name)
-  - Left from the ingredient list returns to inventory
-- **Vault bundles**: A on the purchase button pays for the bundle (cursor-based, single press)
-- **Bundle rewards**: Navigate to the present icon, A opens rewards. A takes full stacks. Rewards properly clear after collection. B-close without taking preserves rewards for next visit.
-- **LT/RT blocked** when CC is opened from the junimo tile (only switches tabs when opened from GameMenu)
-- Custom cursor drawn on both overview and donation pages (Android suppresses the default cursor here)
+### Community Center Bundles
+- Bundle overview: D-pad/thumbstick navigates bundles, A opens donation page
+- Cursor remembers your position when returning from donation page
+- Donation page: Navigate 6-column inventory grid, A donates items
+- Navigate right into ingredient list to see what each slot needs
+- Vault bundles: A on purchase button pays for the bundle
+- Bundle rewards: Navigate to present, A opens rewards, A takes stacks
+- Custom cursor drawn (Android suppresses the default one here)
 
-### Game Menu Navigation
-- **Social tab**: D-pad/thumbstick navigates the villager list, right stick for fast scrolling. A opens the gift log. LB/RB switches villagers inside the gift log.
-- **Collections tab**: D-pad/thumbstick navigates the item grid and sub-tabs. Finger cursor replaces red highlight box.
-- **Crafting tab**: Finger cursor replaces red highlight box.
-- **Skills tab**: D-pad/thumbstick grid navigation across skill icons and level bars.
-- **Animals tab**: D-pad/thumbstick navigates the animal list.
-- **Powers tab**: Finger cursor replaces glow highlight.
-- **Options tab**: Left stick navigates options, A activates, right stick scrolls the list. Dropdowns supported.
-- **LT/RT tab switching**: Cycle between all game menu tabs with triggers (console parity).
-- **GMCM controller navigation**: Full d-pad/thumbstick snap navigation in Generic Mod Config Menu via our [controller-enabled GMCM fork](https://github.com/sonofskywalker3/GenericModConfigMenu). B button navigates back through mod config → mod list → close.
+### Game Menu Tabs
+- **Social**: Navigate villager list, right stick fast scroll, A opens gift log, LB/RB switches villagers in gift log
+- **Collections**: Grid navigation across items and sub-tabs, finger cursor
+- **Crafting**: Finger cursor replaces red highlight
+- **Skills**: Grid navigation across skill icons and level bars
+- **Animals**: Navigate animal list
+- **Powers**: Finger cursor replaces glow highlight
+- **Options**: Left stick navigates, A activates, right stick scrolls, dropdowns work
+- **LT/RT** switches between all tabs (console parity)
 
-### Furniture Placement Fix
-- Y button no longer rapid-toggles furniture between picked up and placed
-- One press = one interaction (pickup OR placement, never both)
-- Works for all furniture types including beds
+### Other Fixes
+- Fishing rod bait/tackle: A picks up bait/tackle, Y on rod attaches or detaches
+- Slingshot ammo: Same pattern — A picks up ammo, Y on slingshot attaches/detaches
+- Cutscene skip: Press Start twice during skippable cutscenes
+- Start button: Tap = Game Menu, Hold ~½ sec = Quest Log/Journal
+- Right stick suppressed in overworld (no more cursor drift)
+- GMCM controller navigation via our [controller-enabled GMCM fork](https://github.com/sonofskywalker3/GenericModConfigMenu)
 
-### Fishing Rod Bait/Tackle Fix
-- **A button on bait/tackle**: Pick up to cursor for attachment
-- **Y button on fishing rod**: Attach held bait/tackle, or detach to cursor if nothing held
-- Detached bait/tackle goes to cursor (console-style) instead of first empty slot
-- Works with Fiberglass Rod (bait only) and Iridium Rod (bait + tackle)
-- Swapping supported: attaching different bait/tackle swaps with existing
+### Bumper Mode
+For controllers where triggers aren't detected (e.g. Xbox via Bluetooth):
+- D-Pad Up/Down switches toolbar rows, LB/RB moves within row
+- LB/RB adjusts shop purchase quantity
 
 ## Button Mappings (Default Layout + Style)
 
@@ -165,25 +160,24 @@ When "Use Bumpers Instead of Triggers" is enabled:
 | **Options** | Right stick | Scroll options list |
 | **Options** | A | Activate option / toggle / open dropdown |
 
-## Dependencies
+## Requirements
 
-**Required:**
 - Stardew Valley 1.6.15+ (Android)
-- [SMAPI 4.0.0+ for Android](https://github.com/NRTnarathip/SMAPI-Android-1.6) by NRTnarathip
-
-**Optional:**
-- [Generic Mod Config Menu](https://github.com/sonofskywalker3/GenericModConfigMenu/releases) - for in-game settings (our fork adds controller snap navigation; the [standard version](https://www.nexusmods.com/stardewvalley/mods/5098) also works)
+- [SMAPI 4.0+ for Android](https://github.com/NRTnarathip/SMAPI-Android-1.6) by NRTnarathip
+- [Generic Mod Config Menu](https://github.com/sonofskywalker3/GenericModConfigMenu/releases) (optional, recommended — our fork adds controller navigation)
 
 ## Tested Controllers
 
 | Controller | Device | Status | Notes |
 |------------|--------|--------|-------|
-| **Built-in (Odin)** | AYN Odin Pro | ✅ Fully Working | All buttons and triggers work |
-| **Xbox One Wireless (Bluetooth)** | AYN Odin Pro | ⚠️ Partial | Triggers (LT/RT) not detected — enable "Use Bumpers Instead of Triggers". All other buttons work. |
-| **Xbox Series X\|S Wireless (Bluetooth)** | AYN Odin Pro | ⚠️ Partial | Triggers (LT/RT) not detected — enable "Use Bumpers Instead of Triggers". All other buttons work. |
-| **Built-in (Ayaneo)** | Ayaneo Pocket Air Mini | ✅ Fully Working | All buttons and triggers work |
-| **Built-in (G Cloud)** | Logitech G Cloud | ⚠️ Partial | Occasional double trigger input |
+| **AYN Odin Pro** (built-in) | AYN Odin Pro | ✅ Fully Working | All buttons and triggers work |
+| **Ayaneo Pocket Air Mini** (built-in) | Ayaneo Pocket Air Mini | ✅ Fully Working | All buttons and triggers work |
 | **EasySMX S10** | TCL NXTPaper 11 Plus | ✅ Fully Working | All buttons and triggers work |
+| **Gamesir X2** | — | ✅ Fully Working | Digital triggers; v3.7 trigger fix verified here |
+| **Xbox Wireless (Bluetooth)** | AYN Odin Pro | ⚠️ Partial | Triggers (LT/RT) not detected — enable "Use Bumpers Instead of Triggers". All other buttons work. |
+| **Logitech G Cloud** (built-in) | Logitech G Cloud | ⚠️ Working | Trigger double-fire greatly reduced in v3.7 |
+
+If you test on other hardware, let me know!
 
 ### Known Issues: Xbox Controller on Android
 
@@ -209,18 +203,23 @@ Edit `config.json` or use Generic Mod Config Menu in-game:
 
 ```json
 {
+  "EnableButtonRemapping": true,
   "ControllerLayout": "Switch",
   "ControlStyle": "Switch",
   "EnableConsoleChests": true,
   "EnableConsoleShops": true,
   "EnableConsoleToolbar": true,
+  "EnablePickupToActiveRow": true,
   "EnableConsoleInventory": true,
   "EnableConsoleShipping": true,
-  "EnableConsoleMenus": true,
+  "SuppressRightStickInOverworld": true,
   "EnableJournalButton": true,
   "EnableCutsceneSkip": true,
   "EnableCarpenterMenuFix": true,
   "EnableFurnitureDebounce": true,
+  "EnableConsoleFurniturePlacement": true,
+  "EnableGameMenuNavigation": true,
+  "FreeCursorOnSettings": false,
   "UseBumpersInsteadOfTriggers": false,
   "VerboseLogging": false
 }
@@ -228,18 +227,23 @@ Edit `config.json` or use Generic Mod Config Menu in-game:
 
 | Option | Description |
 |--------|-------------|
+| `EnableButtonRemapping` | Remap buttons based on controller layout and control style. When disabled, all buttons pass through unmodified |
 | `ControllerLayout` | Physical button layout: `Switch`, `Xbox`, or `PlayStation` |
 | `ControlStyle` | Control scheme: `Switch` (right=confirm) or `Xbox` (bottom=confirm) |
 | `EnableConsoleChests` | Sort (X), fill stacks (Y), sidebar navigation, color picker, and A/Y item transfer in chests |
 | `EnableConsoleShops` | A button purchases, LT/RT quantity selector, sell tab with A/Y, right stick scroll |
 | `EnableConsoleToolbar` | 12-slot fixed toolbar with LB/RB row switching and LT/RT slot movement |
+| `EnablePickupToActiveRow` | Steer picked-up items (furniture, forage, drops, gifts, purchases) into the toolbar row you're currently viewing instead of row 0 |
 | `EnableConsoleInventory` | A picks up/places items, Y picks up one from stack, fishing rod bait/tackle via Y |
 | `EnableConsoleShipping` | A ships full stack, Y ships one item from the shipping bin |
-| `EnableConsoleMenus` | Controller navigation for all game menu tabs (social, collections, options, skills, animals, powers) |
-| `EnableJournalButton` | Start button opens the Quest Log/Journal instead of inventory |
+| `SuppressRightStickInOverworld` | Stop the right thumbstick from drifting the mouse cursor during overworld gameplay |
+| `EnableJournalButton` | Tap Start opens the game menu; hold Start ~500ms opens the Quest Log/Journal |
 | `EnableCutsceneSkip` | Press Start twice during a skippable cutscene to skip it |
 | `EnableCarpenterMenuFix` | Prevent Robin's building menu from instantly closing + joystick farm view controls |
 | `EnableFurnitureDebounce` | Prevent furniture from rapid-toggling between picked up and placed |
+| `EnableConsoleFurniturePlacement` | Replace Android's multi-tile green-square placement map with a single ghost rectangle showing exactly where the furniture will land |
+| `EnableGameMenuNavigation` | Controller navigation for all game menu tabs (Social, Collections, Crafting, Skills, Animals, Powers, Options) |
+| `FreeCursorOnSettings` | Use free cursor (vanilla) instead of snap navigation on the Options page and GMCM config page |
 | `UseBumpersInsteadOfTriggers` | Use LB/RB instead of LT/RT (for Xbox Bluetooth controllers) |
 | `VerboseLogging` | Enable detailed debug logging |
 
@@ -302,6 +306,10 @@ Output: `bin/Release/net6.0/AndroidConsolizer X.X.X.zip`
 
 Android Stardew Valley has broken controller support that makes it nearly unplayable when docked to a TV (no touchscreen). This mod "consolizes" the experience - making it play like the Nintendo Switch version when using a controller.
 
+## Also by this author
+
+[**Nap Time**](https://www.nexusmods.com/stardewvalley/mods/42616) — Nap in bed to regain energy without ending the day. Configurable recovery speed and wake-up time cap. Works on PC and Android.
+
 ## Credits
 
 - Created by sonofskywalker3
@@ -313,6 +321,22 @@ Android Stardew Valley has broken controller support that makes it nearly unplay
 MIT License - Feel free to modify and redistribute.
 
 ## Changelog
+
+### 3.7.0 — Bug Fix Release 2
+- **Picked-up items land in the active toolbar row** — picking up furniture, forage, drops, gifts, or shop purchases now places the item into the toolbar row you're currently viewing, instead of always defaulting to row 0. Furniture (your held tool until placed) also moves the selection to follow; non-tool pickups never disturb your selected tool. New `EnablePickupToActiveRow` GMCM toggle (default on).
+- **Triggers no longer skip two toolbar slots** — on Gamesir and G Cloud controllers a single trigger pull occasionally moved two slots instead of one. Hall-effect triggers briefly drop to zero mid-pull and digital triggers glitch for a single tick; replaced the single-bool edge detector with a two-threshold state machine plus a 4-tick release-confirmation streak. Verified on G Cloud (analog) and Gamesir X2 (digital).
+- **Diagnostic log noise reduced** — leftover `[Bed]` and `[StartHold]` debug lines downgraded from Info to Debug and gated behind the Verbose Logging toggle.
+- Internally rolls up the v3.6.1–v3.6.9 patch series.
+
+### 3.6.0 — Bug Fix Release
+- **Bed bouncing on placement fixed** — patched `GameLocation.removeQueuedFurniture` to gate the full removal cascade. Place a bed and it stays placed.
+- **Right stick no longer drifts the cursor in the overworld** — vanilla Android maps the right stick to mouse motion. New `SuppressRightStickInOverworld` GMCM toggle (default on).
+- **Dresser no longer destroys clothes** — `ShippingBinPatches` source check tightened to the actual `ShippingBin`.
+- **Aquarium no longer duplicates fish on take** — Y-button take-one now invokes the source container's removal hook.
+- **Quest Log via Hold Start** — tap Start opens the GameMenu (vanilla), hold Start ≥500ms opens the Quest Log/Journal.
+- **Storage shop polish** — dresser/aquarium sell-tab highlighting, deposit restrictions, hover refresh, and default buy-tab selection all match console/PC behaviour.
+- **Console Furniture Placement** — replaces Android's misleading multi-tile green-square placement map with a single ghost rectangle plus a translucent furniture sprite over the placement target. New `EnableConsoleFurniturePlacement` GMCM toggle (default on).
+- Other fixes: chest deposits fire bundle/quest hooks, equipment equip/unequip routed through `Farmer.Equip`, shop stock and post-purchase actions match vanilla, fishing rod tackle attaches correctly via controller, Auto-Grabber chests blocked from console-style A/Y deposits.
 
 ### 3.5.0 — The Chest & Menu Polish Release
 - **CarpenterMenu Polish** — Building ghost now tracks cursor continuously in real time at all zoom levels. Building skin picker fully navigable with controller (A cycles skins). Fixed ghost/cursor speed mismatch, zoom-incorrect offsets, and GetMouseState override persisting after menu close.
