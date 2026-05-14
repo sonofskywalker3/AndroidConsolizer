@@ -2,6 +2,21 @@
 
 All notable changes to Android Consolizer will be documented in this file.
 
+## [3.7.0] - 2026-05-14
+
+Bug fix release — two controller-handling fixes plus log-noise cleanup. All fixes individually toggleable via GMCM; technical references in `DONE.md`. Internally this rolls up the v3.6.1–v3.6.9 patch series.
+
+### Fixed
+- **Picked-up items land in the active toolbar row** (#63) — picking up furniture, forage, drops, gifts, or shop purchases now places the item into the toolbar row you're currently viewing, instead of always defaulting to row 0. Vanilla Android's `removeQueuedFurniture` and `Farmer.addItemToInventory` both hard-scan slots 0–11. Furniture (your held tool until placed) also moves the selection to follow; non-tool pickups never disturb your selected tool. New `EnablePickupToActiveRow` GMCM toggle (default on).
+- **Triggers no longer skip two toolbar slots** (#54) — on Gamesir and G Cloud controllers a single trigger pull occasionally moved two slots instead of one. Hall-effect triggers briefly drop to zero mid-pull and digital triggers glitch for a single tick; the old single-bool edge detector re-fired on the bounce. Replaced with a two-threshold state machine plus a 4-tick release-confirmation streak — verified on G Cloud (analog) and Gamesir X2 (digital).
+
+### Changed
+- **Diagnostic log noise reduced** (#64) — leftover `[Bed]` and `[StartHold]` debugging lines from the 3.5 bed-bounce and Quest Log investigations downgraded from Info to Debug and gated behind the Verbose Logging toggle.
+
+### Investigated (no code change)
+- **#65 bed-bounce root cause** — confirmed the v3.5.35 `removeQueuedFurniture` gate is the structurally correct fix: bed removal is asynchronous, and `canBeRemoved` is checked once, synchronously, upstream of the async chain. Farm Type Manager ruled out as a cause. See `DONE.md` "#53".
+- **#48 X/Y button overlap** — the v3.3/v3.4 "Y both picks up and sorts" double-fire does not reproduce on current code; resolved incidentally by intervening input-pipeline work. See `DONE.md` "#48".
+
 ## [3.6.0] - 2026-05-08
 
 Bug fix release responding to Nexus user reports. All fixes individually toggleable via GMCM; technical references in `DONE.md`.
