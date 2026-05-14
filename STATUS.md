@@ -1,11 +1,14 @@
 # AndroidConsolizer — Status
 
-**Shipped version (local):** 3.6.7. Not yet pushed to Nexus. Last released to Nexus is still 3.6.0.
+**Shipped version (local):** 3.6.9. Not yet pushed to Nexus. Last released to Nexus is still 3.6.0. v3.7.0 milestone is **complete** — ready to ship pending the user's go-ahead.
 
 ## Latest commits since v3.6.0
 
 | SHA | Note |
 |-----|------|
+| `2a0a126` | **v3.6.9:** Revert #48 X/Y diagnostic — bug confirmed stale (fixed by intervening pipeline work) |
+| `c337394` | **v3.6.8:** #48 diagnostic — trace X/Y button identity across all input handlers |
+| `449c242` | docs: resolve #65 — bed-bounce root cause is async removal pipeline, not FTM |
 | `5d54708` | **v3.6.7:** Diagnostic — log every CurrentToolIndex setter change with stack trace |
 | `965cd3b` | **v3.6.6:** #54 Trigger release-confirmation state machine fixes dropout-bounce |
 | `8952c7e` | docs: drop #56 (Luna freeze) — cold case |
@@ -28,7 +31,7 @@ Roadmap was re-evaluated after v3.6.0 — see [`docs/superpowers/specs/2026-05-0
 |---------|-------|--------|
 | v3.4.x | GameMenu Tabs | **Complete** |
 | v3.5.x → v3.6.0 | Chest & Item Polish + Bug Fix Release | **Complete** |
-| **v3.7.0** | **Bug Fix Release 2** | **Active — v3.6.1 – v3.6.7 local; #65 resolved (no code change); only #48 remaining** |
+| **v3.7.0** | **Bug Fix Release 2** | **Complete — v3.6.1 – v3.6.9 local, not yet on Nexus** |
 | v3.8.0 | Console Parity: Quick Wins | Pending |
 | v3.9.0 | Console Parity: Big Systems | Pending |
 | v4.0.0 | The Right Stick Update | Pending |
@@ -43,14 +46,14 @@ Roadmap was re-evaluated after v3.6.0 — see [`docs/superpowers/specs/2026-05-0
 
 See [`TODO.md`](./TODO.md) for full detail. High-level summary:
 
-**Active milestone (v3.7.0 — Bug Fix Release 2):**
+**Completed milestone (v3.7.0 — Bug Fix Release 2) — all items resolved, ready to ship:**
 - ✅ #64 Diagnostic logging cleanup — **v3.6.2**
 - ✅ #49 Reply to v2.0.0 user re: feature toggles — sent on Nexus, no version bump
 - ✅ #63 Pickup steers into the active toolbar row — **v3.6.3 / v3.6.4 / v3.6.5**
 - ✅ #54 Trigger column-skip — **v3.6.6** (hysteresis + 4-tick release confirmation; verified on G Cloud analog 37% → 18% spurious, Gamesir X2 digital 0% spurious)
 - ➕ Diagnostic-only — **v3.6.7** (CurrentToolIndex setter stack-trace logging, in place to catch a one-off observation that didn't reproduce)
 - ✅ #65 — root cause of `removeQueuedFurniture` firing for just-placed bed: async removal pipeline, not FTM. No code change; v3.5.35 gate confirmed correct. See `DONE.md` "#53 Bed Bouncing"
-- ⚪ #48 Y button overlap on Xbox/PS layout (chest/inventory)
+- ✅ #48 Y button overlap on Xbox/PS layout — **confirmed stale.** v3.6.8 diagnostic + G Cloud device test showed no double-fire; the v3.3/v3.4 symptom was fixed by intervening input-pipeline work. Diagnostic reverted in **v3.6.9**. See `DONE.md` "#48 X/Y Button Overlap"
 - 🗑 #56 Luna freeze — **dropped 2026-05-13** (cold case; only artifact was a clean v3.3.0 startup log, no freeze captured)
 
 **v3.8.0 — Console Parity: Quick Wins:** #22b dialogue defaults, #17 title cursor, #35 load game cursor, #39 monster eradication, #46 bundle highlight greying, #47 missed rewards chest, #27 toolbar size slider, #19 geode visual feedback.

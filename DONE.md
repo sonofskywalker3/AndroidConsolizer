@@ -425,3 +425,12 @@ Headline release: shop-cursor fixes, CarpenterMenu polish, CC bundle reward menu
 - **Confirmed behaviors in capture:** `OnSaveLoaded` re-equip cycle (`0 → 1 → 0`), `SaveGame.getLoadEnumerator` setting `-1` momentarily during load, every `HandleTriggersDirectly` press edge.
 - **No behavior change.** Just observability.
 - **Files:** `Patches/FarmerPatches.cs`
+
+### #48 X/Y Button Overlap on Xbox/PS Layout — confirmed stale, v3.6.8 + v3.6.9
+- **Reporter:** Nexus user, tested on v3.3 / v3.4 — "pressing Y both picks up a single item AND sorts; the two actions fire simultaneously."
+- **Static analysis (no build):** `ButtonRemapper.Remap` is a dead no-op (X/Y swapping moved to the GetState level long ago); `GameplayButtonPatches` swaps X/Y in menus for Xbox/PS layout (`swapXY = inMenu`); decompiled Android `ItemGrabMenu.receiveGamePadButton` only handles B, and `InventoryPage`/`InventoryMenu.receiveGamePadButton` are effectively empty — so any double-action would have to come from **mod handler vs mod handler** (three uncoordinated paths: `OnButtonsChanged`, the `receiveGamePadButton` prefix chain, and `OnUpdateTicked`'s Y-poll), not mod-vs-vanilla. Couldn't prove the simultaneous double-fire on paper.
+- **v3.6.8 diagnostic:** instrumented all three input paths plus the GetState swap decision with `[XYDiag]` logs (Debug, gated on `VerboseLogging`), capturing pre-swap raw X/Y vs. the swapped identity each handler received.
+- **Device test (G Cloud, Xbox layout):** every X/Y press in chests and inventory produced **exactly one action** — no tick showed both a sort and a pickup. The log shows `Helper.Input.Suppress(ControllerX)` cleanly blocking the second dispatch path. User confirmed the X/Y behaviour "felt correct."
+- **Conclusion:** the v3.3/v3.4 double-fire was resolved incidentally by the intervening input-pipeline rework (the GetState-level swap + the SMAPI `Input.Suppress` path). #48 is stale. v3.6.8 diagnostic reverted in full as **v3.6.9** (it's a closed case, not a "might recur" watch).
+- **Side finding:** the X/Y menu-swap for Xbox/PS layout *is* intended and correct — `docs/BUTTON_MAPPING_REFERENCE.md` previously claimed menus never swap X/Y, which was stale; corrected alongside this closure.
+- **Files (diagnostic, then reverted):** `Patches/GameplayButtonPatches.cs`, `Patches/ItemGrabMenuPatches.cs`, `Patches/InventoryPagePatches.cs`, `ModEntry.cs`, `Patches/InventoryManagementPatches.cs`

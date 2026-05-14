@@ -8,23 +8,6 @@ Shipped: **v3.6.0** (Bug Fix Release). Roadmap structure was re-evaluated post-3
 
 ---
 
-## v3.7.0 — Bug Fix Release 2
-
-Drain the leftover Nexus queue and post-3.6 polish as fast 0.0.1 patches. No multi-patch feature arc — every item should be small, well-scoped, and individually shippable. Ordered by cost-to-investigate so quick wins ship first.
-
-### 48. Xbox/PS Layout — Y Button Overlap in Chests and Inventory
-- **Reporter:** Nexus user, tested on v3.3 and v3.4.
-- **Bug:** On Xbox/PS layout, pressing Y (top physical button) both picks up a single item from a stack AND sorts the inventory/chest. The two actions fire simultaneously, so every single-item pickup also rearranges the container.
-- **Root-cause hypothesis:** ButtonRemapper maps the top physical button by layout position. On Switch, top = X (sort); on Xbox, top = Y (single-item). If remapping causes the raw button to hit one code path and the remapped button to hit another, both actions fire on the same press. Or the sort handler fires on the raw button while the transfer handler fires on the remapped button.
-- **Investigation needed:**
-  1. Trace what `ButtonRemapper.RemapButton()` returns for physical Y on Xbox layout.
-  2. Check if vanilla `receiveGamePadButton` also processes the raw button after our prefix returns false.
-  3. Check if `GetState_Postfix` X/Y swap interferes — swap happens at hardware level and `receiveGamePadButton` prefix sees the already-swapped button.
-  4. Test: does disabling `EnableButtonRemapping` fix the overlap?
-- **Files:** `ButtonRemapper.cs`, `Patches/GameplayButtonPatches.cs`, `Patches/ItemGrabMenuPatches.cs`, `Patches/InventoryPagePatches.cs`.
-
----
-
 ## v3.8.0 — Console Parity: Quick Wins
 
 Small to medium parity fixes that can each be solved with localized patches. No multi-patch system arc. Bumps the mod from "most parity items done" to "every menu has correct defaults and visible cursors."
