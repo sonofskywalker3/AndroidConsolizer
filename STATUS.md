@@ -28,7 +28,7 @@ Roadmap was re-evaluated after v3.6.0 — see [`docs/superpowers/specs/2026-05-0
 |---------|-------|--------|
 | v3.4.x | GameMenu Tabs | **Complete** |
 | v3.5.x → v3.6.0 | Chest & Item Polish + Bug Fix Release | **Complete** |
-| **v3.7.0** | **Bug Fix Release 2** | **Active — 5 of 6 done (v3.6.1 – v3.6.7 local); only #65 + #48 remaining** |
+| **v3.7.0** | **Bug Fix Release 2** | **Active — v3.6.1 – v3.6.7 local; #65 resolved (no code change); only #48 remaining** |
 | v3.8.0 | Console Parity: Quick Wins | Pending |
 | v3.9.0 | Console Parity: Big Systems | Pending |
 | v4.0.0 | The Right Stick Update | Pending |
@@ -49,7 +49,7 @@ See [`TODO.md`](./TODO.md) for full detail. High-level summary:
 - ✅ #63 Pickup steers into the active toolbar row — **v3.6.3 / v3.6.4 / v3.6.5**
 - ✅ #54 Trigger column-skip — **v3.6.6** (hysteresis + 4-tick release confirmation; verified on G Cloud analog 37% → 18% spurious, Gamesir X2 digital 0% spurious)
 - ➕ Diagnostic-only — **v3.6.7** (CurrentToolIndex setter stack-trace logging, in place to catch a one-off observation that didn't reproduce)
-- ⚪ #65 FTM diagnostic — why `removeQueuedFurniture` fires for just-placed bed
+- ✅ #65 — root cause of `removeQueuedFurniture` firing for just-placed bed: async removal pipeline, not FTM. No code change; v3.5.35 gate confirmed correct. See `DONE.md` "#53 Bed Bouncing"
 - ⚪ #48 Y button overlap on Xbox/PS layout (chest/inventory)
 - 🗑 #56 Luna freeze — **dropped 2026-05-13** (cold case; only artifact was a clean v3.3.0 startup log, no freeze captured)
 

@@ -12,18 +12,6 @@ Shipped: **v3.6.0** (Bug Fix Release). Roadmap structure was re-evaluated post-3
 
 Drain the leftover Nexus queue and post-3.6 polish as fast 0.0.1 patches. No multi-patch feature arc — every item should be small, well-scoped, and individually shippable. Ordered by cost-to-investigate so quick wins ship first.
 
-### 65. FTM Diagnostic — Why Does removeQueuedFurniture Fire for Just-Placed Bed?
-- **Source:** v3.5.35 fix works (gates the removal cascade), but it doesn't explain WHY the bed even ends up in the queue when our `canBeRemoved` prefix returned false in the same tick. See `DONE.md` "#53 Bed Bouncing".
-- **Hypotheses (not yet tested):**
-  1. **Farm Type Manager's `HarmonyPatch_DisableFurniturePickup`** postfix on `Furniture.canBeRemoved` runs after our prefix. If FTM unconditionally writes `__result`, it could be overwriting our `false` back to `true`, allowing AttemptRemoval → queue → removeQueuedFurniture.
-  2. **Stale `BedFurniture.AttemptRemoval` mutex callback** from a tick BEFORE pickup, fires on a later tick after the user has placed the bed back, queuing the new bed by GUID.
-- **Why it matters:** If hypothesis 1 is correct, other Harmony postfix conflicts may exist where vanilla-style fixes don't hold. Worth knowing.
-- **Investigation:**
-  1. Check what version of FTM is installed; look at `HarmonyPatch_DisableFurniturePickup` source on GitHub.
-  2. Add a one-shot diagnostic patch that logs `__result` BEFORE and AFTER our prefix for `canBeRemoved` on bed, with a stack trace if `__result` flipped.
-  3. Or: temporarily uninstall FTM and see if the v3.5.34-style `performRemoveAction`-only gate is sufficient (would confirm hypothesis 1).
-- **Effort:** Low — purely diagnostic. Doesn't change the v3.5.35 fix either way. Worth doing if we see analogous issues elsewhere.
-
 ### 48. Xbox/PS Layout — Y Button Overlap in Chests and Inventory
 - **Reporter:** Nexus user, tested on v3.3 and v3.4.
 - **Bug:** On Xbox/PS layout, pressing Y (top physical button) both picks up a single item from a stack AND sorts the inventory/chest. The two actions fire simultaneously, so every single-item pickup also rearranges the container.
