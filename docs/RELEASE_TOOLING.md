@@ -19,26 +19,27 @@ This doc replaces TODO items #66 (Nexus mod-page automation) and #67 (cookie ref
 
 Uses the V2 GraphQL upload action with the user's Nexus API key.
 
-### What's NOT automated
+### What's automated via browser script
 
-- **Mod description** (the long-form BBCode in the page header)
-- **Mod-level version field** (the version shown on the page header — separate from the per-file version)
-- **Changelog entry** on the version-history page
+`release-notes/nexus-update.mjs` (Playwright driving a dedicated logged-in Chrome profile) handles:
 
-These all require browser-side work because the Nexus V2 GraphQL API has no mutations for them, and the V1 REST API is read-only for mod metadata.
+- **Mod description** (the long-form BBCode) — set via the SCEditor instance API plus a real keystroke to dirty Nexus's React form, then verified by reloading the page
+- **Mod-level version field**
+
+### What's still manual
+
+- **Changelog entry** on the version-history page — `unex changelog` can't authenticate against current Nexus (see below). Paste it in the browser from `release-notes/<version>-nexus-changelog.txt`.
+
+The Nexus V2 GraphQL API has no mutations for description/version/changelog and the V1 REST API is read-only for mod metadata — hence the browser-automation approach.
 
 ---
 
-## Manual workflow per release
+## Workflow per release
 
-1. Run `release-notes/build-console-snippet.mjs` to generate the BBCode description for the new version.
-2. PowerShell `Set-Clipboard` puts the BBCode on the clipboard automatically.
-3. Open the mod-page edit URL in your already-logged-in Chrome.
-4. Paste into the description field, save.
-5. Manually edit the mod-level version field on the same page.
-6. Manually post the changelog entry on the version-history page.
-
-Total time: ~30 seconds per release.
+1. `gh release create v<X.Y.Z> "<zip>" ...` — triggers `.github/workflows/publish-nexus.yml`, which uploads the file to Nexus (version, category, archiving handled).
+2. Write `release-notes/<X.Y.Z>-nexus-changelog.txt` and `release-notes/nexus-<X.Y.Z>-description.bbcode`; point `nexus-update.mjs`'s description path at the new bbcode file.
+3. `NEXUS_PW_PROFILE=C:\Users\Jeff\.nexus-automation-profile node release-notes/nexus-update.mjs` — sets the description + mod-level version on the live page and verifies by reloading. First-ever run needs a one-time Nexus login in the popped-up window; later runs are unattended (the dedicated profile stays logged in).
+4. Paste the changelog entry manually on the version-history page (see "What's still manual").
 
 ---
 
@@ -54,7 +55,7 @@ Read-only for mod metadata. Can't update.
 
 ### `unex changelog`
 
-Would post the per-version changelog entry on Nexus's version-history page. Requires a valid session cookie at `~/.nexus_session_cookie`. **Currently expired** (see "Cookie refresh" below).
+Would post the per-version changelog entry, but **doesn't work against current Nexus**: `unex` v3.0.8 only sends the `nexusmods_session` cookie, while Nexus now also requires `nexusmods_session_refresh` (+ `cf_clearance`), and Cloudflare TLS-fingerprints non-browser clients regardless. Refreshing the cookie doesn't fix it — the tool is structurally outdated. Post the changelog manually in the browser.
 
 ### Python `requests` with Firefox cookies
 
@@ -72,16 +73,14 @@ Chrome 127+ has app-bound encryption that blocks even admin-elevated DPAPI acces
 
 Works in theory, but Nexus is an SPA — the description form fields aren't present at first paint, they hydrate later. Auto-detection times out before they appear. Live-paste of pre-built BBCode by the user is faster.
 
-### Best deferred path: Playwright + Chrome remote debugging
+### Implemented: Playwright + a dedicated Chrome profile
 
-Connect Playwright to user's already-running Chrome via remote-debugging port. Preserves auth state and Cloudflare clearance end-to-end.
+`nexus-update.mjs` drives Chrome via Playwright. Two walls, both on Chrome v136+:
 
-Requires user to launch Chrome with:
-```
---remote-debugging-port=9222 --user-data-dir=<their profile>
-```
+- **Can't attach to the real/default profile** — Chrome refuses `--remote-debugging-*` on the default user-data-dir ("requires a non-default data directory").
+- **Can't copy the profile** — a copied profile can't decrypt its cookies (app-bound encryption), so it lands logged-out.
 
-Catch: Chrome blocks debugging on the default profile for security. Needs a profile copy or `--remote-debugging-pipe`. Not implemented yet.
+Solution: a **dedicated** Chrome profile at `C:\Users\Jeff\.nexus-automation-profile` — a non-default path (so debugging works) with its *own* one-time Nexus login (so cookies decrypt). Playwright `launchPersistentContext` against it, using the real Chrome binary. It stays logged in, so subsequent releases are unattended. SCEditor specifics (the description editor) are in memory `nexus-publishing.md`.
 
 ---
 
@@ -108,8 +107,9 @@ Catch: Chrome blocks debugging on the default profile for security. Needs a prof
 
 | File | Purpose |
 |------|---------|
-| `release-notes/build-console-snippet.mjs` | Generates clipboard-ready BBCode for the description |
-| `release-notes/update-nexus-mod-page.mjs` | Reference automation attempt (DevTools snippet path; doesn't currently work because of SPA hydration) |
+| `release-notes/nexus-update.mjs` | **Working** description + version updater — Playwright driving a dedicated logged-in Chrome profile |
+| `release-notes/build-console-snippet.mjs` | Generates a clipboard-ready DevTools snippet for the description (manual fallback path) |
+| `release-notes/update-nexus-mod-page.mjs` | Superseded by `nexus-update.mjs`; kept as reference (old DevTools-snippet attempt) |
 | `release-notes/dump-firefox-cookies.py` | Reference: extract Firefox cookies (works but Cloudflare blocks the resulting request) |
 | `release-notes/dump-chrome-cookies.py` | Reference: extract Chrome cookies (blocked by app-bound encryption since Chrome 127+) |
 | `.github/workflows/publish-nexus.yml` | The actual working publish workflow (V2 GraphQL upload action) |
