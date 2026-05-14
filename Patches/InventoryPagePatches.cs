@@ -87,10 +87,6 @@ namespace AndroidConsolizer.Patches
                 // Remap button based on configured button style
                 Buttons remapped = ButtonRemapper.Remap(b);
 
-                // [XYDiag] #48 — log X/Y presses reaching the GameMenu handler, with raw identity.
-                if (ModEntry.Config.VerboseLogging && (b == Buttons.X || b == Buttons.Y))
-                    Monitor.Log($"[XYDiag] GameMenu.receiveGamePadButton b={b} | raw(X={GameplayButtonPatches.RawXPressed},Y={GameplayButtonPatches.RawYPressed}) tick={Game1.ticks}", LogLevel.Debug);
-
                 if (ModEntry.Config.VerboseLogging)
                     Monitor.Log($"GameMenu (inventory) button: {b} (remapped={remapped})", LogLevel.Debug);
 
@@ -149,10 +145,6 @@ namespace AndroidConsolizer.Patches
                 // Remap button based on configured button style
                 Buttons remapped = ButtonRemapper.Remap(b);
 
-                // [XYDiag] #48 — log X/Y presses reaching the InventoryPage handler, with raw identity.
-                if (ModEntry.Config.VerboseLogging && (b == Buttons.X || b == Buttons.Y))
-                    Monitor.Log($"[XYDiag] InventoryPage.receiveGamePadButton b={b} | raw(X={GameplayButtonPatches.RawXPressed},Y={GameplayButtonPatches.RawYPressed}) tick={Game1.ticks}", LogLevel.Debug);
-
                 if (ModEntry.Config.VerboseLogging)
                     Monitor.Log($"InventoryPage button: {b} (remapped={remapped})", LogLevel.Debug);
 
@@ -207,10 +199,6 @@ namespace AndroidConsolizer.Patches
             try
             {
                 Buttons remapped = ButtonRemapper.Remap(b);
-
-                // [XYDiag] #48 — log X/Y presses reaching the InventoryMenu handler, with raw identity.
-                if (ModEntry.Config.VerboseLogging && (b == Buttons.X || b == Buttons.Y))
-                    Monitor.Log($"[XYDiag] InventoryMenu.receiveGamePadButton b={b} | raw(X={GameplayButtonPatches.RawXPressed},Y={GameplayButtonPatches.RawYPressed}) tick={Game1.ticks}", LogLevel.Debug);
 
                 // Block A button when console inventory is enabled
                 // EXCEPT when AllowGameAPress is set (non-inventory slot like equipment, sort, trash)

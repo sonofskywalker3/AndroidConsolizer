@@ -312,14 +312,6 @@ namespace AndroidConsolizer.Patches
             GamePadState gpState = GamePad.GetState(PlayerIndex.One);
             bool isYButtonDown = gpState.Buttons.Y == ButtonState.Pressed;
 
-            // [XYDiag] #48 — log what the OnUpdateTicked Y-poll observes on each edge, with raw identity.
-            // gpState here is the post-swap state; raw(X,Y) shows the pre-swap hardware truth.
-            if (ModEntry.Config.VerboseLogging && isYButtonDown != WasYButtonDown)
-            {
-                bool polledX = gpState.Buttons.X == ButtonState.Pressed;
-                Monitor?.Log($"[XYDiag] OnUpdateTicked Y-poll edge: polledX={polledX} polledY={isYButtonDown} | raw(X={GameplayButtonPatches.RawXPressed},Y={GameplayButtonPatches.RawYPressed}) tick={Game1.ticks}", LogLevel.Debug);
-            }
-
             // Also check remapped button (if using Xbox layout, Y might be remapped)
             // For now, check raw Y button state
 
