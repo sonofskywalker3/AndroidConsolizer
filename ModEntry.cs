@@ -162,6 +162,7 @@ namespace AndroidConsolizer
             Patches.GameMenuPatches.Apply(harmony, this.Monitor);
             Patches.OptionsPagePatches.Apply(harmony, this.Monitor);
             Patches.DialogueBoxPatches.Apply(harmony, this.Monitor);
+            Patches.TitleMenuPatches.Apply(harmony, this.Monitor);
             Patches.BootDiagnosticPatches.Apply(harmony, this.Monitor);
             Patches.BootDiagnosticPatches.ApplyAdditionalPatches(harmony, this.Monitor);
 
