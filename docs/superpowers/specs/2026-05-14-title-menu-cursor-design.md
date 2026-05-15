@@ -3,7 +3,72 @@
 **Date:** 2026-05-14
 **Milestone:** v3.8.0 — Console Parity: Quick Wins
 **TODO item:** #17 — Title/Main Menu Cursor Fix
-**Target version:** v3.7.2
+**Target version:** v3.7.4 (originally v3.7.2; revised after device diagnostic)
+
+> ## Revision — 2026-05-15
+>
+> The v3.7.2 fix shipped from this spec did **not** work on device. A v3.7.3
+> diagnostic build (state-change log + unconditional `mouseCursorTransparency = 1f`
+> with no gates and no cursor-move) revealed that the spec's root cause was
+> wrong in two big ways:
+>
+> 1. **`Game1.options.snappyMenus = True` on the Ayaneo.** The "snap to default
+>    never runs" theory is dead — `currentlySnappedComponent = 81116` (Load
+>    button) is set from frame 1 of the title menu. The position layer was never
+>    broken on this device. (The project-wide "snappyMenus is False on Android"
+>    assumption baked into `OptionsPagePatches.cs` comments evidently doesn't
+>    hold for Ayaneo handhelds — likely a per-device or settings difference.)
+> 2. **`Game1.mouseCursorTransparency = 1f` from the first frame.** The
+>    "transparency starts at 0 until first stick input" theory is also dead —
+>    transparency is already 1 at title load. The DONE.md #40a precedent does
+>    not apply *to this trigger*; v3.7.2's force-set was a no-op against an
+>    already-correct value.
+>
+> Yet the cursor is still invisible until first stick input. At the moment the
+> player is sitting on the title screen: transparency = 1, mouse positioned on
+> the Load button, `gamepadControls = True`, `snappyMenus = True`, no sub-menu —
+> all the input data is correct and the cursor is still not rendered. That is a
+> **draw-path problem**: the game's own `drawMouse` on the Android title screen
+> is producing no visible output despite correct input state. (Why is unclear
+> from static reading — `ShouldDrawCursor()` should return true with the
+> observed state. Likely either some hidden timer/state we didn't capture,
+> Android-specific suppression inside `drawMouse`, or a draw at a position the
+> player can't perceive as a cursor.)
+>
+> Side finding from the diagnostic: `GamePad.GetState(PlayerIndex.One).IsConnected
+> = False` on the Ayaneo despite the built-in controller. The Ayaneo's gamepad
+> doesn't surface through XInput; `Game1.options.gamepadControls` is `True` via
+> the `gamepadMode = Auto` setting. **`GamePad.IsConnected` is not a reliable
+> gate signal on this device** — use `Game1.options.gamepadControls`.
+>
+> ### Corrected approach (replaces "Approach A" below)
+>
+> Use **Approach B** (originally listed as a fallback): draw the mouse cursor
+> sprite ourselves in a `TitleMenu.draw(SpriteBatch)` postfix, bypassing the
+> game's broken-on-title-Android `drawMouse`. The state-supply work from
+> Approach A is removed — it was solving non-problems. Same pattern as
+> `Patches/ShopMenuPatches.cs` (DONE.md #40a, shop sell-tab cursor) but
+> triggered for a different reason: there it was transparency = 0; here it is
+> `drawMouse` producing no output.
+>
+> Implementation summary:
+>
+> - Replace the v3.7.2 `TitleMenu.update()` postfix entirely (it was ineffective).
+> - New Harmony **postfix** on `TitleMenu.draw(SpriteBatch)`.
+> - Gate: `Game1.options.gamepadControls && !Game1.lastCursorMotionWasMouse`
+>   AND `__instance.titleInPosition` AND `TitleMenu.subMenu == null`.
+>   (`GamePad.IsConnected` deliberately NOT used — unreliable on Ayaneo.)
+>   (`buttonsToShow >= numberOfButtons` deliberately NOT a gate — the v3.7.3
+>   log showed the title can be in `titleInPosition = True` while
+>   `buttonsToShow < numberOfButtons`; rejecting that state would leave the
+>   cursor invisible even when the player can see the menu.)
+> - Action: `b.Draw(Game1.mouseCursors, new Vector2(Game1.getMouseX(), Game1.getMouseY()), Game1.getSourceRectForStandardTileSheet(Game1.mouseCursors, cursorTile, 16, 16), Color.White, 0f, Vector2.Zero, 4f + Game1.dialogueButtonScale / 150f, SpriteEffects.None, 1f);`
+>   where `cursorTile = Game1.options.snappyMenus ? 44 : Game1.mouseCursor`
+>   (matches the `Patches/ShopMenuPatches.cs:1207` precedent).
+> - Target version: **v3.7.4** (v3.7.3 was the diagnostic).
+>
+> The rest of the original spec below is retained for historical context but
+> should be read as **superseded** by this revision.
 
 ## Problem
 
