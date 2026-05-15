@@ -538,3 +538,63 @@ Single commit:
 5. From a fresh entry: **DPadDown** → cursor + highlight both move to slot 1.
 6. **A** on slot 1 → loads slot 1.
 7. From a fresh entry: **B** → closes back to title.
+
+## Revision 5 — 2026-05-15 (Phase 6: v3.7.10 — clamp scroll offset for the missing-boundary vanilla bug)
+
+### What v3.7.9 device test on G Cloud showed
+
+- **Touch-tap entry: cursor invisible.** User explicitly said this doesn't matter — they're a controller-only user and accept the touch-mix quirks.
+- **Controller entry + DPadDown: ✓.** Cursor + highlight both move correctly.
+- **DPadUp from slot 3 (with 4 saves): ✗.** "Moves the list way up so only 2 slots are visible at the top of the screen and the cursor stays in the bottom half with nothing selected."
+
+### Root cause (vanilla bug exposed by working controller nav)
+
+`LoadGameMenu.receiveGamePadButton` (decompile) has asymmetric scroll handling:
+
+- **DPadDown** (line 543) only scrolls when `_joypadSelectedItemIndex > 1 && _joypadSelectedItemIndex < MenuSlots.Count - 2` — so with 4 saves, this check is never true and DPadDown never scrolls.
+- **DPadUp** (line 533) **unconditionally** scrolls: `scrollArea.setYOffsetForScroll(-_joypadSelectedItemIndex * itemHeight)`. No boundary check.
+
+With 4 saves and `itemsPerPage=4`, moving from slot 3 → slot 2 sets scroll offset to `-2 * 200 = -400`. The list shifts up by 400 px — slots 0/1 disappear off the top, slots 2/3 hang at the top (the "only 2 visible" symptom). Meanwhile the cursor sits at absolute pixel coordinates from before the scroll, so it now sits in mid-screen on no slot.
+
+This is pre-existing vanilla. It only surfaces now because v3.7.9 made controller navigation usable far enough to trigger it.
+
+### Decision
+
+Add a third mechanism to `Update_Postfix`: a scroll-offset clamp.
+
+After the entry-snap and auto-sync blocks, if `MenuSlots != null && scrollArea != null`:
+
+1. Compute `maxScrollMagnitude = max(0, (MenuSlots.Count - itemsPerPage) * itemHeight)` where `itemHeight = 200` (constant from decompile line 268; `itemsPerPage` is public, line 264).
+2. Read `currentOffset = scrollArea.getYOffsetForScroll()`.
+3. Clamp to `[-maxScrollMagnitude, 0]`.
+4. If clamped value differs, write it back via `setYOffsetForScroll(clampedOffset)`.
+5. **And** call `snapCursorToCurrentSnappedComponent()` — the scroll change relocates slot bounds, so the cursor needs to follow to stay on the snapped slot.
+
+When `MenuSlots.Count <= itemsPerPage` (no scrolling needed), `maxScrollMagnitude = 0`, clamp range is `[0, 0]`, every non-zero offset gets reset. Exactly the fix for the user's case.
+
+### What this does and doesn't do
+
+- ✓ Fixes scroll overshoot from the missing DPadUp boundary check.
+- ✓ Keeps cursor aligned to its snapped slot after the clamp via `snapCursorToCurrentSnappedComponent()`.
+- ✗ Does not change vanilla scroll *intent* when scrolling is legitimately needed (N > itemsPerPage and the user is in the middle of the list). Clamping only kicks in when the offset is out of valid range.
+- ✗ Does not patch `MobileScrollbox` itself — that would affect every scrollbox in the game. Patch is local to `LoadGameMenu.update`.
+
+### Files
+
+| File | Change |
+|---|---|
+| `Patches/LoadGameMenuPatches.cs` | Add scroll-offset clamp block at the end of `Update_Postfix`. New constants: `ItemHeight = 200`. |
+| `manifest.json` | Bump `Version` to `3.7.10`. |
+
+Single commit:
+`v3.7.10: #35 LoadGameMenu — clamp scroll offset for the missing-boundary DPadUp vanilla bug`.
+
+### Test plan (G Cloud)
+
+1. Build, deploy.
+2. Controller-enter LoadGameMenu (controller A on title-screen Load button).
+3. **DPadDown 3 times** → cursor + highlight reach slot 3 (4th save), no scroll change (correct: 4 saves all fit on screen).
+4. **DPadUp** → cursor + highlight back to slot 2, **list does NOT scroll** (4 saves still all visible).
+5. **DPadUp** twice more → back to slot 0. Still no scroll.
+6. **A** → loads slot 0.
+7. (Optional, if you have >itemsPerPage saves to test legitimate scrolling) navigate down past the visible page and confirm the list scrolls correctly within bounds.
