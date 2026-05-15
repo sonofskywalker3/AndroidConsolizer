@@ -343,3 +343,68 @@ for any other menu.
 - The delete-confirmation dialog — already works on Android via
   `confirmBox.receiveGamePadButton(b)` delegation (decompile line
   516–518) and the focus-snap-to-cancel-button on open (line 763).
+
+## Revision 2 — 2026-05-15 (Phase 3: v3.7.7 diagnostic, v3.7.6 fix only partly worked)
+
+### What v3.7.6 device test on G Cloud showed
+
+The user's report after v3.7.6 deploy (15:33 G Cloud):
+
+1. **Slot 0 highlight on entry: ✓.** `_joypadSelectedItemIndex = 0` is taking effect.
+2. **Cursor invisible on entry: ✗.** `snapToDefaultClickableComponent()` moved the system mouse to slot 0 center, but `drawMouse` apparently skips drawing — likely the same `lastCursorMotionWasMouse=True` after touch entry that #17 v3.7.4 hit on TitleMenu.
+3. **DPadDown moves cursor to slot 1 BUT slot 0 stays highlighted: ✗.** The user has to navigate back to slot 0 then forward to slot 1 to fix the highlight. New regression introduced by v3.7.6.
+
+### Hypothesis
+
+`LoadGameMenu` has two parallel state systems:
+
+| State | Drives | Updated by |
+|---|---|---|
+| `_joypadSelectedItemIndex` | Slot **highlight** (`drawSlotBackground` colors slot Wheat at `_joypadSelectedItemIndex == i`, decompile line 899–902) | `LoadGameMenu.receiveGamePadButton` switch path (line 543–555) |
+| `currentlySnappedComponent` | Cursor **position** (snappy nav reads neighbour IDs) | `IClickableMenu` snappy nav (`applyMovementKey`) |
+
+Vanilla Stardew likely has input dispatch logic of the form: "if `snappyMenus && currentlySnappedComponent != null && input has a valid neighbour direction`, snappy nav handles the input AND `receiveGamePadButton` is skipped." The v3.7.5 diagnostic saw `receiveGamePadButton` fire for DPadUp when `currentlySnappedComponent` was still null (lines 283 in archived log) — but it might NOT fire when `currentlySnappedComponent` is non-null with valid neighbours.
+
+v3.7.6 pre-sets both `_joypadSelectedItemIndex = 0` AND `currentlySnappedComponent = slot 0` (via `snapToDefaultClickableComponent`). That re-routes DPadDown through snappy nav only, which advances `currentlySnappedComponent` to slot 1 (cursor moves) but **never touches `_joypadSelectedItemIndex`** (highlight stays on slot 0). Matches the user's report exactly.
+
+### What the v3.7.7 diagnostic must answer
+
+1. **Does `LoadGameMenu.receiveGamePadButton` fire for DPadDown after our snap?**
+   - YES → hypothesis wrong; receiveGamePadButton is being called but not incrementing — re-think.
+   - NO → hypothesis confirmed; snappy nav consumed it. v3.7.8 fix: don't pre-set `currentlySnappedComponent`, only set `_joypadSelectedItemIndex` (and possibly `Game1.setMousePosition` directly).
+2. **What is `lastCursorMotionWasMouse` and `mouseCursorTransparency` at the moment the user expects to see the cursor on entry?** Confirms whether the cursor invisibility is the same `lastMotionMouse` family of issues as #17.
+
+### Diagnostic design (v3.7.7)
+
+**Keep the v3.7.6 fix code intact** so we observe the buggy state — vanilla state was already captured in the v3.7.5 diagnostic.
+
+Extend `Patches/LoadGameMenuPatches.cs` with two diagnostic patches (added to the same file; will be removed in v3.7.8 when we ship the real fix). Same shape as the v3.7.5 diagnostic:
+
+1. **Extend `Update_Postfix`** with on-change-only state logging (state hash compare), capped at 30 unique snapshots. Logged fields: `snappy`, `gamepad`, `lastMotionMouse`, `cursorAlpha`, `mouse(x,y)`, `snapped` (id/region/bounds or null), `_joypadSelectedItemIndex` (reflection), `currentItemIndex` (reflection), `slotCount`, AND `weSnapped` (one-shot bool: did our v3.7.6 snap path execute this tick?).
+2. **New `ReceiveGamePadButton_Prefix`** logs every gamepad button press + the current `_joypadSelectedItemIndex` and `currentlySnappedComponent` id. Capped at 50 entries. **This is the key data point** — its presence/absence for DPadDown tells us whether snappy nav consumes the input.
+
+All log lines prefixed `[LoadGameDiag]` for grep continuity with v3.7.5. Both patches in try/catch, error-swallowed.
+
+### Files
+
+| File | Change |
+|---|---|
+| `Patches/LoadGameMenuPatches.cs` | Extend with diagnostic logging in `Update_Postfix` + new `ReceiveGamePadButton_Prefix` patch + reflection lookups for `_joypadSelectedItemIndex` and `currentItemIndex` (the latter is new — was only in the old diagnostic file). v3.7.6 fix code stays intact. |
+| `manifest.json` | Bump `Version` to `3.7.7`. |
+
+Single commit:
+`v3.7.7: #35 LoadGameMenu diagnostic — log dispatch path after v3.7.6 partial fix`.
+
+### Test plan (G Cloud)
+
+1. Build, deploy via `SyncdewValley/sync.ps1 deploy`.
+2. Boot to title.
+3. **Touch-tap** Load Game.
+4. Wait ~2 sec for save list.
+5. **DPadDown once.** (This is the one that exposes the dispatch question.)
+6. **DPadDown a second time** (to confirm whether the desync is one-shot or persistent).
+7. **DPadUp once.** (To compare with v3.7.5 vanilla DPadUp data.)
+8. **A** to load (or **B** to close — either works for ending the test).
+9. Log pull is automatic (Claude pulls).
+
+Phase 4 (v3.7.8 real fix) gets designed from the result.
