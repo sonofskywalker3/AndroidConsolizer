@@ -644,3 +644,56 @@ Single commit:
 5. **DPadUp** twice more → slot 0, still no flicker.
 6. **DPadDown** back to slot 3 → still no flicker.
 7. **A** → loads slot 0 (or wherever cursor ends up).
+
+## Revision 7 — 2026-05-15 (Phase 8: v3.7.12 — sync cursor to confirm dialog selection)
+
+### What v3.7.11 device test on G Cloud showed
+
+User: "When I click on the trashcan, it brings up the dialog box, and the selection moves between the icons correctly, but the cursor is still bouncing between the save and trashcan icons. I can even move it up and down."
+
+The dialog's logical focus (which OK/Cancel button is selected) is correct, but the visible cursor doesn't follow it.
+
+### Root cause
+
+`LoadGameMenu.receiveGamePadButton` (decompile line 514–518) correctly delegates input to `confirmBox` when the dialog is open:
+
+```csharp
+if (confirmBox != null) {
+    confirmBox.receiveGamePadButton(b);
+    return;
+}
+```
+
+But that only short-circuits the `receiveGamePadButton` path. `IClickableMenu`'s **separate snappy-nav path** (the one that reads `GamePad.GetState` directly and runs `applyMovementKey`) does not check `confirmBox` and keeps operating on `LoadGameMenu`'s own components. The slot buttons and delete buttons have valid neighbour wiring (decompile lines 996–1012), so snappy nav happily walks the cursor between them — independent of the dialog's logical focus. Two parallel input systems, one oblivious to the modal dialog.
+
+### Decision
+
+In `Update_Postfix`, before running our other logic, check if `confirmBox != null` (private field, decompile line 272 — reflection required). If yes, the LoadGameMenu's own snap state isn't in play. Force the cursor onto the dialog's currently-selected button by calling `confirmBox.snapCursorToCurrentSnappedComponent()`, which positions it at `confirmBox.currentlySnappedComponent.bounds.Center`.
+
+This runs every tick, overwriting any cursor position snappy nav set during that frame. The visible cursor follows the dialog's logical focus.
+
+Skip all other Update_Postfix logic when confirm dialog is open — entry-snap, auto-sync, scroll clamp are all irrelevant while modal.
+
+### Why not block snappy nav directly
+
+Snappy nav lives in `IClickableMenu` and is shared across every menu in the game. Patching it would risk regressions in unrelated menus. The "fix the cursor location instead" approach is local to LoadGameMenu and uses pure vanilla method calls.
+
+### Files
+
+| File | Change |
+|---|---|
+| `Patches/LoadGameMenuPatches.cs` | Add `_confirmBoxField` reflection lookup at `Apply()`. Add early-return block at the top of `Update_Postfix` that syncs cursor to `confirmBox.currentlySnappedComponent` when the dialog is open. |
+| `manifest.json` | Bump `Version` to `3.7.12`. |
+
+Single commit:
+`v3.7.12: #35 LoadGameMenu — sync cursor to confirmBox selection while delete dialog is open`.
+
+### Test plan (G Cloud)
+
+1. Build, deploy.
+2. Controller-enter LoadGameMenu (controller A on title-screen Load button).
+3. Touch-tap a trashcan icon to open the delete confirm dialog.
+4. Press DPad in any direction to move dialog focus between OK/Cancel.
+5. **Confirm cursor follows the focused button** — does NOT bounce between save row and trashcan icons.
+6. Press B (or tap Cancel) to close dialog without deleting.
+7. Confirm normal navigation resumes (cursor + highlight back on a save slot).
