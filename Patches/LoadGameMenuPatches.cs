@@ -2,54 +2,61 @@ using System;
 using System.Reflection;
 using HarmonyLib;
 using Microsoft.Xna.Framework;
-using Microsoft.Xna.Framework.Input;
 using StardewModdingAPI;
-using StardewValley;
 using StardewValley.Menus;
 
 namespace AndroidConsolizer.Patches
 {
     /// <summary>
-    /// v3.7.6 fix + v3.7.7 diagnostic — #35 LoadGameMenu cursor on slot 0.
+    /// v3.7.8 fix — #35 LoadGameMenu cursor / highlight on slot 0.
     ///
-    /// Fix (v3.7.6, retained): On a fresh LoadGameMenu instance once the
-    /// async save scan completes, set _joypadSelectedItemIndex = 0 and call
-    /// snapToDefaultClickableComponent() so slot 0 is highlighted and the
-    /// cursor sits on it.
+    /// Two complementary mechanisms in a single update postfix, both via
+    /// reflection on the private _joypadSelectedItemIndex field:
     ///
-    /// Diagnostic (v3.7.7, to be removed in v3.7.8): The v3.7.6 fix was
-    /// only partially correct on G Cloud — slot 0 highlights on entry but
-    /// (a) the cursor isn't visible and (b) DPadDown moves the cursor to
-    /// slot 1 yet leaves slot 0 highlighted (the highlight and cursor
-    /// state systems desync). Hypothesis: with currentlySnappedComponent
-    /// pre-set, snappy nav consumes DPadDown and LoadGameMenu's
-    /// receiveGamePadButton (which is what advances _joypadSelectedItemIndex)
-    /// is never called. Two log patches confirm or refute this:
+    ///   1. One-shot on entry — when _joypadSelectedItemIndex is still -1
+    ///      and the async save scan has populated slotButtons, set it to 0
+    ///      so slot 0 is highlighted (drawSlotBackground colors slot Wheat
+    ///      at _joypadSelectedItemIndex == i, decompile line 899-902). Self-
+    ///      resetting via vanilla state — a fresh LoadGameMenu instance
+    ///      starts with _joypadSelectedItemIndex = -1, so the gate naturally
+    ///      closes after our snap and re-opens on the next instance. No
+    ///      static "did we snap" flag needed.
     ///
-    ///   1. Update_Postfix logs gate state on change (snappy, gamepad,
-    ///      lastMotionMouse, cursorAlpha, mouse XY, snapped, _joypadIdx,
-    ///      currentItemIndex, slotCount, weSnapped) — capped at 30 unique
-    ///      snapshots.
-    ///   2. ReceiveGamePadButton_Prefix logs every button press + state —
-    ///      capped at 50. Its presence/absence for DPadDown answers the
-    ///      dispatch question.
+    ///   2. Auto-sync every tick — if currentlySnappedComponent is a slot
+    ///      button (region == 900, set in recalculateSlots line 995) and its
+    ///      myID disagrees with _joypadSelectedItemIndex, write the
+    ///      component's myID to _joypadSelectedItemIndex. Keeps the
+    ///      highlight in step with the cursor regardless of which input
+    ///      path moved it (snappy nav OR LoadGameMenu.receiveGamePadButton's
+    ///      switch). Eliminates the v3.7.6 desync that occurred when the
+    ///      snappy-nav path advanced currentlySnappedComponent without
+    ///      _joypadSelectedItemIndex following along.
+    ///
+    /// What this does NOT do:
+    ///   - No call to snapToDefaultClickableComponent — the v3.7.7
+    ///     diagnostic confirmed it silently fails when invoked from the
+    ///     update postfix (allClickableComponents not populated yet, so
+    ///     getComponentWithID(0) returns null and the snap is a no-op).
+    ///   - No currentlySnappedComponent manipulation — let vanilla manage
+    ///     the cursor; we only sync the highlight.
+    ///   - No cursor-draw patch. Touch-entry sets lastCursorMotionWasMouse
+    ///     = True, which suppresses drawMouse on entry. The cursor becomes
+    ///     visible on the first controller press (vanilla behaviour). If a
+    ///     visible-cursor-on-entry fix is wanted later, that's a separate
+    ///     LoadGameMenu.draw postfix patch (parallel to #17 v3.7.4 for
+    ///     TitleMenu).
     ///
     /// Spec: docs/superpowers/specs/2026-05-15-load-game-cursor-design.md
-    /// (Revision 2 — 2026-05-15 / Phase 3).
+    /// (Revision 3 — 2026-05-15 / Phase 4).
     /// </summary>
     internal static class LoadGameMenuPatches
     {
-        private const int MaxStateSnapshots = 30;
-        private const int MaxButtonLogs = 50;
-        private const int FieldUnavailable = -999;
+        private const int DefaultSlotIndex = 0;
+        private const int SlotRegion = 900;
+        private const int JoypadIndexUnclaimed = -1;
 
         private static IMonitor Monitor;
         private static FieldInfo _joypadSelectedItemIndexField;
-        private static FieldInfo _currentItemIndexField;
-
-        private static int _stateSnapshotCount;
-        private static int _buttonLogCount;
-        private static string _lastStateHash;
 
         public static void Apply(Harmony harmony, IMonitor monitor)
         {
@@ -60,13 +67,7 @@ namespace AndroidConsolizer.Patches
                 _joypadSelectedItemIndexField = AccessTools.Field(typeof(LoadGameMenu), "_joypadSelectedItemIndex");
                 if (_joypadSelectedItemIndexField == null)
                 {
-                    Monitor.Log("[LoadGameMenu] Reflection: _joypadSelectedItemIndex not found — fix postfix will no-op, diagnostic will report -999.", LogLevel.Warn);
-                }
-
-                _currentItemIndexField = AccessTools.Field(typeof(LoadGameMenu), "currentItemIndex");
-                if (_currentItemIndexField == null)
-                {
-                    Monitor.Log("[LoadGameMenu] Reflection: currentItemIndex not found — diagnostic will report -999.", LogLevel.Warn);
+                    Monitor.Log("[LoadGameMenu] Reflection: _joypadSelectedItemIndex not found — postfix will no-op.", LogLevel.Warn);
                 }
 
                 var update = AccessTools.Method(
@@ -79,29 +80,12 @@ namespace AndroidConsolizer.Patches
                         original: update,
                         postfix: new HarmonyMethod(typeof(LoadGameMenuPatches), nameof(Update_Postfix))
                     );
+                    Monitor.Log("[LoadGameMenu] Patches applied (v3.7.8 fix).", LogLevel.Trace);
                 }
                 else
                 {
-                    Monitor.Log("[LoadGameMenu] LoadGameMenu.update not found — Update_Postfix skipped.", LogLevel.Warn);
+                    Monitor.Log("[LoadGameMenu] LoadGameMenu.update not found — patch skipped.", LogLevel.Warn);
                 }
-
-                var receiveGamePad = AccessTools.Method(
-                    typeof(LoadGameMenu),
-                    nameof(LoadGameMenu.receiveGamePadButton),
-                    new[] { typeof(Buttons) });
-                if (receiveGamePad != null)
-                {
-                    harmony.Patch(
-                        original: receiveGamePad,
-                        prefix: new HarmonyMethod(typeof(LoadGameMenuPatches), nameof(ReceiveGamePadButton_Prefix))
-                    );
-                }
-                else
-                {
-                    Monitor.Log("[LoadGameMenu] LoadGameMenu.receiveGamePadButton not found — diagnostic prefix skipped.", LogLevel.Warn);
-                }
-
-                Monitor.Log("[LoadGameMenu] Patches applied (v3.7.7 fix + diagnostic).", LogLevel.Trace);
             }
             catch (Exception ex)
             {
@@ -109,114 +93,31 @@ namespace AndroidConsolizer.Patches
             }
         }
 
-        /// <summary>
-        /// Fix path: snap _joypadSelectedItemIndex = 0 + currentlySnappedComponent
-        /// = slot 0 on first update with slots loaded.
-        /// Diagnostic path: log gate state on change.
-        /// </summary>
         private static void Update_Postfix(LoadGameMenu __instance, GameTime time)
         {
-            bool weSnapped = false;
             try
             {
-                bool canSnap =
-                    __instance.currentlySnappedComponent == null
-                    && __instance.slotButtons != null
-                    && __instance.slotButtons.Count > 0
-                    && _joypadSelectedItemIndexField != null;
+                if (_joypadSelectedItemIndexField == null) return;
 
-                if (canSnap)
+                int joypadIdx = (int)_joypadSelectedItemIndexField.GetValue(__instance);
+
+                if (joypadIdx == JoypadIndexUnclaimed
+                    && __instance.slotButtons != null
+                    && __instance.slotButtons.Count > 0)
                 {
-                    _joypadSelectedItemIndexField.SetValue(__instance, 0);
-                    __instance.snapToDefaultClickableComponent();
-                    weSnapped = true;
+                    _joypadSelectedItemIndexField.SetValue(__instance, DefaultSlotIndex);
+                    return;
                 }
 
-                LogStateOnChange(__instance, weSnapped);
+                var snapped = __instance.currentlySnappedComponent;
+                if (snapped != null && snapped.region == SlotRegion && snapped.myID != joypadIdx)
+                {
+                    _joypadSelectedItemIndexField.SetValue(__instance, snapped.myID);
+                }
             }
             catch (Exception ex)
             {
                 Monitor?.Log($"[LoadGameMenu] Update_Postfix error: {ex.Message}", LogLevel.Error);
-            }
-        }
-
-        /// <summary>
-        /// Diagnostic prefix: logs every gamepad button reaching LoadGameMenu.
-        /// Absence of an entry for a press means the input was consumed
-        /// upstream (likely by IClickableMenu snappy nav).
-        /// </summary>
-        private static void ReceiveGamePadButton_Prefix(LoadGameMenu __instance, Buttons b)
-        {
-            try
-            {
-                if (_buttonLogCount >= MaxButtonLogs) return;
-
-                int joypadIdx = ReadIntField(_joypadSelectedItemIndexField, __instance);
-                int slotCount = __instance.MenuSlots?.Count ?? -1;
-                var snapped = __instance.currentlySnappedComponent;
-                string snappedDesc = snapped != null
-                    ? $"id={snapped.myID},region={snapped.region}"
-                    : "null";
-
-                Monitor.Log(
-                    $"[LoadGameDiag] receiveGamePadButton b={b} "
-                    + $"_joypadSelectedItemIndex={joypadIdx} snapped={snappedDesc} slotCount={slotCount}",
-                    LogLevel.Info);
-
-                _buttonLogCount++;
-            }
-            catch (Exception ex)
-            {
-                Monitor?.Log($"[LoadGameMenu] ReceiveGamePadButton_Prefix error: {ex.Message}", LogLevel.Error);
-            }
-        }
-
-        private static void LogStateOnChange(LoadGameMenu __instance, bool weSnapped)
-        {
-            if (_stateSnapshotCount >= MaxStateSnapshots) return;
-
-            int joypadIdx = ReadIntField(_joypadSelectedItemIndexField, __instance);
-            int currentIdx = ReadIntField(_currentItemIndexField, __instance);
-
-            var snapped = __instance.currentlySnappedComponent;
-            string snappedDesc = snapped != null
-                ? $"id={snapped.myID},region={snapped.region},bounds=({snapped.bounds.X},{snapped.bounds.Y},{snapped.bounds.Width},{snapped.bounds.Height})"
-                : "null";
-
-            int slotCount = __instance.MenuSlots?.Count ?? -1;
-            int mouseX = Game1.getMouseX();
-            int mouseY = Game1.getMouseY();
-
-            string hash =
-                $"{Game1.options.snappyMenus}|{Game1.options.gamepadControls}|{Game1.lastCursorMotionWasMouse}"
-                + $"|{Game1.mouseCursorTransparency}|{mouseX}|{mouseY}|{snappedDesc}"
-                + $"|{joypadIdx}|{currentIdx}|{slotCount}|{weSnapped}";
-
-            if (hash == _lastStateHash) return;
-            _lastStateHash = hash;
-
-            Monitor.Log(
-                $"[LoadGameDiag] snapshot={_stateSnapshotCount} "
-                + $"snappy={Game1.options.snappyMenus} gamepad={Game1.options.gamepadControls} "
-                + $"lastMotionMouse={Game1.lastCursorMotionWasMouse} cursorAlpha={Game1.mouseCursorTransparency} "
-                + $"mouse=({mouseX},{mouseY}) snapped={snappedDesc} "
-                + $"_joypadSelectedItemIndex={joypadIdx} currentItemIndex={currentIdx} slotCount={slotCount} "
-                + $"weSnapped={weSnapped}",
-                LogLevel.Info);
-
-            _stateSnapshotCount++;
-        }
-
-        private static int ReadIntField(FieldInfo field, object instance)
-        {
-            if (field == null) return FieldUnavailable;
-            try
-            {
-                return (int)field.GetValue(instance);
-            }
-            catch
-            {
-                return FieldUnavailable;
             }
         }
     }
