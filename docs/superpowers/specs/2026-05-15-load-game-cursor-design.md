@@ -697,3 +697,51 @@ Single commit:
 5. **Confirm cursor follows the focused button** — does NOT bounce between save row and trashcan icons.
 6. Press B (or tap Cancel) to close dialog without deleting.
 7. Confirm normal navigation resumes (cursor + highlight back on a save slot).
+
+## Revision 8 — 2026-05-15 (Phase 9: v3.7.13 — read ConfirmationDialog._selectedButton, not its currentlySnappedComponent)
+
+### What v3.7.12 device test on G Cloud showed
+
+User: "tested, everything is exactly the same."
+
+The v3.7.12 patch loaded cleanly (log line 184: `[LoadGameMenu] Patches applied (v3.7.12 fix).`). DPad/stick inputs were dispatched correctly. But the visible cursor still bounces between save row and trashcan.
+
+### Why v3.7.12 was wrong (my mistake)
+
+I designed v3.7.12 by assuming `ConfirmationDialog` (the modal) tracks its OK/Cancel selection via the standard `IClickableMenu.currentlySnappedComponent`. **It doesn't.** Reading `ConfirmationDialog.cs` (decompile) shows:
+
+- Line 35: `private ClickableTextureComponent _selectedButton;` — a separate private field is the actual dialog selection.
+- Lines 245-274: `receiveGamePadButton` toggles `_selectedButton` between `okButton` and `cancelButton` on DPad/stick input. It never touches `currentlySnappedComponent`.
+- Line 80: `snapToDefaultClickableComponent` (called once in the constructor) tries `currentlySnappedComponent = getComponentWithID(102)` — but the buttons are constructed without `myID` set (lines 56-57), so `getComponentWithID(102)` returns null and `currentlySnappedComponent` stays null.
+- Line 164 (in `draw`): the visible "selected" outline is drawn around `_selectedButton`, not around `currentlySnappedComponent`.
+
+So v3.7.12's `confirmMenu.snapCursorToCurrentSnappedComponent()` was a no-op (or near no-op) — `currentlySnappedComponent` was null or stale, so no cursor movement happened.
+
+This was a project-rule violation on my part: `.claude/CLAUDE.md` requires reading the decompiled Android source for relevant methods before designing a fix. I assumed the dialog used the standard nav pattern and wrote the patch without reading `ConfirmationDialog.cs`.
+
+### Decision
+
+Read `ConfirmationDialog._selectedButton` via reflection (private field) and snap the cursor to its bounds. When `_selectedButton` is null (initial state before any DPad press), default to `cancelButton` (public field, decompile line 21) as the visual default — matches the safer default for a delete-confirm.
+
+For the snap itself: temporarily set `confirmDialog.currentlySnappedComponent = target` and call `confirmDialog.snapCursorToCurrentSnappedComponent()`. The dialog's own logic doesn't read `currentlySnappedComponent` (it uses `_selectedButton`), so the mutation is harmless. Avoids hand-rolling the UI-scale math that `snapCursorToCurrentSnappedComponent` already handles.
+
+### Files
+
+| File | Change |
+|---|---|
+| `Patches/LoadGameMenuPatches.cs` | Add `_selectedButtonField` reflection lookup at `Apply()` (cached `FieldInfo` for `ConfirmationDialog._selectedButton`). Replace the v3.7.12 confirm-dialog block in `Update_Postfix` to read `_selectedButton` (or fall back to `cancelButton`) and snap via the temporary-currentlySnappedComponent pattern. |
+| `manifest.json` | Bump `Version` to `3.7.13`. |
+
+Single commit:
+`v3.7.13: #35 LoadGameMenu — read ConfirmationDialog._selectedButton (not currentlySnappedComponent) for cursor sync`.
+
+### Test plan (G Cloud)
+
+1. Build, deploy.
+2. Controller-enter LoadGameMenu, navigate to a slot.
+3. Touch-tap the trashcan (or controller-A on the delete button) → dialog opens.
+4. **Confirm cursor sits on the Cancel button** (visual default) immediately.
+5. **DPadRight** → cursor jumps to OK button.
+6. **DPadLeft** → cursor jumps to Cancel button.
+7. **B** to cancel out → cursor returns to a save slot, highlight follows normally.
+8. Repeat with controller A on a delete button (instead of touch).
