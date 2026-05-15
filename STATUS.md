@@ -1,6 +1,6 @@
 # AndroidConsolizer — Status
 
-**Shipped version (local):** 3.6.9. Not yet pushed to Nexus. Last released to Nexus is still 3.6.0. v3.7.0 milestone is **complete** — ready to ship pending the user's go-ahead.
+**Shipped version:** 3.7.0 — released on GitHub 2026-05-14 (`v3.7.0`), local/remote in sync. Nexus mod page may still need the v3.7.0 description/version paste (manual step). Next milestone: **v3.8.0 — Console Parity: Quick Wins**.
 
 ## Latest commits since v3.6.0
 
@@ -31,8 +31,8 @@ Roadmap was re-evaluated after v3.6.0 — see [`docs/superpowers/specs/2026-05-0
 |---------|-------|--------|
 | v3.4.x | GameMenu Tabs | **Complete** |
 | v3.5.x → v3.6.0 | Chest & Item Polish + Bug Fix Release | **Complete** |
-| **v3.7.0** | **Bug Fix Release 2** | **Complete — v3.6.1 – v3.6.9 local, not yet on Nexus** |
-| v3.8.0 | Console Parity: Quick Wins | Pending |
+| v3.7.0 | Bug Fix Release 2 | **Complete — shipped to GitHub 2026-05-14** |
+| **v3.8.0** | **Console Parity: Quick Wins** | **In progress** |
 | v3.9.0 | Console Parity: Big Systems | Pending |
 | v4.0.0 | The Right Stick Update | Pending |
 | post-4.0 | Advanced Features | Pending |
