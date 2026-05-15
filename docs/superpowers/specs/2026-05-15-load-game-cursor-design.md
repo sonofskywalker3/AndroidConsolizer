@@ -598,3 +598,49 @@ Single commit:
 5. **DPadUp** twice more → back to slot 0. Still no scroll.
 6. **A** → loads slot 0.
 7. (Optional, if you have >itemsPerPage saves to test legitimate scrolling) navigate down past the visible page and confirm the list scrolls correctly within bounds.
+
+## Revision 6 — 2026-05-15 (Phase 7: v3.7.11 — same-frame clamp eliminates the visible flicker)
+
+### What v3.7.10 device test on G Cloud showed
+
+User: "functionally that works, but it still flickers when I press up from the 3rd or 4th slot."
+
+The clamp is correct (final state is right) but the user briefly sees the list slide up before snapping back.
+
+### Root cause of the flicker
+
+Frame timing per the Android decompile:
+
+1. SMAPI input dispatch (inside `Game1.update`) fires `LoadGameMenu.receiveGamePadButton(DPadUp)`.
+2. Vanilla's switch case for DPadUp (decompile line 533) calls `scrollArea.setYOffsetForScroll(-_joypadSelectedItemIndex * itemHeight)` — bad target written to the scrollbox.
+3. `LoadGameMenu.update(time)` runs. Inside, `scrollArea.update(time)` is called (line 815) — `MobileScrollbox` interpolates one tick toward the bad target.
+4. Our `Update_Postfix` runs, clamps the offset back to 0, re-snaps the cursor.
+5. Next frame: `scrollArea.update` interpolates toward the now-correct target.
+
+Step 3 is the visible flicker — one frame's worth of animation toward the bad target before our reactive clamp overrides it.
+
+### Decision
+
+Add a Harmony **postfix on `LoadGameMenu.receiveGamePadButton(Buttons)`** that calls the existing `ClampScrollOffset` helper. It runs in step 2 (same frame as the vanilla bad-scroll write, before `scrollArea.update` in step 3 has a chance to interpolate). The bad target is replaced with the correct target before any tweening can kick in.
+
+Keep the existing `Update_Postfix` clamp as a backstop for scroll changes that don't go through `receiveGamePadButton` — async save scan complete, delete-confirm dialog dismissal, scrollbar drag, etc.
+
+### Files
+
+| File | Change |
+|---|---|
+| `Patches/LoadGameMenuPatches.cs` | Add Harmony postfix on `LoadGameMenu.receiveGamePadButton(Buttons)` that calls `ClampScrollOffset(__instance)`. |
+| `manifest.json` | Bump `Version` to `3.7.11`. |
+
+Single commit:
+`v3.7.11: #35 LoadGameMenu — same-frame scroll clamp on receiveGamePadButton to eliminate flicker`.
+
+### Test plan (G Cloud)
+
+1. Build, deploy.
+2. Controller-enter LoadGameMenu (controller A on title-screen Load button).
+3. **DPadDown 3 times** to reach slot 3.
+4. **DPadUp** → cursor + highlight to slot 2, **no visible flicker** of the list.
+5. **DPadUp** twice more → slot 0, still no flicker.
+6. **DPadDown** back to slot 3 → still no flicker.
+7. **A** → loads slot 0 (or wherever cursor ends up).
