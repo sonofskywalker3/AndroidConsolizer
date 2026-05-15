@@ -51,17 +51,23 @@ namespace AndroidConsolizer.Patches
     /// behaviour). If wanted later, that's a separate LoadGameMenu.draw
     /// postfix parallel to #17 v3.7.4 for TitleMenu.
     ///
-    /// v3.7.10 adds a third mechanism: scroll-offset clamp. Vanilla
+    /// v3.7.10 added a third mechanism: scroll-offset clamp. Vanilla
     /// LoadGameMenu.receiveGamePadButton has an asymmetric scroll bug —
     /// DPadDown only scrolls when the index is in the middle of the list
     /// (decompile line 543), but DPadUp unconditionally scrolls (line 533),
     /// missing the matching boundary check. With N <= itemsPerPage, DPadUp
     /// from any index >= 1 scrolls the list off the top with the cursor
-    /// stranded at absolute pixel coords. The clamp resets any out-of-range
-    /// scroll offset and re-snaps the cursor to its slot bounds.
+    /// stranded at absolute pixel coords.
+    ///
+    /// v3.7.11 adds the clamp to a postfix on receiveGamePadButton so it
+    /// runs in the same frame as vanilla's bad-scroll write, before
+    /// scrollArea.update(time) (line 815) has a chance to interpolate one
+    /// tick toward the bad target. The Update_Postfix clamp is kept as a
+    /// backstop for scroll changes that don't go through receiveGamePadButton
+    /// (async save scan complete, delete-confirm dialog dismissal, etc.).
     ///
     /// Spec: docs/superpowers/specs/2026-05-15-load-game-cursor-design.md
-    /// (Revision 5 — 2026-05-15 / Phase 6).
+    /// (Revision 6 — 2026-05-15 / Phase 7).
     /// </summary>
     internal static class LoadGameMenuPatches
     {
@@ -119,12 +125,29 @@ namespace AndroidConsolizer.Patches
                         original: update,
                         postfix: new HarmonyMethod(typeof(LoadGameMenuPatches), nameof(Update_Postfix))
                     );
-                    Monitor.Log("[LoadGameMenu] Patches applied (v3.7.10 fix).", LogLevel.Trace);
                 }
                 else
                 {
                     Monitor.Log("[LoadGameMenu] LoadGameMenu.update not found — patch skipped.", LogLevel.Warn);
                 }
+
+                var receiveGamePad = AccessTools.Method(
+                    typeof(LoadGameMenu),
+                    nameof(LoadGameMenu.receiveGamePadButton),
+                    new[] { typeof(Microsoft.Xna.Framework.Input.Buttons) });
+                if (receiveGamePad != null)
+                {
+                    harmony.Patch(
+                        original: receiveGamePad,
+                        postfix: new HarmonyMethod(typeof(LoadGameMenuPatches), nameof(ReceiveGamePadButton_Postfix))
+                    );
+                }
+                else
+                {
+                    Monitor.Log("[LoadGameMenu] LoadGameMenu.receiveGamePadButton not found — same-frame clamp disabled.", LogLevel.Warn);
+                }
+
+                Monitor.Log("[LoadGameMenu] Patches applied (v3.7.11 fix).", LogLevel.Trace);
             }
             catch (Exception ex)
             {
@@ -163,6 +186,25 @@ namespace AndroidConsolizer.Patches
             catch (Exception ex)
             {
                 Monitor?.Log($"[LoadGameMenu] Update_Postfix error: {ex.Message}", LogLevel.Error);
+            }
+        }
+
+        /// <summary>
+        /// Postfix on LoadGameMenu.receiveGamePadButton — clamps the scroll
+        /// offset in the same frame as vanilla's bad-scroll write, before
+        /// scrollArea.update(time) has a chance to interpolate toward the
+        /// bad target. Eliminates the visible flicker on DPadUp from a
+        /// non-scrolling list.
+        /// </summary>
+        private static void ReceiveGamePadButton_Postfix(LoadGameMenu __instance, Microsoft.Xna.Framework.Input.Buttons b)
+        {
+            try
+            {
+                ClampScrollOffset(__instance);
+            }
+            catch (Exception ex)
+            {
+                Monitor?.Log($"[LoadGameMenu] ReceiveGamePadButton_Postfix error: {ex.Message}", LogLevel.Error);
             }
         }
 
