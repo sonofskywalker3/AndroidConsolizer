@@ -745,3 +745,41 @@ Single commit:
 6. **DPadLeft** → cursor jumps to Cancel button.
 7. **B** to cancel out → cursor returns to a save slot, highlight follows normally.
 8. Repeat with controller A on a delete button (instead of touch).
+
+## Revision 9 — 2026-05-15 (Phase 10: v3.7.14 — pin currentlySnappedComponent to dialog button + sync from input postfix)
+
+### What v3.7.13 device test on G Cloud showed
+
+User: "better, but as before it's flickering back to the wrong spot first."
+
+The cursor now ends up at the right place (Cancel default, OK after DPadRight, etc.), but flickers to a slot/delete position briefly before snapping back.
+
+### Root cause
+
+Same class as the v3.7.10 → v3.7.11 scroll flicker. `IClickableMenu`'s snappy-nav path runs from a phase that sets `LoadGameMenu.currentlySnappedComponent` to a slot/delete neighbour and calls `snapCursorToCurrentSnappedComponent`. Our `Update_Postfix` corrects this reactively, but snappy nav's cursor move renders for one frame before our correction.
+
+### Fix (two layers)
+
+1. **Pin `LoadGameMenu.currentlySnappedComponent` to the dialog button.** Dialog buttons (`okButton`, `cancelButton`) are constructed without neighbour IDs (decompile lines 56-57: just position bounds, no `upNeighborID`/`leftNeighborID`/etc.). When `applyMovementKey` runs from a no-neighbours component, it can't navigate — snappy nav is a no-op. Vanilla's cancel/ok handlers (lines 651, 670) explicitly reset `currentlySnappedComponent = getComponentWithID(0)` (slot 0) on dialog dismissal, so post-dialog state recovers.
+2. **Run the same snap from `ReceiveGamePadButton_Postfix`** (already exists for the scroll clamp). This catches the input-frame timing window — same approach that fixed the v3.7.10 → v3.7.11 scroll flicker.
+
+Extract the confirm-dialog handling into a `TryHandleConfirmDialog` helper called from both postfixes (DRY).
+
+### Files
+
+| File | Change |
+|---|---|
+| `Patches/LoadGameMenuPatches.cs` | Extract confirm-dialog logic to `TryHandleConfirmDialog(LoadGameMenu)` helper. Helper now also assigns `__instance.currentlySnappedComponent = target` to pin snappy nav. Call helper from both `Update_Postfix` and `ReceiveGamePadButton_Postfix` (early-return if it handled the frame). |
+| `manifest.json` | Bump `Version` to `3.7.14`. |
+
+Single commit:
+`v3.7.14: #35 LoadGameMenu — pin currentlySnappedComponent to dialog button + sync cursor from input postfix to kill flicker`.
+
+### Test plan (G Cloud)
+
+1. Build, deploy.
+2. LoadGameMenu, navigate to a slot, touch trashcan → dialog opens.
+3. **Cursor on Cancel, no flicker.**
+4. **DPadRight** → cursor jumps to OK, **no flicker**.
+5. **DPadLeft** → cursor jumps to Cancel, **no flicker**.
+6. **B** → close dialog, normal nav resumes.
