@@ -188,7 +188,158 @@ Single commit:
 
 ---
 
-## Phase 2 — Fix (to be appended)
+## Revision — 2026-05-15 (Phase 2: Fix, target v3.7.6)
 
-*This section will be filled in after the v3.7.5 device test on the
-G Cloud, with the corrected fix design and target version v3.7.6.*
+The v3.7.5 diagnostic ran on the G Cloud. The pulled log
+(`AndroidConsolizer/test-output/SMAPI-latest.txt`,
+`[LoadGameDiag]` lines 184–291) overturned three of this spec's
+pre-test assumptions and reduced the fix scope from a
+multi-symptom rework to a single one-line snap.
+
+### What the device showed
+
+| When | snappy | gamepad | lastMotionMouse | mouse | snapped | _joypadIdx | slotCount |
+|---|---|---|---|---|---|---|---|
+| Touch-tap entry, list loading | True | False | True | (973,836) | null | -1 | 0 |
+| List populated | True | False | True | (973,836) | null | -1 | 2 |
+| DPadUp | True | True | False | (1262,245) | id=0 slot bounds | 0 | 2 |
+| DPadDown (mid-frame) | True | True | False | (1262,245) | id=1 slot bounds | 1 | 2 |
+| DPadDown (cursor caught up) | True | True | False | (1262,**445**) | id=1 | 1 | 2 |
+| A → save loaded | — | — | — | — | — | 1 | 2 |
+
+### What this overturns
+
+1. **`snappyMenus = True` on G Cloud as well as Ayaneo.** The
+   project-wide "snappyMenus is False on Android" assumption is dead
+   on two devices now.
+2. **The "no `case Buttons.A` handler" finding from the decompile is
+   correct, but Android's touch-sim layer hides it.**
+   `Game1.updateActiveMenu` calls `receiveLeftClick(mouseX, mouseY)`
+   after every A press, and with the cursor sitting on a snapped
+   slot's bounds, that hits vanilla `releaseLeftClick`'s slot-load
+   path. So an explicit A handler is *not* needed on G Cloud — once
+   the cursor is in the right place, A loads the save automatically.
+3. **The "first stick press wasted" line in the original spec is
+   half-wrong.** The vanilla early-return at `LoadGameMenu.cs:524`
+   sets `_joypadSelectedItemIndex = 0` AND triggers a snap that moves
+   the cursor visibly to slot 0. The press isn't navigationally
+   useless — it claims slot 0 in one shot.
+
+### What is *not* claimed by this revision
+
+The diagnostic ran with v3.7.4's `TitleMenuPatches` active. That
+patch's gate ostensibly skips when `TitleMenu.subMenu != null` (i.e.
+when LoadGameMenu is open), but the test cannot independently
+confirm whether the cursor visibility on `LoadGameMenu`
+(`cursorAlpha=1` from frame 0) comes from the vanilla `drawMouse`,
+some interaction with v3.7.4, or both. **Do not touch
+`Patches/TitleMenuPatches.cs`.** It works; leave it.
+
+### What is actually broken
+
+Just one thing: **the cursor lands wherever the user last touched —
+typically the Load Game button area at (973,836) — instead of on
+slot 0.** Matches the original TODO line ("cursor in free space
+below saves"). The user has to press DPad once to jog the cursor
+onto slot 0.
+
+### Decision (v3.7.6)
+
+Single change: snap `_joypadSelectedItemIndex` to `0` and call
+`snapToDefaultClickableComponent()` on the first
+`LoadGameMenu.update()` tick where `currentlySnappedComponent ==
+null` and `slotButtons.Count > 0` (i.e. the menu is open and the
+async save scan completed).
+
+The vanilla `snapToDefaultClickableComponent` (decompile line
+567–571) reads `_joypadSelectedItemIndex` and calls
+`Game1.setMousePosition(slot.bounds.Center)` — pure "fix the data,
+let the game's own code work."
+
+### Why these gates and no others
+
+- **`currentlySnappedComponent == null`** is the natural "fresh menu
+  instance" signal. Once we snap, it becomes non-null and our patch
+  stops firing for that instance. Each new `LoadGameMenu`
+  construction resets it back to null, so the snap fires again —
+  no static "did we snap" flag needed.
+- **`slotButtons.Count > 0`** waits for the async `_initTask` save
+  scan to complete (snapshot 0 → 1 in the diagnostic showed the
+  populate transition). Snapping to a non-existent `slotButtons[0]`
+  would no-op or crash.
+- **No `gamepadControls` gate.** The diagnostic showed `gamepad =
+  False` on touch entry (snapshots 0–1) — gating on it would skip
+  the snap entirely, which is the opposite of what we want.
+- **No `lastCursorMotionWasMouse` gate.** Touch entry sets it to
+  True, and the user may then pick up the controller. Moving the
+  cursor to slot 0 is harmless to pure-touch users (they don't read
+  the cursor anyway).
+- **No GMCM toggle.** Same precedent as #17 (v3.7.4) and #22b: a
+  pure parity bug fix doesn't need an opt-out.
+
+### Why this also fixes the "first stick press wasted" concern
+
+After our snap, `_joypadSelectedItemIndex = 0` and
+`currentlySnappedComponent = slotButtons[0]`. The controller user's
+first DPadDown press now hits the switch (line 543 in the
+decompile) instead of the early-return at line 524 — it advances
+straight to slot 1 with no "claim slot 0" intermediate gesture.
+
+### Implementation
+
+**Replace the v3.7.5 diagnostic file with a fix file**, since the
+diagnostic is no longer needed:
+
+| File | Change |
+|---|---|
+| `Patches/LoadGameMenuDiagnosticPatches.cs` | **Delete** |
+| `Patches/LoadGameMenuPatches.cs` | **New** — Harmony postfix on `LoadGameMenu.update(GameTime)` |
+| `ModEntry.cs` | Replace `LoadGameMenuDiagnosticPatches.Apply(...)` line with `LoadGameMenuPatches.Apply(...)` |
+| `manifest.json` | Bump `Version` to `3.7.6` |
+
+Single commit:
+`v3.7.6: #35 LoadGameMenu cursor on slot 0 — snap on first update with slots loaded`.
+
+The new patch:
+
+- Single Harmony **postfix** on `LoadGameMenu.update(GameTime)`.
+- Reflection lookup for `_joypadSelectedItemIndex` (private), cached
+  at `Apply()`. If the lookup fails, log a `Warn` and the postfix
+  becomes a no-op (the snap call would be useless without setting
+  the index first).
+- Postfix body, wrapped in try/catch (errors logged at `Error`,
+  swallowed):
+  1. Return if `__instance.currentlySnappedComponent != null`.
+  2. Return if `__instance.slotButtons == null || __instance.slotButtons.Count == 0`.
+  3. Return if the cached `_joypadSelectedItemIndex` `FieldInfo` is
+     null.
+  4. Set `_joypadSelectedItemIndex = 0` via reflection.
+  5. Call `__instance.snapToDefaultClickableComponent()`.
+
+No new public surface, no new fields, no GMCM, no behaviour change
+for any other menu.
+
+### Test plan (v3.7.6)
+
+1. Build, deploy via `SyncdewValley/sync.ps1 deploy`.
+2. Boot to title.
+3. **Touch-tap** Load Game. Wait ~2 sec for the save list.
+4. Confirm the cursor appears **on slot 0** (the top save) without
+   any controller input — not at the touch position.
+5. Press DPadDown once and confirm the cursor jumps straight to
+   slot 1 (no "first press snaps to slot 0" intermediate gesture).
+6. Press A and confirm slot 1 loads.
+7. Bonus check: Re-open Load Game from the title screen via touch
+   and confirm step 4 still happens (each fresh instance re-snaps).
+
+### Out of scope for v3.7.6
+
+- Other `LoadGameMenu` subclasses (`MobileFarmChooser`,
+  `CoopGameMenu`) — different screens, not part of #35.
+- Ayaneo testing for `LoadGameMenu` cursor draw — if Ayaneo's
+  vanilla `drawMouse` is broken on `LoadGameMenu` the way it was on
+  `TitleMenu` (per v3.7.4 spec), that's a separate diagnostic and a
+  separate patch.
+- The delete-confirmation dialog — already works on Android via
+  `confirmBox.receiveGamePadButton(b)` delegation (decompile line
+  516–518) and the focus-snap-to-cancel-button on open (line 763).
