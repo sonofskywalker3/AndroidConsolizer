@@ -66,8 +66,16 @@ namespace AndroidConsolizer.Patches
     /// backstop for scroll changes that don't go through receiveGamePadButton
     /// (async save scan complete, delete-confirm dialog dismissal, etc.).
     ///
+    /// v3.7.12 syncs the cursor to confirmBox's selection when the delete
+    /// confirmation dialog is open. Vanilla's receiveGamePadButton
+    /// delegates to confirmBox (line 514–518) for logical focus, but
+    /// IClickableMenu's separate snappy-nav path keeps walking
+    /// LoadGameMenu's slot/delete components — the cursor visibly bounces
+    /// between save and trashcan while the dialog's focus moves correctly.
+    /// Force-sync the cursor every tick to the dialog's selected button.
+    ///
     /// Spec: docs/superpowers/specs/2026-05-15-load-game-cursor-design.md
-    /// (Revision 6 — 2026-05-15 / Phase 7).
+    /// (Revision 7 — 2026-05-15 / Phase 8).
     /// </summary>
     internal static class LoadGameMenuPatches
     {
@@ -80,6 +88,7 @@ namespace AndroidConsolizer.Patches
         private static FieldInfo _joypadSelectedItemIndexField;
         private static FieldInfo _scrollAreaField;
         private static FieldInfo _itemsPerPageField;
+        private static FieldInfo _confirmBoxField;
         private static MethodInfo _getYOffsetForScrollMethod;
         private static MethodInfo _setYOffsetForScrollMethod;
 
@@ -98,6 +107,12 @@ namespace AndroidConsolizer.Patches
                 // scrollArea, itemsPerPage, and the scroll-offset accessors only exist on the
                 // Android LoadGameMenu (decompile lines 238, 264); the PC DLL we compile
                 // against doesn't have them. Reflect.
+                _confirmBoxField = AccessTools.Field(typeof(LoadGameMenu), "confirmBox");
+                if (_confirmBoxField == null)
+                {
+                    Monitor.Log("[LoadGameMenu] Reflection: confirmBox not found — confirm-dialog cursor sync disabled.", LogLevel.Warn);
+                }
+
                 _scrollAreaField = AccessTools.Field(typeof(LoadGameMenu), "scrollArea");
                 _itemsPerPageField = AccessTools.Field(typeof(LoadGameMenu), "itemsPerPage");
                 if (_scrollAreaField == null || _itemsPerPageField == null)
@@ -147,7 +162,7 @@ namespace AndroidConsolizer.Patches
                     Monitor.Log("[LoadGameMenu] LoadGameMenu.receiveGamePadButton not found — same-frame clamp disabled.", LogLevel.Warn);
                 }
 
-                Monitor.Log("[LoadGameMenu] Patches applied (v3.7.11 fix).", LogLevel.Trace);
+                Monitor.Log("[LoadGameMenu] Patches applied (v3.7.12 fix).", LogLevel.Trace);
             }
             catch (Exception ex)
             {
@@ -159,6 +174,22 @@ namespace AndroidConsolizer.Patches
         {
             try
             {
+                // While the delete-confirm dialog is open, vanilla delegates
+                // receiveGamePadButton to confirmBox but IClickableMenu's
+                // snappy-nav path keeps operating on LoadGameMenu's slot/delete
+                // components — the cursor visibly bounces. Force the cursor onto
+                // the dialog's selected button every tick and skip all other
+                // LoadGameMenu logic.
+                if (_confirmBoxField != null)
+                {
+                    var confirmMenu = _confirmBoxField.GetValue(__instance) as IClickableMenu;
+                    if (confirmMenu != null)
+                    {
+                        confirmMenu.snapCursorToCurrentSnappedComponent();
+                        return;
+                    }
+                }
+
                 if (_joypadSelectedItemIndexField == null) return;
 
                 int joypadIdx = (int)_joypadSelectedItemIndexField.GetValue(__instance);
