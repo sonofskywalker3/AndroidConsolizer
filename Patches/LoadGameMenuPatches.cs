@@ -69,14 +69,21 @@ namespace AndroidConsolizer.Patches
     /// v3.7.12 attempted to sync the cursor to confirmBox's selection but
     /// used the wrong field — see ConfirmationDialog.cs: the dialog tracks
     /// its OK/Cancel selection in a private _selectedButton field (line 35),
-    /// not in IClickableMenu.currentlySnappedComponent (which is set once in
-    /// the constructor to null and never updates). v3.7.13 reads
+    /// not in IClickableMenu.currentlySnappedComponent. v3.7.13 reads
     /// _selectedButton via reflection and snaps the cursor to its bounds.
     /// Falls back to confirmBox.cancelButton when _selectedButton is null
     /// (the dialog's pre-input state).
     ///
+    /// v3.7.14 kills the residual flicker by (a) pinning LoadGameMenu's
+    /// currentlySnappedComponent to the dialog button (which has no
+    /// neighbour IDs, so snappy nav's applyMovementKey becomes a no-op
+    /// while the dialog is open), and (b) running the same snap from
+    /// ReceiveGamePadButton_Postfix in the input frame. Vanilla resets
+    /// currentlySnappedComponent to slot 0 on dialog dismissal (decompile
+    /// lines 651, 670), so post-dialog state recovers cleanly.
+    ///
     /// Spec: docs/superpowers/specs/2026-05-15-load-game-cursor-design.md
-    /// (Revision 8 — 2026-05-15 / Phase 9).
+    /// (Revision 9 — 2026-05-15 / Phase 10).
     /// </summary>
     internal static class LoadGameMenuPatches
     {
@@ -170,7 +177,7 @@ namespace AndroidConsolizer.Patches
                     Monitor.Log("[LoadGameMenu] LoadGameMenu.receiveGamePadButton not found — same-frame clamp disabled.", LogLevel.Warn);
                 }
 
-                Monitor.Log("[LoadGameMenu] Patches applied (v3.7.13 fix).", LogLevel.Trace);
+                Monitor.Log("[LoadGameMenu] Patches applied (v3.7.14 fix).", LogLevel.Trace);
             }
             catch (Exception ex)
             {
@@ -182,40 +189,7 @@ namespace AndroidConsolizer.Patches
         {
             try
             {
-                // While the delete-confirm dialog is open, vanilla delegates
-                // receiveGamePadButton to confirmBox but IClickableMenu's
-                // snappy-nav path keeps operating on LoadGameMenu's slot/delete
-                // components — the cursor visibly bounces. Force the cursor onto
-                // the dialog's selected button every tick and skip all other
-                // LoadGameMenu logic.
-                //
-                // ConfirmationDialog tracks its selection in a private
-                // _selectedButton field (decompile line 35), NOT in
-                // currentlySnappedComponent (which it leaves null after the
-                // constructor's snapToDefault call fails because the buttons
-                // have no myID set).
-                if (_confirmBoxField != null)
-                {
-                    var confirmDialog = _confirmBoxField.GetValue(__instance) as ConfirmationDialog;
-                    if (confirmDialog != null)
-                    {
-                        ClickableTextureComponent target = null;
-                        if (_selectedButtonField != null)
-                        {
-                            target = _selectedButtonField.GetValue(confirmDialog) as ClickableTextureComponent;
-                        }
-                        if (target == null)
-                        {
-                            target = confirmDialog.cancelButton;
-                        }
-                        if (target != null)
-                        {
-                            confirmDialog.currentlySnappedComponent = target;
-                            confirmDialog.snapCursorToCurrentSnappedComponent();
-                        }
-                        return;
-                    }
-                }
+                if (TryHandleConfirmDialog(__instance)) return;
 
                 if (_joypadSelectedItemIndexField == null) return;
 
@@ -258,12 +232,44 @@ namespace AndroidConsolizer.Patches
         {
             try
             {
+                if (TryHandleConfirmDialog(__instance)) return;
                 ClampScrollOffset(__instance);
             }
             catch (Exception ex)
             {
                 Monitor?.Log($"[LoadGameMenu] ReceiveGamePadButton_Postfix error: {ex.Message}", LogLevel.Error);
             }
+        }
+
+        /// <summary>
+        /// When the delete-confirm dialog is open, pin LoadGameMenu's
+        /// currentlySnappedComponent to the dialog's selected button (the
+        /// dialog buttons have no neighbour IDs, so applyMovementKey from
+        /// them is a no-op — kills snappy nav for the dialog's lifetime),
+        /// and snap the cursor there. Returns true if the dialog was open
+        /// (and the caller should skip its other logic), false otherwise.
+        /// </summary>
+        private static bool TryHandleConfirmDialog(LoadGameMenu __instance)
+        {
+            if (_confirmBoxField == null) return false;
+            var confirmDialog = _confirmBoxField.GetValue(__instance) as ConfirmationDialog;
+            if (confirmDialog == null) return false;
+
+            ClickableTextureComponent target = null;
+            if (_selectedButtonField != null)
+            {
+                target = _selectedButtonField.GetValue(confirmDialog) as ClickableTextureComponent;
+            }
+            if (target == null)
+            {
+                target = confirmDialog.cancelButton;
+            }
+            if (target == null) return true;
+
+            __instance.currentlySnappedComponent = target;
+            confirmDialog.currentlySnappedComponent = target;
+            confirmDialog.snapCursorToCurrentSnappedComponent();
+            return true;
         }
 
         /// <summary>
