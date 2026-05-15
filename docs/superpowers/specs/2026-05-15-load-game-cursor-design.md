@@ -490,3 +490,51 @@ Single commit:
 6. **DPadUp.** Cursor and highlight both back to slot 0.
 7. **A.** Loads slot 0.
 8. Re-open Load Game and confirm step 3 still happens.
+
+## Revision 4 — 2026-05-15 (Phase 5: v3.7.9 — also move cursor on entry)
+
+### What v3.7.8 device test on G Cloud showed
+
+User test result + a real-world consequence:
+
+- **Highlight side: ✓.** v3.7.8's auto-sync correctly aligns `_joypadSelectedItemIndex` with `currentlySnappedComponent.myID`. DPadDown moves the highlight in step with the cursor.
+- **Cursor side: ✗.** v3.7.8 deliberately did not touch the cursor — the design call was that the cursor would appear on the first controller press (vanilla behaviour). On G Cloud, that meant the cursor stayed at the touch-tap position from the title screen (~(986,866) in UI coords).
+- **Real consequence:** that touch position landed on a slot's **delete button** (right-side trashcan). When the user pressed A to load the highlighted slot, Android's touch-sim layer fired `receiveLeftClick` at the cursor position, which hit the delete button → confirmation dialog → save deleted by accident.
+
+The "cursor visibility on entry is a separate, deferrable concern" judgment from the v3.7.8 spec was wrong: the cursor *position* on entry is load-bearing because Android's touch-sim layer routes A presses through the cursor coords, not through `_joypadSelectedItemIndex`. Leaving the cursor at the touch position is actively dangerous.
+
+### Decision
+
+Restore cursor positioning on entry, but bypass the broken `snapToDefaultClickableComponent()` path. Direct assignment + direct cursor snap:
+
+1. **Entry one-shot (extended from v3.7.8):** when `_joypadSelectedItemIndex == -1` and `slotButtons.Count > 0`:
+   - Set `_joypadSelectedItemIndex = 0` (highlight).
+   - Assign `currentlySnappedComponent = slotButtons[0]` directly. This bypasses `getComponentWithID(0)` (which returned null in the v3.7.7 diagnostic because `allClickableComponents` is not populated when our postfix runs).
+   - Call `snapCursorToCurrentSnappedComponent()` (now non-null, so it actually moves the mouse).
+2. **Auto-sync every tick (unchanged from v3.7.8):** keeps `_joypadSelectedItemIndex` in step with `currentlySnappedComponent.myID` whenever they drift.
+
+The v3.7.6 failure mode (postfix re-firing because `currentlySnappedComponent` stayed null) cannot recur because we assign it directly — the gate genuinely closes after the first snap.
+
+### Why this is safe with snappy nav
+
+The v3.7.7 diagnostic showed `LoadGameMenu.receiveGamePadButton` *did* fire for DPadDown after our v3.7.6 snap (line 285 of test log) — snappy nav did not consume the input outright. So pre-setting `currentlySnappedComponent` does not break the receive path. Even if it did on some device, the auto-sync from v3.7.8 catches the desync: snappy nav advances `currentlySnappedComponent`, auto-sync mirrors `myID` into `_joypadSelectedItemIndex`. Both paths are now safety-netted.
+
+### Files
+
+| File | Change |
+|---|---|
+| `Patches/LoadGameMenuPatches.cs` | Extend Update_Postfix entry one-shot to also assign `currentlySnappedComponent = slotButtons[0]` and call `snapCursorToCurrentSnappedComponent()`. Auto-sync block unchanged. |
+| `manifest.json` | Bump `Version` to `3.7.9`. |
+
+Single commit:
+`v3.7.9: #35 LoadGameMenu — also move cursor to slot 0 on entry (v3.7.8 left it on the trashcan)`.
+
+### Test plan (G Cloud)
+
+1. Build, deploy.
+2. Boot to title, touch-tap Load Game, wait for save list.
+3. **Confirm cursor is on slot 0** AND **slot 0 is highlighted**.
+4. **A** → loads slot 0 (does NOT trigger a delete confirmation).
+5. From a fresh entry: **DPadDown** → cursor + highlight both move to slot 1.
+6. **A** on slot 1 → loads slot 1.
+7. From a fresh entry: **B** → closes back to title.
