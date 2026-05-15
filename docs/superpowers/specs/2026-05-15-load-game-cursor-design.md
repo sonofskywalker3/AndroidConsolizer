@@ -408,3 +408,85 @@ Single commit:
 9. Log pull is automatic (Claude pulls).
 
 Phase 4 (v3.7.8 real fix) gets designed from the result.
+
+## Revision 3 — 2026-05-15 (Phase 4: v3.7.8 real fix)
+
+### What v3.7.7 device test on G Cloud showed (definitive)
+
+The user ran the test sequence twice with markedly different results:
+
+- **Test 1 (DPadDown first):** Cursor on slot 1, highlight on slot 0 (desync — matches v3.7.6 report).
+- **Test 2 (DPadUp first):** Cursor on slot 0, highlight on slot 0 (aligned). Subsequent DPadDown works correctly.
+
+The diagnostic log explains both. Critical finding from snapshot 2 (line 283 of test log):
+
+```
+weSnapped=True _joypadSelectedItemIndex=0 snapped=null mouse=(986,866)
+```
+
+**Our v3.7.6 `snapToDefaultClickableComponent()` call silently failed.** `weSnapped=True` confirms our patch ran and `_joypadSelectedItemIndex` was set to 0, but `currentlySnappedComponent` stayed null and the cursor stayed at the touch position. The likely cause: `IClickableMenu.getComponentWithID(0)` walks `allClickableComponents`, which hasn't been populated with `slotButtons` yet at the moment our postfix runs (`populateClickableComponentList` runs lazily, typically on first navigation input).
+
+The downstream consequence (snapshot 3, line 286 — after DPadDown):
+
+```
+weSnapped=True _joypadSelectedItemIndex=0 snapped=null
+```
+
+`receiveGamePadButton` for DPadDown fired (logged at line 285) and incremented `_joypadIdx` to 1. **Then our postfix ran in the same frame, saw `currentlySnappedComponent == null` (still), and clobbered `_joypadIdx` back to 0.** `weSnapped=True` again. Our `currentlySnappedComponent == null` gate never closes — we keep re-firing every tick and resetting `_joypadIdx`. By the time `currentlySnappedComponent` finally became slot 1 (snapshot 4, set by snappy nav fallback after the controller activity flipped `lastMotionMouse=False`), `_joypadIdx` was stuck at 0 = slot 0 highlighted, cursor at slot 1 = the desync.
+
+Test 2 worked because DPadUp on `_joypadIdx=0` does `_joypadIdx-- → -1 → clamp to 0` — the clobber back to 0 was a no-op. By the time DPadDown was pressed, `currentlySnappedComponent` was non-null (snappy nav had set it during the DPadUp activity), so our postfix had stopped clobbering. `_joypadIdx` correctly incremented to 1.
+
+### Decision
+
+Drop `snapToDefaultClickableComponent()` entirely — it doesn't work in the update postfix context. Replace with two cleaner mechanisms, both in the same `Update_Postfix`:
+
+1. **One-shot on entry:** when `_joypadSelectedItemIndex == -1` and `slotButtons.Count > 0`, set `_joypadSelectedItemIndex = 0`. Self-resetting via vanilla state — a fresh `LoadGameMenu` instance has `_joypadSelectedItemIndex = -1` by construction, so the gate naturally closes after the snap and re-opens on the next instance. No static "did we snap" flag needed.
+2. **Auto-sync every tick:** when `currentlySnappedComponent != null` and `currentlySnappedComponent.region == 900` (a slot button — region is set in `recalculateSlots()` line 995) and `currentlySnappedComponent.myID != _joypadSelectedItemIndex`, set `_joypadSelectedItemIndex = currentlySnappedComponent.myID`. The highlight always follows the cursor, regardless of which path moved it (snappy nav, `receiveGamePadButton` switch, manual `setMousePosition`).
+
+No `currentlySnappedComponent` manipulation, no cursor positioning, no `snapToDefaultClickableComponent()` calls. We don't fight either input system — we just keep the displayed highlight in sync with the actual snapped component.
+
+### What this delivers / does not deliver
+
+**Delivers:**
+
+- Slot 0 highlighted from the moment the save list loads (no controller input needed).
+- Highlight follows the cursor on every navigation, regardless of which path the input took (snappy nav OR `receiveGamePadButton`'s switch).
+- No more clobbering of `_joypadSelectedItemIndex` mid-press.
+
+**Does not deliver:**
+
+- A visible cursor on entry (touch state suppresses `drawMouse`). The cursor appears on the first controller press, same as vanilla. If we want the cursor visible from frame 1 (parallel to #17 v3.7.4 for TitleMenu), that's a separate `LoadGameMenu.draw` postfix patch — out of scope for v3.7.8 unless the user reports it as a needed UX fix.
+
+### Implementation
+
+Replace the body of `Patches/LoadGameMenuPatches.cs` with the v3.7.8 fix and remove all v3.7.7 diagnostic code:
+
+- Single Harmony **postfix** on `LoadGameMenu.update(GameTime)`.
+- Reflection lookup for `_joypadSelectedItemIndex` cached at `Apply()`. Failure path: log Warn, postfix becomes a no-op.
+- Postfix body, wrapped in try/catch:
+  1. If reflection FieldInfo is null, return.
+  2. Read `_joypadSelectedItemIndex` via reflection. If `== -1` AND `slotButtons.Count > 0`, set it to `0` (one-shot snap).
+  3. Otherwise, if `currentlySnappedComponent != null` AND `region == 900` AND `myID != _joypadSelectedItemIndex`, set `_joypadSelectedItemIndex = myID` (auto-sync).
+- Constants: `DefaultSlotIndex = 0`, `SlotRegion = 900`.
+- All `[LoadGameDiag]` logging removed.
+
+### Files
+
+| File | Change |
+|---|---|
+| `Patches/LoadGameMenuPatches.cs` | Replace v3.7.7 content with the v3.7.8 fix above (much smaller — no diagnostic counters, no state hash, no button prefix). |
+| `manifest.json` | Bump `Version` to `3.7.8`. |
+
+Single commit:
+`v3.7.8: #35 LoadGameMenu — set _joypadIdx=0 on entry + auto-sync to snapped component`.
+
+### Test plan (G Cloud)
+
+1. Build, deploy.
+2. Boot to title, touch-tap Load Game, wait for save list.
+3. **Confirm slot 0 is highlighted (Wheat colour) without any input.** Cursor will not be visible — that's expected.
+4. **DPadDown.** Cursor appears on slot 1, highlight follows to slot 1.
+5. **DPadDown again.** Stays on slot 1 (only 2 saves; clamps).
+6. **DPadUp.** Cursor and highlight both back to slot 0.
+7. **A.** Loads slot 0.
+8. Re-open Load Game and confirm step 3 still happens.
