@@ -1,7 +1,7 @@
 using System;
 using HarmonyLib;
 using Microsoft.Xna.Framework;
-using Microsoft.Xna.Framework.Input;
+using Microsoft.Xna.Framework.Graphics;
 using StardewModdingAPI;
 using StardewValley;
 using StardewValley.Menus;
@@ -9,20 +9,29 @@ using StardewValley.Menus;
 namespace AndroidConsolizer.Patches
 {
     /// <summary>
-    /// DIAGNOSTIC BUILD (v3.7.3) for #17 — title-menu cursor invisible until stick input.
+    /// Harmony patch for the title/main menu cursor.
     ///
-    /// The v3.7.2 fix (postfix gated on gamepadControls && !lastCursorMotionWasMouse)
-    /// did not work. This build instruments TitleMenu.update() to log the full gate
-    /// state whenever it changes, and unconditionally forces mouseCursorTransparency
-    /// = 1f (NO gates, and NO mouse-position move so lastCursorMotionWasMouse stays
-    /// uncontaminated) to test whether forcing transparency alone makes the cursor
-    /// appear at title load. To be reverted/replaced by the real fix once the log
-    /// identifies which gate was blocking.
+    /// On Android the game's own drawMouse() produces no visible output on
+    /// TitleMenu even when all input state is correct: snappyMenus=True,
+    /// gamepadControls=True, mouseCursorTransparency=1f, currentlySnappedComponent
+    /// already set to the Load/New button, valid mouse position. The v3.7.2
+    /// attempt at supplying state from an update() postfix was a no-op — see the
+    /// v3.7.3 diagnostic findings in
+    /// docs/superpowers/specs/2026-05-14-title-menu-cursor-design.md
+    /// (Revision — 2026-05-15).
+    ///
+    /// Fix: postfix on TitleMenu.draw() draws the mouse cursor sprite ourselves
+    /// at (Game1.getMouseX(), Game1.getMouseY()) under controller control, after
+    /// the title intro has settled, when not in a sub-menu. Same pattern as
+    /// Patches/ShopMenuPatches.cs (DONE.md #40a, shop sell-tab cursor).
+    ///
+    /// Gate is Game1.options.gamepadControls && !Game1.lastCursorMotionWasMouse —
+    /// GamePad.IsConnected is intentionally NOT used because XInput returns False
+    /// for the Ayaneo's built-in controller (diagnostic confirmed).
     /// </summary>
     internal static class TitleMenuPatches
     {
         private static IMonitor Monitor;
-        private static string _lastSnapshot;
 
         public static void Apply(Harmony harmony, IMonitor monitor)
         {
@@ -30,18 +39,18 @@ namespace AndroidConsolizer.Patches
 
             try
             {
-                var update = AccessTools.Method(typeof(TitleMenu), nameof(TitleMenu.update), new[] { typeof(GameTime) });
-                if (update != null)
+                var draw = AccessTools.Method(typeof(TitleMenu), nameof(TitleMenu.draw), new[] { typeof(SpriteBatch) });
+                if (draw != null)
                 {
                     harmony.Patch(
-                        original: update,
-                        postfix: new HarmonyMethod(typeof(TitleMenuPatches), nameof(Update_Postfix))
+                        original: draw,
+                        postfix: new HarmonyMethod(typeof(TitleMenuPatches), nameof(Draw_Postfix))
                     );
-                    Monitor.Log("TitleMenu patches applied (DIAGNOSTIC v3.7.3).", LogLevel.Trace);
+                    Monitor.Log("TitleMenu patches applied.", LogLevel.Trace);
                 }
                 else
                 {
-                    Monitor.Log("TitleMenuPatches: 'update' method not found — patch skipped.", LogLevel.Warn);
+                    Monitor.Log("TitleMenuPatches: 'draw' method not found — patch skipped.", LogLevel.Warn);
                 }
             }
             catch (Exception ex)
@@ -51,47 +60,38 @@ namespace AndroidConsolizer.Patches
         }
 
         /// <summary>
-        /// DIAGNOSTIC postfix on TitleMenu.update — logs the full gate-state snapshot
-        /// whenever it changes, then unconditionally forces mouseCursorTransparency = 1f
-        /// (no gates, no mouse move). Reveals (a) which gate condition blocked the
-        /// v3.7.2 fix and (b) whether forcing transparency alone makes the cursor visible.
+        /// Postfix on TitleMenu.draw — when a controller is in use and the title
+        /// has settled, draw the mouse cursor sprite ourselves at the current
+        /// mouse position. The game's own drawMouse() produces nothing on the
+        /// Android title screen even with correct input state.
         /// </summary>
-        private static void Update_Postfix(TitleMenu __instance)
+        private static void Draw_Postfix(TitleMenu __instance, SpriteBatch b)
         {
             try
             {
-                bool connected = GamePad.GetState(PlayerIndex.One).IsConnected;
-                string snapped = __instance.currentlySnappedComponent != null
-                    ? __instance.currentlySnappedComponent.myID.ToString()
-                    : "null";
-                string sub = TitleMenu.subMenu != null ? TitleMenu.subMenu.GetType().Name : "null";
+                if (!Game1.options.gamepadControls || Game1.lastCursorMotionWasMouse)
+                    return;
+                if (!__instance.titleInPosition)
+                    return;
+                if (TitleMenu.subMenu != null)
+                    return;
 
-                string snapshot =
-                    $"gamepadControls={Game1.options.gamepadControls} " +
-                    $"lastCursorMotionWasMouse={Game1.lastCursorMotionWasMouse} " +
-                    $"gamepadMode={Game1.options.gamepadMode} " +
-                    $"snappyMenus={Game1.options.snappyMenus} " +
-                    $"gamepadConnected={connected} " +
-                    $"titleInPosition={__instance.titleInPosition} " +
-                    $"buttonsToShow={__instance.buttonsToShow}/{TitleMenu.numberOfButtons} " +
-                    $"subMenu={sub} " +
-                    $"snappedComponent={snapped} " +
-                    $"mouseCursorTransparency={Game1.mouseCursorTransparency} " +
-                    $"mousePos=({Game1.getMouseX()},{Game1.getMouseY()})";
-
-                if (snapshot != _lastSnapshot)
-                {
-                    _lastSnapshot = snapshot;
-                    Monitor?.Log($"[TitleDiag] {snapshot}", LogLevel.Info);
-                }
-
-                // PROBE: unconditionally force transparency (no gates, no mouse move).
-                // Tests whether forcing transparency alone makes the cursor visible.
-                Game1.mouseCursorTransparency = 1f;
+                int cursorTile = Game1.options.snappyMenus ? 44 : Game1.mouseCursor;
+                b.Draw(
+                    Game1.mouseCursors,
+                    new Vector2(Game1.getMouseX(), Game1.getMouseY()),
+                    Game1.getSourceRectForStandardTileSheet(Game1.mouseCursors, cursorTile, 16, 16),
+                    Color.White,
+                    0f,
+                    Vector2.Zero,
+                    4f + Game1.dialogueButtonScale / 150f,
+                    SpriteEffects.None,
+                    1f
+                );
             }
             catch (Exception ex)
             {
-                Monitor?.Log($"[TitleMenu] Update_Postfix DIAGNOSTIC error: {ex.Message}", LogLevel.Error);
+                Monitor?.Log($"[TitleMenu] Draw_Postfix error: {ex.Message}", LogLevel.Error);
             }
         }
     }
