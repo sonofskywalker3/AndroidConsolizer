@@ -12,10 +12,6 @@ Shipped: **v3.6.0** (Bug Fix Release). Roadmap structure was re-evaluated post-3
 
 Small to medium parity fixes that can each be solved with localized patches. No multi-patch system arc. Bumps the mod from "most parity items done" to "every menu has correct defaults and visible cursors."
 
-### 17. Title/Main Menu Cursor Fix
-- Cursor should be visible on the Load button by default when the main menu loads, instead of being invisible until the player moves the stick or presses a button.
-- **Investigation:** Check `TitleMenu` class, initial `currentlySnappedComponent`, cursor visibility logic.
-
 ### 35. Load Game Screen Cursor/Navigation
 - Cursor should start on the top save slot when the Load Game menu opens, instead of in the free space below the saves.
 - Navigation has issues (details TBD — needs investigation).
