@@ -66,16 +66,17 @@ namespace AndroidConsolizer.Patches
     /// backstop for scroll changes that don't go through receiveGamePadButton
     /// (async save scan complete, delete-confirm dialog dismissal, etc.).
     ///
-    /// v3.7.12 syncs the cursor to confirmBox's selection when the delete
-    /// confirmation dialog is open. Vanilla's receiveGamePadButton
-    /// delegates to confirmBox (line 514–518) for logical focus, but
-    /// IClickableMenu's separate snappy-nav path keeps walking
-    /// LoadGameMenu's slot/delete components — the cursor visibly bounces
-    /// between save and trashcan while the dialog's focus moves correctly.
-    /// Force-sync the cursor every tick to the dialog's selected button.
+    /// v3.7.12 attempted to sync the cursor to confirmBox's selection but
+    /// used the wrong field — see ConfirmationDialog.cs: the dialog tracks
+    /// its OK/Cancel selection in a private _selectedButton field (line 35),
+    /// not in IClickableMenu.currentlySnappedComponent (which is set once in
+    /// the constructor to null and never updates). v3.7.13 reads
+    /// _selectedButton via reflection and snaps the cursor to its bounds.
+    /// Falls back to confirmBox.cancelButton when _selectedButton is null
+    /// (the dialog's pre-input state).
     ///
     /// Spec: docs/superpowers/specs/2026-05-15-load-game-cursor-design.md
-    /// (Revision 7 — 2026-05-15 / Phase 8).
+    /// (Revision 8 — 2026-05-15 / Phase 9).
     /// </summary>
     internal static class LoadGameMenuPatches
     {
@@ -89,6 +90,7 @@ namespace AndroidConsolizer.Patches
         private static FieldInfo _scrollAreaField;
         private static FieldInfo _itemsPerPageField;
         private static FieldInfo _confirmBoxField;
+        private static FieldInfo _selectedButtonField;
         private static MethodInfo _getYOffsetForScrollMethod;
         private static MethodInfo _setYOffsetForScrollMethod;
 
@@ -111,6 +113,12 @@ namespace AndroidConsolizer.Patches
                 if (_confirmBoxField == null)
                 {
                     Monitor.Log("[LoadGameMenu] Reflection: confirmBox not found — confirm-dialog cursor sync disabled.", LogLevel.Warn);
+                }
+
+                _selectedButtonField = AccessTools.Field(typeof(ConfirmationDialog), "_selectedButton");
+                if (_selectedButtonField == null)
+                {
+                    Monitor.Log("[LoadGameMenu] Reflection: ConfirmationDialog._selectedButton not found — confirm-dialog cursor will fall back to cancelButton only.", LogLevel.Warn);
                 }
 
                 _scrollAreaField = AccessTools.Field(typeof(LoadGameMenu), "scrollArea");
@@ -162,7 +170,7 @@ namespace AndroidConsolizer.Patches
                     Monitor.Log("[LoadGameMenu] LoadGameMenu.receiveGamePadButton not found — same-frame clamp disabled.", LogLevel.Warn);
                 }
 
-                Monitor.Log("[LoadGameMenu] Patches applied (v3.7.12 fix).", LogLevel.Trace);
+                Monitor.Log("[LoadGameMenu] Patches applied (v3.7.13 fix).", LogLevel.Trace);
             }
             catch (Exception ex)
             {
@@ -180,12 +188,31 @@ namespace AndroidConsolizer.Patches
                 // components — the cursor visibly bounces. Force the cursor onto
                 // the dialog's selected button every tick and skip all other
                 // LoadGameMenu logic.
+                //
+                // ConfirmationDialog tracks its selection in a private
+                // _selectedButton field (decompile line 35), NOT in
+                // currentlySnappedComponent (which it leaves null after the
+                // constructor's snapToDefault call fails because the buttons
+                // have no myID set).
                 if (_confirmBoxField != null)
                 {
-                    var confirmMenu = _confirmBoxField.GetValue(__instance) as IClickableMenu;
-                    if (confirmMenu != null)
+                    var confirmDialog = _confirmBoxField.GetValue(__instance) as ConfirmationDialog;
+                    if (confirmDialog != null)
                     {
-                        confirmMenu.snapCursorToCurrentSnappedComponent();
+                        ClickableTextureComponent target = null;
+                        if (_selectedButtonField != null)
+                        {
+                            target = _selectedButtonField.GetValue(confirmDialog) as ClickableTextureComponent;
+                        }
+                        if (target == null)
+                        {
+                            target = confirmDialog.cancelButton;
+                        }
+                        if (target != null)
+                        {
+                            confirmDialog.currentlySnappedComponent = target;
+                            confirmDialog.snapCursorToCurrentSnappedComponent();
+                        }
                         return;
                     }
                 }
