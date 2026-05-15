@@ -12,15 +12,6 @@ Shipped: **v3.6.0** (Bug Fix Release). Roadmap structure was re-evaluated post-3
 
 Small to medium parity fixes that can each be solved with localized patches. No multi-patch system arc. Bumps the mod from "most parity items done" to "every menu has correct defaults and visible cursors."
 
-### 22b. Dialogue Option Box — Counter-Intuitive Initial Selection
-- Nothing visually selected when dialogue choice box appears. Pressing down selects TOP option; pressing up selects BOTTOM option.
-- **Root-cause (hypothesis):** Game initializes with invisible slot above/below visible options (index -1 or null). Navigation wraps around.
-- **Fix approaches:**
-  1. Start with top option pre-selected (convenient but risks accidental selection). Check if console pre-selects.
-  2. Invisible start position BETWEEN options — up=top, down=bottom. Safest.
-  3. Disable wrap-around on first input only.
-- **Investigation:** Find dialogue choice class, check selection index init, check console behavior.
-
 ### 17. Title/Main Menu Cursor Fix
 - Cursor should be visible on the Load button by default when the main menu loads, instead of being invisible until the player moves the stick or presses a button.
 - **Investigation:** Check `TitleMenu` class, initial `currentlySnappedComponent`, cursor visibility logic.

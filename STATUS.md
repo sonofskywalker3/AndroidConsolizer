@@ -1,6 +1,6 @@
 # AndroidConsolizer — Status
 
-**Shipped version:** 3.7.0 — released on GitHub 2026-05-14 (`v3.7.0`), local/remote in sync. Nexus mod page may still need the v3.7.0 description/version paste (manual step). Next milestone: **v3.8.0 — Console Parity: Quick Wins**.
+**Shipped version:** 3.7.0 — released on GitHub 2026-05-14 (`v3.7.0`). **v3.7.1 is committed locally** (#22b dialogue option box, device-verified) but not yet pushed. Nexus mod page may still need the v3.7.0 description/version paste (manual step). Current milestone: **v3.8.0 — Console Parity: Quick Wins** (in progress — #22b done).
 
 ## Latest commits since v3.6.0
 
@@ -56,7 +56,7 @@ See [`TODO.md`](./TODO.md) for full detail. High-level summary:
 - ✅ #48 Y button overlap on Xbox/PS layout — **confirmed stale.** v3.6.8 diagnostic + G Cloud device test showed no double-fire; the v3.3/v3.4 symptom was fixed by intervening input-pipeline work. Diagnostic reverted in **v3.6.9**. See `DONE.md` "#48 X/Y Button Overlap"
 - 🗑 #56 Luna freeze — **dropped 2026-05-13** (cold case; only artifact was a clean v3.3.0 startup log, no freeze captured)
 
-**v3.8.0 — Console Parity: Quick Wins:** #22b dialogue defaults, #17 title cursor, #35 load game cursor, #39 monster eradication, #46 bundle highlight greying, #47 missed rewards chest, #27 toolbar size slider, #19 geode visual feedback.
+**v3.8.0 — Console Parity: Quick Wins:** ✅ #22b dialogue defaults (v3.7.1). Remaining: #17 title cursor, #35 load game cursor, #39 monster eradication, #46 bundle highlight greying, #47 missed rewards chest, #27 toolbar size slider, #19 geode visual feedback.
 
 **v3.9.0 — Console Parity: Big Systems:** #18 museum donations (snap-based), #25 tool charging while moving, #25b slingshot aim (explicit right-stick rule exception).
 

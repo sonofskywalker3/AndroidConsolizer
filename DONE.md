@@ -434,3 +434,15 @@ Headline release: shop-cursor fixes, CarpenterMenu polish, CC bundle reward menu
 - **Conclusion:** the v3.3/v3.4 double-fire was resolved incidentally by the intervening input-pipeline rework (the GetState-level swap + the SMAPI `Input.Suppress` path). #48 is stale. v3.6.8 diagnostic reverted in full as **v3.6.9** (it's a closed case, not a "might recur" watch).
 - **Side finding:** the X/Y menu-swap for Xbox/PS layout *is* intended and correct — `docs/BUTTON_MAPPING_REFERENCE.md` previously claimed menus never swap X/Y, which was stale; corrected alongside this closure.
 - **Files (diagnostic, then reverted):** `Patches/GameplayButtonPatches.cs`, `Patches/ItemGrabMenuPatches.cs`, `Patches/InventoryPagePatches.cs`, `ModEntry.cs`, `Patches/InventoryManagementPatches.cs`
+
+---
+
+## Console Parity: Quick Wins (v3.8.0)
+
+### #22b Dialogue Option Box Pre-Selection — v3.7.1
+- **Symptom:** When a dialogue choice box opened on a controller, nothing was highlighted; pressing down selected the TOP option, pressing up selected the BOTTOM option.
+- **Root cause:** `DialogueBox.selectedResponse` initializes to `-1` ("nothing selected") and the game's `setUpQuestions()` never sets it. `snapToDefaultClickableComponent()` does snap `currentlySnappedComponent` to component 0, but for question boxes that field is vestigial — both the visual highlight (`draw()`) and the committed choice (`releaseLeftClick()`) read `selectedResponse`. In `receiveGamePadButton`, down does `selectedResponse++` (from -1 → 0, top) and up does `selectedResponse--` (from -1 → -2, which wraps to `responses.Length - 1`, bottom).
+- **Fix:** Harmony postfix on the private `DialogueBox.setUpQuestions()` sets `selectedResponse = 0` when `Game1.options.gamepadControls && !Game1.lastCursorMotionWasMouse`. `setUpQuestions()` runs in both question-box paths — the `DialogueBox(string, Response[])` constructor and `checkDialogue()` — so one patch point covers NPC questions, Yes/No prompts, and event dialogue questions. Pure "fix the data": the highlight sprite (`Rectangle(267, 256, 10, 10)` vs unselected `Rectangle(256, 256, 10, 10)`) is the game's own — the patch just makes the game show it from the start instead of after the first stick press.
+- **Scope:** Gamepad only — touch/mouse keep vanilla "nothing selected until tap". No GMCM toggle (no fitting existing toggle; add later only if a user complains).
+- **File:** `Patches/DialogueBoxPatches.cs` (new), registered in `ModEntry.cs`.
+- **Verified:** Device test on Ayaneo Pocket Air Mini — top option highlighted on open, down/up navigate correctly, A commits; log shows `DialogueBox patches applied.` with no errors.
