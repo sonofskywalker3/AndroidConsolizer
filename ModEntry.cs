@@ -164,6 +164,7 @@ namespace AndroidConsolizer
             Patches.DialogueBoxPatches.Apply(harmony, this.Monitor);
             Patches.TitleMenuPatches.Apply(harmony, this.Monitor);
             Patches.LoadGameMenuPatches.Apply(harmony, this.Monitor);
+            Patches.LetterViewerMenuPatches.Apply(harmony, this.Monitor);
             Patches.BootDiagnosticPatches.Apply(harmony, this.Monitor);
             Patches.BootDiagnosticPatches.ApplyAdditionalPatches(harmony, this.Monitor);
 
