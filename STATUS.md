@@ -1,12 +1,13 @@
 # AndroidConsolizer — Status
 
-**Shipped version:** 3.7.0 — released on GitHub 2026-05-14 (`v3.7.0`). **v3.7.1 and v3.7.4 are committed locally**, not yet pushed:
+**Shipped version:** 3.7.0 — released on GitHub 2026-05-14 (`v3.7.0`). **v3.7.1 through v3.7.14 are committed locally**, not yet pushed:
 - **v3.7.1** — #22b dialogue option box pre-selection (device-verified).
 - **v3.7.2** — first attempt at #17 title cursor; FAILED on device (spec premises were wrong about snappyMenus and transparency).
 - **v3.7.3** — #17 diagnostic build that revealed the real root cause (drawMouse suppression on Android title screen, snappyMenus=True on Ayaneo, transparency was already 1, `GamePad.IsConnected` unreliable on Ayaneo).
 - **v3.7.4** — #17 real fix: draw the cursor ourselves in a `TitleMenu.draw` postfix (per #40a pattern). Device-verified on Ayaneo (cursor visible on Load) and S26 (touch-only: no cursor — vanilla preserved).
+- **v3.7.5–v3.7.14** — #35 LoadGameMenu cursor + navigation arc. Two diagnostic builds (v3.7.5, v3.7.7) and eight fix iterations resolved entry snap, wasted-first-press, vanilla scroll-flicker, and the delete-confirmation dialog cursor. Final fix v3.7.14 device-verified on G Cloud. See `DONE.md` "#35 Load Game Screen Cursor / Navigation".
 
-Nexus mod page may still need the v3.7.0 description/version paste (manual step). Current milestone: **v3.8.0 — Console Parity: Quick Wins** (in progress — #22b and #17 done).
+Nexus mod page may still need the v3.7.0 description/version paste (manual step). Current milestone: **v3.8.0 — Console Parity: Quick Wins** (in progress — #22b, #17, and #35 done).
 
 ## Latest commits since v3.6.0
 
@@ -62,7 +63,7 @@ See [`TODO.md`](./TODO.md) for full detail. High-level summary:
 - ✅ #48 Y button overlap on Xbox/PS layout — **confirmed stale.** v3.6.8 diagnostic + G Cloud device test showed no double-fire; the v3.3/v3.4 symptom was fixed by intervening input-pipeline work. Diagnostic reverted in **v3.6.9**. See `DONE.md` "#48 X/Y Button Overlap"
 - 🗑 #56 Luna freeze — **dropped 2026-05-13** (cold case; only artifact was a clean v3.3.0 startup log, no freeze captured)
 
-**v3.8.0 — Console Parity: Quick Wins:** ✅ #22b dialogue defaults (v3.7.1), ✅ #17 title cursor (v3.7.4). Remaining: #35 load game cursor, #39 monster eradication, #46 bundle highlight greying, #47 missed rewards chest, #27 toolbar size slider, #19 geode visual feedback.
+**v3.8.0 — Console Parity: Quick Wins:** ✅ #22b dialogue defaults (v3.7.1), ✅ #17 title cursor (v3.7.4), ✅ #35 load game cursor (v3.7.5–v3.7.14). Remaining: #39 monster eradication, #46 bundle highlight greying, #47 missed rewards chest, #27 toolbar size slider, #19 geode visual feedback.
 
 **v3.9.0 — Console Parity: Big Systems:** #18 museum donations (snap-based), #25 tool charging while moving, #25b slingshot aim (explicit right-stick rule exception).
 
