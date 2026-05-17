@@ -59,7 +59,7 @@ namespace AndroidConsolizer.Patches
                         original: ctorString,
                         postfix: new HarmonyMethod(typeof(LetterViewerMenuPatches), nameof(CtorString_Postfix))
                     );
-                    Monitor.Log("[LetterViewerMenu] Patches applied (v3.7.16 fix).", LogLevel.Trace);
+                    Monitor.Log("[LetterViewerMenu] Patches applied (v3.7.17 fix+diag).", LogLevel.Trace);
                 }
                 else
                 {
@@ -76,16 +76,45 @@ namespace AndroidConsolizer.Patches
         {
             try
             {
-                if (!Game1.options.SnappyMenus) return;
+                bool snappyGate = Game1.options.SnappyMenus;
+                if (!snappyGate)
+                {
+                    Monitor.Log("[LetterViewerMenu] CtorString_Postfix: SnappyMenus=False, skipping snap.", LogLevel.Info);
+                    return;
+                }
+
+                int snappedBeforeId = __instance.currentlySnappedComponent?.myID ?? -1;
+                int componentsBefore = __instance.allClickableComponents?.Count ?? -1;
 
                 __instance.populateClickableComponentList();
-                __instance.snapToDefaultClickableComponent();
+                int componentsAfterPopulate = __instance.allClickableComponents?.Count ?? -1;
 
-                if (__instance.mailMessage != null && __instance.mailMessage.Count <= 1)
+                __instance.snapToDefaultClickableComponent();
+                int snappedAfterId = __instance.currentlySnappedComponent?.myID ?? -1;
+                string snappedAfterName = __instance.currentlySnappedComponent?.name ?? "";
+
+                bool singlePage = __instance.mailMessage != null && __instance.mailMessage.Count <= 1;
+                if (singlePage)
                 {
                     if (__instance.backButton != null) __instance.backButton.myID = -100;
                     if (__instance.forwardButton != null) __instance.forwardButton.myID = -100;
                 }
+
+                int forwardId = __instance.forwardButton?.myID ?? -999;
+                int backId = __instance.backButton?.myID ?? -999;
+                bool forwardVisible = __instance.forwardButton?.visible ?? false;
+                bool backVisible = __instance.backButton?.visible ?? false;
+
+                Monitor.Log(
+                    $"[LetterViewerMenu] CtorString_Postfix fired: snappy=True "
+                    + $"pages={__instance.mailMessage?.Count ?? -1} "
+                    + $"snappedBefore=id={snappedBeforeId} "
+                    + $"componentsBefore={componentsBefore} componentsAfterPopulate={componentsAfterPopulate} "
+                    + $"snappedAfter=id={snappedAfterId},name={snappedAfterName} "
+                    + $"forwardButton.myID={forwardId} backButton.myID={backId} "
+                    + $"forwardVisible={forwardVisible} backVisible={backVisible} "
+                    + $"singlePageBranch={singlePage}",
+                    LogLevel.Info);
             }
             catch (Exception ex)
             {
