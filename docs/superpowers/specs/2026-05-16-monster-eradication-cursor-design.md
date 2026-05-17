@@ -294,5 +294,109 @@ Single commit:
 
 ---
 
-(Phase 2 — fix design — will be appended here as a Revision after
-device test, mirroring the #17 and #35 spec lifecycle.)
+## Revision — 2026-05-17 (Phase 2: Fix, target v3.7.16)
+
+### What the v3.7.15 device test on GR0006 showed
+
+Diagnostic log at `test-output/SMAPI-latest.txt`, lines 1823-1880.
+Test was Test 1 only (no mailbox letter pending). Decisive evidence
+for the constructor-asymmetry hypothesis:
+
+| Line | Event | What it confirms |
+|---|---|---|
+| 1823 | `[LetterDiag] open overload=(string) ... snapped=null snappy=True gamepad=True lastMotionMouse=False mouse=(955,478)` | Predicted smoking gun. `(string)` ctor leaves `currentlySnappedComponent = null`. `snappyMenus=True` on this device too. |
+| 1824 | `update page=0/1 snapped=null forwardVisible=True backVisible=False mouse=(848,424)` | Mouse hasn't moved to forwardButton. The vanilla "breathing" pulse animation runs because `forwardButton.containsPoint(oldMouseX, oldMouseY)` is false (LetterViewerMenu.cs line 718-721). |
+| 1826 | `receiveGamePadButton b=LeftThumbstickRight` (user input) | DPad/stick DOES reach the menu — the "can't switch pages" half of the original report was misattribution. Inputs flow fine. |
+| 1827 | `update page=0/1 snapped=id=102,name= ... mouse=(1432,800)` | First input triggers `IClickableMenu`'s base snappy-nav path, which calls `populateClickableComponentList` + `snapToDefaultClickableComponent` lazily. From this frame on, the menu behaves correctly — but that's exactly the work the ctor should have done at frame 0. |
+| 1838-1839 | `b=A` followed by `update page=1/1 snapped=id=102` | Once snapped, A on the snapped forwardButton turns the page. The `IClickableMenu` base A-handler calls `receiveLeftClick` at `currentlySnappedComponent.bounds.Center`, which hits `forwardButton.containsPoint(...)`, which executes `page++` (LetterViewerMenu.cs line 616-624). No vanilla `case Buttons.A` in `receiveGamePadButton` is needed — the existing left-click path is sufficient. |
+| 1839→1875 | Cursor snaps between id=102 (forwardButton when `forwardVisible`) and id=101 (backButton when `backVisible`) as pages turn | Vanilla snap logic picks the right button automatically. No mod-side cursor management needed once initial snap happens. |
+
+User's verbal report — "starts with the arrow breathing and A does
+nothing, then you move the joystick toward the arrow and breathing
+stops, then A turns the page" — maps exactly onto the log:
+breathing + dead-A = `snapped=null` state at lines 1823-1824, joystick
+press = line 1826, breathing-stops-and-A-works = lines 1827 onward.
+
+The `Update_Postfix` `lastMotionMouse=False` and `gamepadConnected=True`
+values are baseline — they don't change the analysis. No drawMouse-
+suppression involvement: the cursor genuinely was somewhere else
+(not on forwardButton) until snappy nav moved it; once moved, vanilla
+draw handles it fine.
+
+### Root cause (confirmed)
+
+`LetterViewerMenu(string)` (line 89-98 of the decompile) is missing
+the snap initialization block that `LetterViewerMenu(string, string, bool)`
+runs at lines 176-185:
+
+```csharp
+if (Game1.options.SnappyMenus)
+{
+    populateClickableComponentList();
+    snapToDefaultClickableComponent();
+    if (mailMessage != null && mailMessage.Count <= 1)
+    {
+        backButton.myID = -100;
+        forwardButton.myID = -100;
+    }
+}
+```
+
+This is a vanilla Android port asymmetry between two sibling
+constructors. Every caller of `Game1.drawLetterMessage(string)` —
+the Adventure Guild kill list and any other letter shown via that
+helper — inherits the defect. The mailbox path (`(string, string, bool)`)
+is already correct.
+
+### Decision
+
+**Approach: pure data fix, mirror the working sibling.**
+`Constructor_Postfix` on `LetterViewerMenu(string)` that runs the
+same snap block. No drawMouse override, no input pipeline changes,
+no cursor management — once the menu is in the same state the
+mailbox path's constructor produces, everything downstream works.
+
+This is "fix the data, not the engine" exactly as the project's
+[`.claude/CLAUDE.md`](../../../.claude/CLAUDE.md) "Design Philosophy"
+prescribes.
+
+**Rejected alternatives:**
+- Patching `receiveGamePadButton` to add `case Buttons.A` — unnecessary; the base class's snapped-component left-click path already handles A correctly once snap is in place.
+- Drawing the cursor ourselves (#17/#40a pattern) — unnecessary; the vanilla cursor renders fine, it just wasn't being moved.
+- Gating the fix to the kill-list `firstPagePrefix` — over-narrow. The defect is the constructor itself; fixing only one caller leaves the same bug for every other `drawLetterMessage` site.
+
+### What this does and doesn't do
+
+**Does:** Make `LetterViewerMenu(string)` behave like `LetterViewerMenu(string, string, bool)` on entry — cursor snaps to forward arrow (or back arrow, or accept button per `snapToDefaultClickableComponent` line 524-538), breathing animation stops, A immediately turns pages.
+
+**Doesn't:** Touch DPad handling, change page-turn behaviour, alter the visual cursor sprite, affect mailbox letters, gate behind a config toggle. Single-page letters get `backButton.myID = forwardButton.myID = -100` per the mirrored block, matching the mailbox path's behaviour for single-page mail.
+
+### Files
+
+| File | Change |
+|---|---|
+| `Patches/LetterViewerMenuPatches.cs` | **Rewrite.** Delete all four diagnostic patches (`CtorString_Postfix` logging, `CtorMail_Postfix`, `ReceiveGamePadButton_Prefix`, `Update_Postfix`, `LogOpen` helper, all log caps and state). Replace with one `Constructor_Postfix` on the `(string)` overload that runs the snap block. File shrinks from 246 lines to ~80. |
+| `ModEntry.cs` | No change — the existing `Patches.LetterViewerMenuPatches.Apply(harmony, this.Monitor);` line stays. |
+| `manifest.json` | Bump `Version` to `3.7.16`. |
+
+Single commit:
+`v3.7.16: #39 LetterViewerMenu fix — snap on (string) ctor to match mailbox overload`.
+
+### Test plan (Phase 2)
+
+User runs on GR0006:
+
+1. Build, deploy.
+2. Adventurer's Guild → interact with kill list board.
+3. **Cursor should be on the forward arrow on entry**, arrow not breathing.
+4. **A immediately turns the page** (no joystick wiggle needed).
+5. Page 2 — cursor on back arrow, A returns to page 1.
+6. B closes.
+7. Sanity check: open any mailbox letter. **Mailbox behaviour unchanged** — cursor on forward arrow as before.
+
+### Lessons (to fold into `DONE.md` after verification)
+
+- The `LetterViewerMenu` constructor asymmetry is a real vanilla Android port bug that affects every `Game1.drawLetterMessage` caller. The kill list was the visible symptom; the fix benefits any other use of the helper.
+- "Can't switch pages" in the original TODO was a misattribution by the user — pages turn fine, but A doesn't fire pages until the cursor is snapped, and the cursor isn't snapped until the first input. So pressing A first looks like "navigation doesn't work."
+- The decompile-diff approach (compare two sibling constructors, find the asymmetry) was a faster path to root cause than the typical "trace every code path" diagnostic. Worth keeping in the mental toolkit for future menu bugs.
+- `[LetterDiag]` cap reset in `LogOpen` would have failed silently if `LogOpen` threw before reaching the reset lines — caught in code review as a minor. For v3.7.16 the diagnostic goes away anyway, but worth remembering the pattern: defensive resets belong above the `try`, not inside it.
