@@ -78,6 +78,16 @@ namespace AndroidConsolizer
         public bool EnableFurnitureDebounce { get; set; } = true;
 
         /// <summary>
+        /// Console-style two-press geode breaking at Clint. First A/X places the
+        /// selected geode visibly on the anvil; second A/X starts the crack. B
+        /// with anvil occupied cancels the placement (instead of closing).
+        /// Vanilla Android uses one-press X that places + cracks atomically with
+        /// no "geode on anvil" visual; A toggles a tooltip. Disable to restore
+        /// vanilla behaviour.
+        /// </summary>
+        public bool EnableConsoleGeodeMenu { get; set; } = true;
+
+        /// <summary>
         /// Replace the multi-tile green-square placement map (which marks every tile where the
         /// furniture's top-left corner can land — confusing for multi-tile pieces like beds)
         /// with a single colored ghost rectangle that shows exactly where the furniture will
