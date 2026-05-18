@@ -44,6 +44,14 @@ namespace AndroidConsolizer.Patches
         // same tick; we suppress one leftClick whose tick matches.
         private static int _redirectTick = -1;
 
+        // Set true when we auto-select on menu open; cleared on the first
+        // Update_Postfix tick after we successfully fire GamePadShowInfoPanel.
+        // Calling GamePadShowInfoPanel directly from OnMenuChanged / the
+        // snap-postfix doesn't visibly show the tooltip — showItemInfo seems
+        // to get reset before the first draw. Deferring to the first stable
+        // update tick after open works.
+        private static bool _pendingTooltipShow = false;
+
         // Reflected private members. Resolved at startup, null-checked
         // at every use so a missing field on some port silently degrades
         // rather than crashing.
@@ -138,6 +146,7 @@ namespace AndroidConsolizer.Patches
         public static void OnMenuChanged()
         {
             _redirectTick = -1;
+            _pendingTooltipShow = false;
             _lastLoggedSelIdx = -99;
             _lastLoggedCurSel = -99;
             _lastLoggedMouseX = -99999;
@@ -202,10 +211,10 @@ namespace AndroidConsolizer.Patches
                 }
             }
 
-            if (_gamePadShowInfoPanelMethod != null)
-            {
-                try { _gamePadShowInfoPanelMethod.Invoke(menu.inventory, null); } catch { }
-            }
+            // Defer the tooltip-show to Update_Postfix — calling it directly from
+            // OnMenuChanged didn't render the tooltip (showItemInfo getting cleared
+            // somewhere between here and the first draw, per v3.7.35 test).
+            _pendingTooltipShow = true;
 
             try { Monitor.Log($"[GeodeMenu] auto-selected first geode at slot {firstGeode}", LogLevel.Info); } catch { }
         }
@@ -494,6 +503,7 @@ namespace AndroidConsolizer.Patches
                 __instance.currentlySnappedComponent = slot;
                 __instance.snapCursorToCurrentSnappedComponent();
                 if (Game1.mouseCursorTransparency < 0.99f) Game1.mouseCursorTransparency = 1f;
+                _pendingTooltipShow = true;
                 try { Monitor?.Log($"[GeodeMenu] snap-to-default → first geode at slot {firstGeode}", LogLevel.Info); } catch { }
             }
             catch (Exception ex)
@@ -613,6 +623,32 @@ namespace AndroidConsolizer.Patches
         /// </summary>
         private static void Update_Postfix(GeodeMenu __instance)
         {
+            // Deferred tooltip: fire on the first stable Update tick after
+            // auto-select. Direct invocation from OnMenuChanged / the snap
+            // postfix doesn't render the tooltip (showItemInfo getting reset
+            // before first draw, per v3.7.35 test).
+            if (_pendingTooltipShow
+                && _gamePadShowInfoPanelMethod != null
+                && _inventoryCurrentlySelectedItemField != null
+                && __instance?.inventory != null)
+            {
+                try
+                {
+                    int curSelForTooltip = (int)_inventoryCurrentlySelectedItemField.GetValue(__instance.inventory);
+                    if (curSelForTooltip >= 0)
+                    {
+                        _gamePadShowInfoPanelMethod.Invoke(__instance.inventory, null);
+                        _pendingTooltipShow = false;
+                        try { Monitor?.Log($"[GeodeMenu] deferred tooltip fired for slot {curSelForTooltip}", LogLevel.Info); } catch { }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    try { Monitor?.Log($"[GeodeMenu] deferred tooltip invoke failed: {ex.Message}", LogLevel.Warn); } catch { }
+                    _pendingTooltipShow = false;
+                }
+            }
+
             if (Monitor == null) return;
             try
             {
