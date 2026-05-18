@@ -115,6 +115,17 @@ namespace AndroidConsolizer.Patches
                     original: AccessTools.Method(typeof(IClickableMenu), nameof(IClickableMenu.applyMovementKey), new System.Type[] { typeof(int) }),
                     prefix: new HarmonyMethod(typeof(GeodeMenuPatches), nameof(ApplyMovementKey_Prefix))
                 );
+                // snapToDefaultClickableComponent runs INSIDE the GeodeMenu
+                // constructor (only when SnappyMenus is true) and unconditionally
+                // snaps cursor to slot 0. We re-snap to the first geode in inventory
+                // in our postfix so the cursor lands on the right slot from the very
+                // first rendered frame — calling our own snap from OnGeodeMenuOpened
+                // (which fires AFTER the ctor) caused a visible 1-2 frame cursor
+                // blink at slot 0 before re-snapping.
+                harmony.Patch(
+                    original: AccessTools.Method(typeof(GeodeMenu), nameof(GeodeMenu.snapToDefaultClickableComponent)),
+                    postfix: new HarmonyMethod(typeof(GeodeMenuPatches), nameof(SnapToDefaultClickableComponent_Postfix))
+                );
                 monitor.Log("GeodeMenu patches attached (A→X + touch-sim + tooltip + spatial nav + diagnostic).", LogLevel.Info);
             }
             catch (Exception ex)
@@ -450,6 +461,45 @@ namespace AndroidConsolizer.Patches
                 if (best >= 0) return best;
             }
             return best;
+        }
+
+        /// <summary>
+        /// Postfix on GeodeMenu.snapToDefaultClickableComponent: after vanilla
+        /// snaps cursor to slot 0 (id=0) inside the constructor, re-snap to the
+        /// first geode slot in inventory. Runs before the first rendered frame,
+        /// so the cursor visibly starts on the correct slot — no blink. Also
+        /// covers later snap-to-default invocations (e.g. when state changes
+        /// after a crack consumes the previously-selected stack).
+        /// </summary>
+        private static void SnapToDefaultClickableComponent_Postfix(GeodeMenu __instance)
+        {
+            if (ModEntry.Config?.EnableConsoleGeodeMenu != true) return;
+            if (_selectedItemIndexField == null || _inventoryCurrentlySelectedItemField == null) return;
+            if (__instance?.inventory?.actualInventory == null || __instance.inventory.inventory == null) return;
+
+            int total = __instance.inventory.actualInventory.Count;
+            int firstGeode = -1;
+            for (int i = 0; i < total; i++)
+            {
+                if (IsGeodeAt(__instance.inventory, i)) { firstGeode = i; break; }
+            }
+            if (firstGeode < 0 || firstGeode >= __instance.inventory.inventory.Count) return;
+            var slot = __instance.inventory.inventory[firstGeode];
+            if (slot == null) return;
+
+            try
+            {
+                _selectedItemIndexField.SetValue(__instance, firstGeode);
+                _inventoryCurrentlySelectedItemField.SetValue(__instance.inventory, firstGeode);
+                __instance.currentlySnappedComponent = slot;
+                __instance.snapCursorToCurrentSnappedComponent();
+                if (Game1.mouseCursorTransparency < 0.99f) Game1.mouseCursorTransparency = 1f;
+                try { Monitor?.Log($"[GeodeMenu] snap-to-default → first geode at slot {firstGeode}", LogLevel.Info); } catch { }
+            }
+            catch (Exception ex)
+            {
+                try { Monitor?.Log($"[GeodeMenu] snap-to-default postfix error: {ex.Message}", LogLevel.Warn); } catch { }
+            }
         }
 
         /// <summary>
