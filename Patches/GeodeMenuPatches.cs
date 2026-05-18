@@ -53,6 +53,9 @@ namespace AndroidConsolizer.Patches
         // GeodeMenu._selectedItemIndex is private — needed for diagnostic
         // observation of vanilla nav loops.
         private static FieldInfo _selectedItemIndexField;
+        // InventoryMenu.GamePadShowInfoPanel is Android-only — not in the
+        // PC DLL the project compiles against.
+        private static MethodInfo _gamePadShowInfoPanelMethod;
 
         // Diagnostic state (v3.7.30 — observation only, throttled to changes).
         private static int _lastLoggedSelIdx = -99;
@@ -68,9 +71,11 @@ namespace AndroidConsolizer.Patches
                 _showTooltipField = AccessTools.Field(typeof(GeodeMenu), "_showTooltip");
                 _inventoryCurrentlySelectedItemField = AccessTools.Field(typeof(InventoryMenu), "currentlySelectedItem");
                 _selectedItemIndexField = AccessTools.Field(typeof(GeodeMenu), "_selectedItemIndex");
+                _gamePadShowInfoPanelMethod = AccessTools.Method(typeof(InventoryMenu), "GamePadShowInfoPanel");
                 monitor.Log($"[GeodeMenu] reflection: _showTooltip={(_showTooltipField != null ? "OK" : "NULL")}, "
                     + $"currentlySelectedItem={(_inventoryCurrentlySelectedItemField != null ? "OK" : "NULL")}, "
-                    + $"_selectedItemIndex={(_selectedItemIndexField != null ? "OK" : "NULL")}", LogLevel.Info);
+                    + $"_selectedItemIndex={(_selectedItemIndexField != null ? "OK" : "NULL")}, "
+                    + $"GamePadShowInfoPanel={(_gamePadShowInfoPanelMethod != null ? "OK" : "NULL")}", LogLevel.Info);
 
                 harmony.Patch(
                     original: AccessTools.Method(typeof(GeodeMenu), nameof(GeodeMenu.receiveGamePadButton)),
@@ -85,15 +90,24 @@ namespace AndroidConsolizer.Patches
                     original: AccessTools.Method(typeof(GeodeMenu), nameof(GeodeMenu.startGeodeCrack)),
                     postfix: new HarmonyMethod(typeof(GeodeMenuPatches), nameof(StartGeodeCrack_Postfix))
                 );
-                // Diagnostic-only postfix on update + draw to track state
-                // changes. v3.7.30 ships zero behavioural change beyond
-                // the v3.7.29 patches; goal is to surface what's actually
-                // happening so the next iteration designs from data.
                 harmony.Patch(
                     original: AccessTools.Method(typeof(GeodeMenu), nameof(GeodeMenu.update)),
                     postfix: new HarmonyMethod(typeof(GeodeMenuPatches), nameof(Update_Postfix))
                 );
-                monitor.Log("GeodeMenu patches attached (A→X + touch-sim + tooltip + diagnostic).", LogLevel.Info);
+                // applyMovementKey is declared on IClickableMenu base and
+                // ISN'T overridden by GeodeMenu — patch the base. v3.7.30
+                // diagnostic showed Game1.UpdateControlInput calls
+                // activeClickableMenu.applyMovementKey(direction) AFTER
+                // receiveGamePadButton returns, walking
+                // currentlySnappedComponent's neighbor IDs and re-running
+                // snapCursorToCurrentSnappedComponent — overwriting any
+                // snap state we set in our postfix. Suppress for GeodeMenu
+                // so our own nav (in the prefix) owns the entire state.
+                harmony.Patch(
+                    original: AccessTools.Method(typeof(IClickableMenu), nameof(IClickableMenu.applyMovementKey), new System.Type[] { typeof(int) }),
+                    prefix: new HarmonyMethod(typeof(GeodeMenuPatches), nameof(ApplyMovementKey_Prefix))
+                );
+                monitor.Log("GeodeMenu patches attached (A→X + touch-sim + tooltip + spatial nav + diagnostic).", LogLevel.Info);
             }
             catch (Exception ex)
             {
@@ -131,25 +145,177 @@ namespace AndroidConsolizer.Patches
         private static bool ReceiveGamePadButton_Prefix(GeodeMenu __instance, Buttons b)
         {
             if (_inRedirect) return true;
-            if (b != Buttons.A) return true;
             if (ModEntry.Config?.EnableConsoleGeodeMenu != true) return true;
 
-            _inRedirect = true;
-            try
+            // A → X redirect (one-press place + crack, Switch parity).
+            if (b == Buttons.A)
             {
-                _redirectTick = Game1.ticks;
-                try { Monitor.Log($"[GeodeMenu] A redirect → X at tick {_redirectTick}", LogLevel.Info); } catch { }
-                __instance.receiveGamePadButton(Buttons.X);
+                _inRedirect = true;
+                try
+                {
+                    _redirectTick = Game1.ticks;
+                    try { Monitor.Log($"[GeodeMenu] A redirect → X at tick {_redirectTick}", LogLevel.Info); } catch { }
+                    __instance.receiveGamePadButton(Buttons.X);
+                }
+                catch (Exception ex)
+                {
+                    try { Monitor.Log($"[GeodeMenu] A→X redirect error: {ex.Message}", LogLevel.Error); } catch { }
+                    return true;
+                }
+                finally
+                {
+                    _inRedirect = false;
+                }
+                return false;
             }
-            catch (Exception ex)
+
+            // Spatial geode-only nav. Replaces vanilla's linear
+            // _selectedItemIndex scan (lines 563-622) which moves UP/LEFT
+            // by -1 and DOWN/RIGHT by +1 regardless of grid position,
+            // making UP feel like LEFT. We compute the spatial neighbour
+            // in the requested direction and skip non-geodes within that
+            // direction's traversal.
+            int dir = NavDirection(b);
+            if (dir >= 0)
             {
-                try { Monitor.Log($"[GeodeMenu] A→X redirect error: {ex.Message}", LogLevel.Error); } catch { }
-                return true;
+                try
+                {
+                    DoSpatialNav(__instance, dir);
+                }
+                catch (Exception ex)
+                {
+                    try { Monitor.Log($"[GeodeMenu] spatial nav error: {ex.Message}", LogLevel.Error); } catch { }
+                    return true; // fall back to vanilla on error
+                }
+                return false;
             }
-            finally
+
+            return true;
+        }
+
+        private static int NavDirection(Buttons b)
+        {
+            switch (b)
             {
-                _inRedirect = false;
+                case Buttons.DPadUp:
+                case Buttons.LeftThumbstickUp: return 0;
+                case Buttons.DPadRight:
+                case Buttons.LeftThumbstickRight: return 1;
+                case Buttons.DPadDown:
+                case Buttons.LeftThumbstickDown: return 2;
+                case Buttons.DPadLeft:
+                case Buttons.LeftThumbstickLeft: return 3;
+                default: return -1;
             }
+        }
+
+        // Inventory grid is 12 columns wide on Stardew (constant across
+        // all menus). 36 slots = 3 rows. ClickableComponents in
+        // inventory.inventory are indexed in row-major order so col = i%12,
+        // row = i/12.
+        private const int INV_COLS = 12;
+
+        private static void DoSpatialNav(GeodeMenu menu, int direction)
+        {
+            if (_selectedItemIndexField == null || _inventoryCurrentlySelectedItemField == null) return;
+            if (menu.inventory?.actualInventory == null || menu.inventory.inventory == null) return;
+
+            int current = (int)_selectedItemIndexField.GetValue(menu);
+            int total = menu.inventory.actualInventory.Count;
+
+            // -1 = no prior selection. First nav lands on the first geode
+            // in inventory regardless of direction so the user isn't
+            // stuck pressing nothing.
+            int target = -1;
+            if (current < 0)
+            {
+                for (int i = 0; i < total; i++)
+                {
+                    if (IsGeodeAt(menu.inventory, i)) { target = i; break; }
+                }
+            }
+            else
+            {
+                int row = current / INV_COLS;
+                int col = current % INV_COLS;
+                switch (direction)
+                {
+                    case 0: // UP — scan column above
+                        for (int r = row - 1; r >= 0; r--)
+                        {
+                            int idx = r * INV_COLS + col;
+                            if (idx < total && IsGeodeAt(menu.inventory, idx)) { target = idx; break; }
+                        }
+                        break;
+                    case 2: // DOWN — scan column below
+                        for (int r = row + 1; r * INV_COLS + col < total; r++)
+                        {
+                            int idx = r * INV_COLS + col;
+                            if (idx < total && IsGeodeAt(menu.inventory, idx)) { target = idx; break; }
+                        }
+                        break;
+                    case 1: // RIGHT — scan within row
+                        for (int c = col + 1; c < INV_COLS; c++)
+                        {
+                            int idx = row * INV_COLS + c;
+                            if (idx < total && IsGeodeAt(menu.inventory, idx)) { target = idx; break; }
+                        }
+                        break;
+                    case 3: // LEFT — scan within row
+                        for (int c = col - 1; c >= 0; c--)
+                        {
+                            int idx = row * INV_COLS + c;
+                            if (idx >= 0 && IsGeodeAt(menu.inventory, idx)) { target = idx; break; }
+                        }
+                        break;
+                }
+            }
+
+            try { Monitor.Log($"[GeodeMenu/nav] dir={direction} from={current} → target={target}", LogLevel.Info); } catch { }
+            if (target < 0) return; // no geode in that direction — stay put.
+
+            _selectedItemIndexField.SetValue(menu, target);
+            _inventoryCurrentlySelectedItemField.SetValue(menu.inventory, target);
+            if (target < menu.inventory.inventory.Count)
+            {
+                var slot = menu.inventory.inventory[target];
+                if (slot != null)
+                {
+                    menu.currentlySnappedComponent = slot;
+                    menu.snapCursorToCurrentSnappedComponent();
+                    if (Game1.mouseCursorTransparency < 0.99f) Game1.mouseCursorTransparency = 1f;
+                }
+            }
+
+            // Mirror vanilla's GamePadShowInfoPanel for the new selection
+            // (vanilla normally does this via the receiveGamePadButton
+            // fall-through; we returned false above so that didn't run).
+            // Reflected because the method is Android-only.
+            if (_gamePadShowInfoPanelMethod != null)
+            {
+                try { _gamePadShowInfoPanelMethod.Invoke(menu.inventory, null); } catch { }
+            }
+        }
+
+        private static bool IsGeodeAt(InventoryMenu inv, int idx)
+        {
+            if (idx < 0 || idx >= inv.actualInventory.Count) return false;
+            var item = inv.actualInventory[idx];
+            if (item == null) return false;
+            return inv.highlightMethod == null || inv.highlightMethod(item);
+        }
+
+        /// <summary>
+        /// Suppress IClickableMenu.applyMovementKey for GeodeMenu so the
+        /// game's spatial neighbour-ID nav can't fire after our prefix
+        /// has already updated everything. Without this, the cursor
+        /// jumps to whatever applyMovementKey's neighbour walk lands on
+        /// (slot 12 below slot 0 etc.) overwriting our snap.
+        /// </summary>
+        private static bool ApplyMovementKey_Prefix(IClickableMenu __instance)
+        {
+            if (!(__instance is GeodeMenu)) return true;
+            if (ModEntry.Config?.EnableConsoleGeodeMenu != true) return true;
             return false;
         }
 
