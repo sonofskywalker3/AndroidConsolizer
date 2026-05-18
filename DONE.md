@@ -404,6 +404,7 @@ Headline release: shop-cursor fixes, CarpenterMenu polish, CC bundle reward menu
 - **Config:** `EnablePickupToActiveRow` (default true)
 
 ### #54 Trigger Column-Skip on Gamesir / G Cloud — v3.6.6
+- ⚠ **Not 100%** — single recurrence on G Cloud 2026-05-18 during v3.7.26 testing. v3.6.6 fixed AC-vs-AC bounce; a different race (AC vs vanilla `pressSwitchToolButton`) remains. See `TODO.md` **#54b** for evidence + fix direction.
 - **Reporters:** Nexus user with Gamesir X2 (6 Mar 2026, "occasionally skipping 2 slots") + Gamesir X5 Lite user (17 Feb 2026, "still jumps 2 slot" after v3.3.11). Author has both Gamesir X2 + G Cloud and reproduced.
 - **Diagnostic data (v3.6.5 baseline, G Cloud):** Of 103 trigger edges in a 30-second test, **~37% were spurious**:
   - 15 dropout-bounce (LT held at 1.0 but value briefly dropped to 0.01 for 1-3 ticks mid-pull — each dropout flipped `wasLeftTriggerDown=false`, so when value returned the edge detector fired again. The single physical pull registered as two slot moves.)

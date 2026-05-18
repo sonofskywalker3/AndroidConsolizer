@@ -33,6 +33,18 @@ Small to medium parity fixes that can each be solved with localized patches. No 
 - **Fix approach:** Apply inventory-style patches on `GeodeMenu`. A-button to select geode, visual feedback of geode moving to anvil, A on anvil to crack.
 - **Note:** Originally bundled with #12 in the GSD-era M3, but doesn't actually require a free cursor — same pattern as the GameMenu tab work.
 
+### 54b. Trigger Column-Skip — Rare Recurrence Despite v3.6.6 Fix
+- **Status:** parent #54 shipped fix in v3.6.6 (see `DONE.md` "#54 Trigger Column-Skip"). One recurrence observed during v3.7.26 G Cloud test session 2026-05-18 — does NOT invalidate v3.6.6, just isn't 100%.
+- **Captured evidence** (`test-output/log-archive/SMAPI-v3.7.26-20260518-123505.txt`, lines ~1774-1786, around tick 15814-15830):
+  - Tick 15814: `set_CurrentToolIndex_Patch1` 0→1 called by **vanilla** `Game1.pressSwitchToolButton()` from `Game1.UpdateControlInput(GameTime)`.
+  - Tick 15815 (1 tick / ~16ms later): `set_CurrentToolIndex_Patch1` 1→2 called by **AC's** `ModEntry.HandleTriggersDirectly` from `OnUpdateTicked`.
+  - Trigger raw values across the press: RT 0.96 → 0.92 → 0.78 → 0.78 → 0.51 → 0.12 → 0.01 (clean ramp-down, no mid-pull dropouts).
+  - Single user press → both vanilla and AC fired. v3.6.6's release-confirmation streak prevented the AC-vs-AC bounce that was the original #54 root cause, but did nothing about AC racing vanilla.
+- **Root cause hypothesis:** `Game1.UpdateControlInput` reads `GamePad.GetState()` directly and calls `pressSwitchToolButton()` whenever the trigger crosses the press threshold. AC's `HandleTriggersDirectly` runs from SMAPI's `UpdateTicked` event and also detects press edges. Both fire on the same edge → double advance. The #54 fix addressed AC's own bounce/dropout sensitivity but didn't suppress the vanilla path that AC was supposed to replace.
+- **Fix direction:** either (a) suppress vanilla's `pressSwitchToolButton` while AC's toolbar logic owns trigger handling (e.g. zero the trigger value in `GetState_Postfix` for tool-switch purposes after AC has consumed the edge — same pattern as the analog-trigger zeroing in `GameplayButtonPatches` for the v3.3.x trigger work), or (b) detect that vanilla just advanced the tool index and skip AC's advance for that edge (e.g. record `_lastVanillaToolSwitchTick` from the existing `CurrentToolIndex_Prefix` diagnostic and have `HandleTriggersDirectly` ignore presses within ~5 ticks of that timestamp).
+- **Priority:** low — single occurrence per session is rare and the user can correct with one Y/X press in the other direction. Address when the next user complaint lands OR when v3.8 / v3.9 work brings trigger handling under examination anyway.
+- **Files to touch:** `ModEntry.cs` (`HandleTriggersDirectly`), possibly `Patches/GameplayButtonPatches.cs` (GetState-level suppression), `Patches/FarmerPatches.cs` (existing `[ToolIdx]` diagnostic stays — it's how we caught this).
+
 ---
 
 ## v3.9.0 — Console Parity: Big Systems
