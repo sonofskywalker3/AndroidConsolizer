@@ -50,6 +50,15 @@ namespace AndroidConsolizer.Patches
         // InventoryMenu.currentlySelectedItem is Android-only — not in
         // the PC DLL the project compiles against.
         private static FieldInfo _inventoryCurrentlySelectedItemField;
+        // GeodeMenu._selectedItemIndex is private — needed for diagnostic
+        // observation of vanilla nav loops.
+        private static FieldInfo _selectedItemIndexField;
+
+        // Diagnostic state (v3.7.30 — observation only, throttled to changes).
+        private static int _lastLoggedSelIdx = -99;
+        private static int _lastLoggedCurSel = -99;
+        private static int _lastLoggedMouseX = -99999;
+        private static int _lastLoggedMouseY = -99999;
 
         public static void Apply(Harmony harmony, IMonitor monitor)
         {
@@ -58,10 +67,10 @@ namespace AndroidConsolizer.Patches
             {
                 _showTooltipField = AccessTools.Field(typeof(GeodeMenu), "_showTooltip");
                 _inventoryCurrentlySelectedItemField = AccessTools.Field(typeof(InventoryMenu), "currentlySelectedItem");
-                if (_showTooltipField == null)
-                    monitor.Log("[GeodeMenu] _showTooltip not found — tooltip auto-show disabled.", LogLevel.Warn);
-                if (_inventoryCurrentlySelectedItemField == null)
-                    monitor.Log("[GeodeMenu] InventoryMenu.currentlySelectedItem not found — cursor sync disabled.", LogLevel.Warn);
+                _selectedItemIndexField = AccessTools.Field(typeof(GeodeMenu), "_selectedItemIndex");
+                monitor.Log($"[GeodeMenu] reflection: _showTooltip={(_showTooltipField != null ? "OK" : "NULL")}, "
+                    + $"currentlySelectedItem={(_inventoryCurrentlySelectedItemField != null ? "OK" : "NULL")}, "
+                    + $"_selectedItemIndex={(_selectedItemIndexField != null ? "OK" : "NULL")}", LogLevel.Info);
 
                 harmony.Patch(
                     original: AccessTools.Method(typeof(GeodeMenu), nameof(GeodeMenu.receiveGamePadButton)),
@@ -76,7 +85,15 @@ namespace AndroidConsolizer.Patches
                     original: AccessTools.Method(typeof(GeodeMenu), nameof(GeodeMenu.startGeodeCrack)),
                     postfix: new HarmonyMethod(typeof(GeodeMenuPatches), nameof(StartGeodeCrack_Postfix))
                 );
-                monitor.Log("GeodeMenu patches attached (A→X + touch-sim suppression + tooltip).", LogLevel.Info);
+                // Diagnostic-only postfix on update + draw to track state
+                // changes. v3.7.30 ships zero behavioural change beyond
+                // the v3.7.29 patches; goal is to surface what's actually
+                // happening so the next iteration designs from data.
+                harmony.Patch(
+                    original: AccessTools.Method(typeof(GeodeMenu), nameof(GeodeMenu.update)),
+                    postfix: new HarmonyMethod(typeof(GeodeMenuPatches), nameof(Update_Postfix))
+                );
+                monitor.Log("GeodeMenu patches attached (A→X + touch-sim + tooltip + diagnostic).", LogLevel.Info);
             }
             catch (Exception ex)
             {
@@ -88,6 +105,10 @@ namespace AndroidConsolizer.Patches
         public static void OnMenuChanged()
         {
             _redirectTick = -1;
+            _lastLoggedSelIdx = -99;
+            _lastLoggedCurSel = -99;
+            _lastLoggedMouseX = -99999;
+            _lastLoggedMouseY = -99999;
         }
 
         /// <summary>Called from ModEntry.OnMenuChanged when a GeodeMenu OPENS.
@@ -170,28 +191,107 @@ namespace AndroidConsolizer.Patches
         /// </summary>
         private static void ReceiveGamePadButton_Postfix(GeodeMenu __instance, Buttons b)
         {
+            bool isNav = b == Buttons.DPadUp || b == Buttons.DPadDown || b == Buttons.DPadLeft || b == Buttons.DPadRight
+                || b == Buttons.LeftThumbstickUp || b == Buttons.LeftThumbstickDown
+                || b == Buttons.LeftThumbstickLeft || b == Buttons.LeftThumbstickRight;
+
+            // Diagnostic: log every nav button arrival with full state
+            // BEFORE and AFTER our cursor-sync attempt.
+            if (isNav)
+            {
+                LogNavState(__instance, b, "POST-VANILLA");
+            }
+
             if (ModEntry.Config?.EnableConsoleGeodeMenu != true) return;
             if (_inventoryCurrentlySelectedItemField == null) return;
-
-            if (b != Buttons.DPadUp && b != Buttons.DPadDown && b != Buttons.DPadLeft && b != Buttons.DPadRight
-                && b != Buttons.LeftThumbstickUp && b != Buttons.LeftThumbstickDown
-                && b != Buttons.LeftThumbstickLeft && b != Buttons.LeftThumbstickRight)
-                return;
+            if (!isNav) return;
 
             try
             {
-                if (__instance.inventory?.inventory == null) return;
+                if (__instance.inventory?.inventory == null)
+                {
+                    try { Monitor.Log("[GeodeMenu/diag] cursor sync: inventory or inventory.inventory NULL", LogLevel.Info); } catch { }
+                    return;
+                }
                 int selected = (int)_inventoryCurrentlySelectedItemField.GetValue(__instance.inventory);
-                if (selected < 0 || selected >= __instance.inventory.inventory.Count) return;
-                var slot = __instance.inventory.inventory[selected];
-                if (slot == null) return;
+                int invCount = __instance.inventory.inventory.Count;
+                try { Monitor.Log($"[GeodeMenu/diag] cursor sync: selected={selected}, inventoryComponentCount={invCount}", LogLevel.Info); } catch { }
 
+                if (selected < 0 || selected >= invCount)
+                {
+                    try { Monitor.Log($"[GeodeMenu/diag] cursor sync bail: selected out of range", LogLevel.Info); } catch { }
+                    return;
+                }
+                var slot = __instance.inventory.inventory[selected];
+                if (slot == null)
+                {
+                    try { Monitor.Log($"[GeodeMenu/diag] cursor sync bail: slot[{selected}] is NULL", LogLevel.Info); } catch { }
+                    return;
+                }
+
+                int preX = Game1.getMouseX(), preY = Game1.getMouseY();
                 __instance.currentlySnappedComponent = slot;
                 __instance.snapCursorToCurrentSnappedComponent();
+                int postX = Game1.getMouseX(), postY = Game1.getMouseY();
+                try { Monitor.Log($"[GeodeMenu/diag] cursor sync ran. slot.bounds={slot.bounds}, mouse {preX},{preY} → {postX},{postY}, mouseCursorTransparency={Game1.mouseCursorTransparency:F2}", LogLevel.Info); } catch { }
             }
             catch (Exception ex)
             {
                 try { Monitor.Log($"[GeodeMenu] cursor sync failed: {ex.Message}", LogLevel.Warn); } catch { }
+            }
+        }
+
+        /// <summary>
+        /// Diagnostic — every tick, log _selectedItemIndex and
+        /// inventory.currentlySelectedItem and Game1.getMouseX/Y when
+        /// any of them changes. Throttled to deltas only (no spam).
+        /// Goal: see what vanilla nav and our patches are doing in
+        /// real time without manually pressing a button.
+        /// </summary>
+        private static void Update_Postfix(GeodeMenu __instance)
+        {
+            if (Monitor == null) return;
+            try
+            {
+                int selIdx = (_selectedItemIndexField != null) ? (int)_selectedItemIndexField.GetValue(__instance) : -99;
+                int curSel = (_inventoryCurrentlySelectedItemField != null && __instance.inventory != null)
+                    ? (int)_inventoryCurrentlySelectedItemField.GetValue(__instance.inventory)
+                    : -99;
+                int mx = Game1.getMouseX();
+                int my = Game1.getMouseY();
+
+                if (selIdx != _lastLoggedSelIdx || curSel != _lastLoggedCurSel || mx != _lastLoggedMouseX || my != _lastLoggedMouseY)
+                {
+                    string snapped = __instance.currentlySnappedComponent != null
+                        ? $"snap={__instance.currentlySnappedComponent.myID}@{__instance.currentlySnappedComponent.bounds}"
+                        : "snap=null";
+                    Monitor.Log($"[GeodeMenu/diag] state Δ: _selectedItemIndex={selIdx} currentlySelectedItem={curSel} mouse=({mx},{my}) transparency={Game1.mouseCursorTransparency:F2} {snapped}", LogLevel.Info);
+                    _lastLoggedSelIdx = selIdx;
+                    _lastLoggedCurSel = curSel;
+                    _lastLoggedMouseX = mx;
+                    _lastLoggedMouseY = my;
+                }
+            }
+            catch (Exception ex)
+            {
+                try { Monitor.Log($"[GeodeMenu/diag] update log failed: {ex.Message}", LogLevel.Warn); } catch { }
+            }
+        }
+
+        private static void LogNavState(GeodeMenu menu, Buttons b, string label)
+        {
+            try
+            {
+                int selIdx = (_selectedItemIndexField != null) ? (int)_selectedItemIndexField.GetValue(menu) : -99;
+                int curSel = (_inventoryCurrentlySelectedItemField != null && menu.inventory != null)
+                    ? (int)_inventoryCurrentlySelectedItemField.GetValue(menu.inventory)
+                    : -99;
+                int snapID = menu.currentlySnappedComponent?.myID ?? -99;
+                Monitor.Log($"[GeodeMenu/diag] {label} button={b}: _selectedItemIndex={selIdx} currentlySelectedItem={curSel} snap.myID={snapID} mouse=({Game1.getMouseX()},{Game1.getMouseY()})", LogLevel.Info);
+            }
+            catch (Exception ex)
+            {
+                try { Monitor.Log($"[GeodeMenu/diag] {label} log failed: {ex.Message}", LogLevel.Warn); } catch { }
             }
         }
     }
