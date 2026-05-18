@@ -32,6 +32,7 @@ namespace AndroidConsolizer.Patches
         private static MethodInfo _tryDepositItemMethod;
         private static FieldInfo _presentButtonField;
         private static FieldInfo _whichAreaField;
+        private static FieldInfo _currentPageBundleField;
 
         // Overview page state
         private static bool _onOverviewPage;
@@ -39,6 +40,8 @@ namespace AndroidConsolizer.Patches
 
         // Donation page state
         private static bool _onDonationPage;
+        private static InventoryMenu.highlightThisItem _savedHighlightMethod;
+        private static bool _greyoutInstalled;
         private static int _trackedSlotIndex;
         private static int _maxSlotIndex = 23;
         private const int INV_COLUMNS = 6;
@@ -77,6 +80,11 @@ namespace AndroidConsolizer.Patches
             _tryDepositItemMethod = AccessTools.Method(typeof(JunimoNoteMenu), "tryDepositItem");
             _presentButtonField = AccessTools.Field(typeof(JunimoNoteMenu), "presentButton");
             _whichAreaField = AccessTools.Field(typeof(JunimoNoteMenu), "whichArea");
+            _currentPageBundleField = AccessTools.Field(typeof(JunimoNoteMenu), "currentPageBundle");
+            if (_currentPageBundleField == null)
+            {
+                Monitor.Log("[JunimoNote] currentPageBundle reflection failed — donation greyout disabled.", LogLevel.Warn);
+            }
 
             // Patch GetMouseState — both input wrapper and XNA Mouse paths
             var inputType = Game1.input.GetType();
@@ -156,6 +164,8 @@ namespace AndroidConsolizer.Patches
             _inIngredientZone = false;
             _ingredientRows = null;
             _savedOverviewComponentId = -1;
+            _savedHighlightMethod = null;
+            _greyoutInstalled = false;
             // Don't reset _rewardsMenuOpened/_pendingRewardIndices here —
             // they need to survive the menu transition from ItemGrabMenu back to JunimoNoteMenu
         }
@@ -647,9 +657,11 @@ namespace AndroidConsolizer.Patches
 
                     BuildIngredientRows(__instance);
                     SnapToSlot(__instance);
+                    InstallDonationGreyout(__instance);
                 }
                 else if (!specificBundle && _onDonationPage)
                 {
+                    RestoreDonationGreyout(__instance);
                     _onDonationPage = false;
                     _overridingMouse = false;
                     _inIngredientZone = false;
@@ -681,6 +693,42 @@ namespace AndroidConsolizer.Patches
             {
                 Monitor.Log($"[JunimoNote] Update error: {ex.Message}", LogLevel.Error);
             }
+        }
+
+        private static bool DonationGreyoutFilter(Item item)
+        {
+            if (item == null) return false;
+
+            var menu = Game1.activeClickableMenu as JunimoNoteMenu;
+            if (menu == null) return true;
+
+            var bundle = _currentPageBundleField?.GetValue(menu) as Bundle;
+            if (bundle == null) return true;
+            if (!bundle.depositsAllowed) return false;
+
+            return bundle.canAcceptThisItem(item, null, ignore_stack_count: true);
+        }
+
+        private static void InstallDonationGreyout(JunimoNoteMenu menu)
+        {
+            if (_greyoutInstalled) return;
+            if (_currentPageBundleField == null) return;
+            if (menu?.inventory == null) return;
+
+            _savedHighlightMethod = menu.inventory.highlightMethod;
+            menu.inventory.highlightMethod = DonationGreyoutFilter;
+            _greyoutInstalled = true;
+        }
+
+        private static void RestoreDonationGreyout(JunimoNoteMenu menu)
+        {
+            if (!_greyoutInstalled) return;
+
+            if (menu?.inventory != null)
+                menu.inventory.highlightMethod = _savedHighlightMethod;
+
+            _savedHighlightMethod = null;
+            _greyoutInstalled = false;
         }
 
         // ===== Draw prefix/postfix =====
