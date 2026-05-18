@@ -135,7 +135,10 @@ namespace AndroidConsolizer.Patches
 
         /// <summary>Called from ModEntry.OnMenuChanged when a GeodeMenu OPENS.
         /// Sets _showTooltip = true on the fresh instance so vanilla's
-        /// per-press fall-through auto-fires GamePadShowInfoPanel.</summary>
+        /// per-press fall-through auto-fires GamePadShowInfoPanel, and
+        /// auto-selects the first geode in inventory so the user lands on
+        /// something actionable instead of having to press a direction to
+        /// pick up a selection (vanilla opens with _selectedItemIndex = -1).</summary>
         public static void OnGeodeMenuOpened(GeodeMenu menu)
         {
             if (menu == null || _showTooltipField == null) return;
@@ -143,11 +146,57 @@ namespace AndroidConsolizer.Patches
             try
             {
                 _showTooltipField.SetValue(menu, true);
+                AutoSelectFirstGeode(menu);
             }
             catch (Exception ex)
             {
-                try { Monitor.Log($"[GeodeMenu] couldn't force _showTooltip=true: {ex.Message}", LogLevel.Warn); } catch { }
+                try { Monitor.Log($"[GeodeMenu] OnGeodeMenuOpened error: {ex.Message}", LogLevel.Warn); } catch { }
             }
+        }
+
+        /// <summary>
+        /// Find the first geode in inventory and snap the selection +
+        /// cursor to it. Mirrors the in-nav pattern used by DoSpatialNav
+        /// (both fields set, snap cursor, force transparency, kick info
+        /// panel). If the player has no geodes, leaves selection at -1.
+        /// </summary>
+        private static void AutoSelectFirstGeode(GeodeMenu menu)
+        {
+            if (_selectedItemIndexField == null || _inventoryCurrentlySelectedItemField == null) return;
+            if (menu.inventory?.actualInventory == null || menu.inventory.inventory == null) return;
+
+            int total = menu.inventory.actualInventory.Count;
+            int firstGeode = -1;
+            for (int i = 0; i < total; i++)
+            {
+                if (IsGeodeAt(menu.inventory, i)) { firstGeode = i; break; }
+            }
+            if (firstGeode < 0)
+            {
+                try { Monitor.Log("[GeodeMenu] auto-select: no geodes in inventory, leaving selection unset", LogLevel.Info); } catch { }
+                return;
+            }
+
+            _selectedItemIndexField.SetValue(menu, firstGeode);
+            _inventoryCurrentlySelectedItemField.SetValue(menu.inventory, firstGeode);
+
+            if (firstGeode < menu.inventory.inventory.Count)
+            {
+                var slot = menu.inventory.inventory[firstGeode];
+                if (slot != null)
+                {
+                    menu.currentlySnappedComponent = slot;
+                    menu.snapCursorToCurrentSnappedComponent();
+                    if (Game1.mouseCursorTransparency < 0.99f) Game1.mouseCursorTransparency = 1f;
+                }
+            }
+
+            if (_gamePadShowInfoPanelMethod != null)
+            {
+                try { _gamePadShowInfoPanelMethod.Invoke(menu.inventory, null); } catch { }
+            }
+
+            try { Monitor.Log($"[GeodeMenu] auto-selected first geode at slot {firstGeode}", LogLevel.Info); } catch { }
         }
 
         private static bool ReceiveGamePadButton_Prefix(GeodeMenu __instance, Buttons b)
