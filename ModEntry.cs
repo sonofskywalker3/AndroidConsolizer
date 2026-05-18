@@ -164,6 +164,7 @@ namespace AndroidConsolizer
             Patches.DialogueBoxPatches.Apply(harmony, this.Monitor);
             Patches.LoadGameMenuPatches.Apply(harmony, this.Monitor);
             Patches.LetterViewerMenuPatches.Apply(harmony, this.Monitor);
+            Patches.GeodeMenuPatches.Apply(harmony, this.Monitor);
             Patches.BootDiagnosticPatches.Apply(harmony, this.Monitor);
             Patches.BootDiagnosticPatches.ApplyAdditionalPatches(harmony, this.Monitor);
 
@@ -253,6 +254,12 @@ namespace AndroidConsolizer
             if (e.OldMenu is JunimoNoteMenu || e.NewMenu is JunimoNoteMenu)
             {
                 Patches.JunimoNoteMenuPatches.OnMenuChanged();
+            }
+
+            // Reset GeodeMenu two-press state on every transition.
+            if (e.OldMenu is GeodeMenu || e.NewMenu is GeodeMenu)
+            {
+                Patches.GeodeMenuPatches.OnMenuChanged();
             }
 
             // Notify GameMenuPatches on open
@@ -1164,6 +1171,14 @@ namespace AndroidConsolizer
                 tooltip: () => "Prevents Y button from rapidly toggling furniture between placed and picked up. Adds ~500ms cooldown between interactions.",
                 getValue: () => Config.EnableFurnitureDebounce,
                 setValue: value => Config.EnableFurnitureDebounce = value
+            );
+
+            configMenu.AddBoolOption(
+                mod: this.ModManifest,
+                name: () => "Console Geode Menu",
+                tooltip: () => "Two-press A on Clint's geode menu: first A places the geode visibly on the anvil, second A starts the crack. B with a queued geode cancels the placement. Disable to restore vanilla one-press X behaviour.",
+                getValue: () => Config.EnableConsoleGeodeMenu,
+                setValue: value => Config.EnableConsoleGeodeMenu = value
             );
 
             configMenu.AddBoolOption(
