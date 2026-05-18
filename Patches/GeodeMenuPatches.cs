@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
 using Microsoft.Xna.Framework.Input;
@@ -56,6 +57,11 @@ namespace AndroidConsolizer.Patches
         // InventoryMenu.GamePadShowInfoPanel is Android-only — not in the
         // PC DLL the project compiles against.
         private static MethodInfo _gamePadShowInfoPanelMethod;
+        // InventoryMenu._iconShakeTimer is the Dictionary<int,double> the
+        // base InventoryMenu.draw reads each tick to wobble individual
+        // slots. Adding (slotIndex → now + 0.5s) shakes that slot for 0.5s.
+        // See decompile InventoryMenu.cs:523 (set) and :835 (read).
+        private static FieldInfo _iconShakeTimerField;
 
         // Diagnostic state (v3.7.30 — observation only, throttled to changes).
         private static int _lastLoggedSelIdx = -99;
@@ -72,9 +78,11 @@ namespace AndroidConsolizer.Patches
                 _inventoryCurrentlySelectedItemField = AccessTools.Field(typeof(InventoryMenu), "currentlySelectedItem");
                 _selectedItemIndexField = AccessTools.Field(typeof(GeodeMenu), "_selectedItemIndex");
                 _gamePadShowInfoPanelMethod = AccessTools.Method(typeof(InventoryMenu), "GamePadShowInfoPanel");
+                _iconShakeTimerField = AccessTools.Field(typeof(InventoryMenu), "_iconShakeTimer");
                 monitor.Log($"[GeodeMenu] reflection: _showTooltip={(_showTooltipField != null ? "OK" : "NULL")}, "
                     + $"currentlySelectedItem={(_inventoryCurrentlySelectedItemField != null ? "OK" : "NULL")}, "
                     + $"_selectedItemIndex={(_selectedItemIndexField != null ? "OK" : "NULL")}, "
+                    + $"_iconShakeTimer={(_iconShakeTimerField != null ? "OK" : "NULL")}, "
                     + $"GamePadShowInfoPanel={(_gamePadShowInfoPanelMethod != null ? "OK" : "NULL")}", LogLevel.Info);
 
                 harmony.Patch(
@@ -155,6 +163,12 @@ namespace AndroidConsolizer.Patches
                 {
                     _redirectTick = Game1.ticks;
                     try { Monitor.Log($"[GeodeMenu] A redirect → X at tick {_redirectTick}", LogLevel.Info); } catch { }
+                    // Inventory-full rejection feedback before vanilla runs. Vanilla's
+                    // inventory-full branch (decompile GeodeMenu.cs:683-688) is silent
+                    // and invisible — just descriptionText + wiggle/alert timers. We
+                    // add buzzer + slot shake to match the rejection cues other Stardew
+                    // menus give. Vanilla X still runs after this so the text/timers fire.
+                    TryEmitInventoryFullFeedback(__instance);
                     __instance.receiveGamePadButton(Buttons.X);
                 }
                 catch (Exception ex)
@@ -191,6 +205,47 @@ namespace AndroidConsolizer.Patches
             }
 
             return true;
+        }
+
+        /// <summary>
+        /// Mirrors vanilla GeodeMenu.OnPlaceGeodeOnAnvil's inventory-full check
+        /// (decompile lines 661-688) and adds buzzer + slot shake so the user
+        /// gets a rejection cue instead of vanilla's silent text-only fail.
+        /// Called before forwarding A→X; vanilla still runs after this so its
+        /// descriptionText + wiggleWordsTimer + alertTimer still fire.
+        /// </summary>
+        private static void TryEmitInventoryFullFeedback(GeodeMenu menu)
+        {
+            try
+            {
+                if (_selectedItemIndexField == null) return;
+                if (menu?.inventory?.actualInventory == null) return;
+
+                int idx = (int)_selectedItemIndexField.GetValue(menu);
+                if (idx < 0 || idx >= menu.inventory.actualInventory.Count) return;
+
+                var geode = menu.inventory.actualInventory[idx];
+                if (geode == null || !Utility.IsGeode(geode)) return;
+                if (Game1.player.Money < 25) return;               // vanilla money branch already shakes the money box
+                if (Game1.player.freeSpotsInInventory() >= 1) return;
+                if (geode.Stack <= 1) return;                       // vanilla allows the last one in even on a full inventory
+
+                Game1.playSound("cancel");
+                AddInventorySlotShake(menu.inventory, idx);
+            }
+            catch (Exception ex)
+            {
+                try { Monitor.Log($"[GeodeMenu] inventory-full feedback error: {ex.Message}", LogLevel.Warn); } catch { }
+            }
+        }
+
+        private static void AddInventorySlotShake(InventoryMenu inventory, int slotIndex)
+        {
+            if (_iconShakeTimerField == null) return;
+            var dict = _iconShakeTimerField.GetValue(inventory) as Dictionary<int, double>;
+            if (dict == null) return;
+            // Vanilla cadence: TotalSeconds + 0.5 — see InventoryMenu.cs:523.
+            dict[slotIndex] = Game1.currentGameTime.TotalGameTime.TotalSeconds + 0.5;
         }
 
         private static int NavDirection(Buttons b)
