@@ -76,7 +76,12 @@ namespace AndroidConsolizer.Patches
                     postfix: new HarmonyMethod(typeof(GeodeMenuPatches), nameof(Update_Postfix))
                 );
 
-                Monitor.Log("GeodeMenu two-press patch attached.", LogLevel.Trace);
+                Monitor.Log(
+                    $"GeodeMenu two-press patch attached. "
+                    + $"_selectedItemIndex={(_selectedItemIndexField != null ? "OK" : "NULL")}, "
+                    + $"OnPlaceGeodeOnAnvil={(_onPlaceGeodeOnAnvilMethod != null ? "OK" : "NULL")}, "
+                    + $"currentlySelectedItem={(_currentlySelectedItemField != null ? "OK" : "NULL")}",
+                    LogLevel.Info);
             }
             catch (Exception ex)
             {
@@ -89,43 +94,66 @@ namespace AndroidConsolizer.Patches
         {
             // We never consume from inventory on placement, only copy. Dropping
             // the index is enough — the inventory item is untouched.
+            Monitor?.Log($"[GeodeMenu] OnMenuChanged: resetting _geodeOnAnvilIndex (was {_geodeOnAnvilIndex})", LogLevel.Info);
             _geodeOnAnvilIndex = -1;
         }
 
         private static bool ReceiveGamePadButton_Prefix(GeodeMenu __instance, Buttons b)
         {
+            // DIAGNOSTIC v3.7.22 — log every entry so we can prove the prefix is firing.
+            Monitor.Log($"[GeodeMenu] Prefix HIT button={b} configEnabled={ModEntry.Config?.EnableConsoleGeodeMenu} _geodeOnAnvilIndex={_geodeOnAnvilIndex} geodeSpotItem={(__instance.geodeSpot?.item == null ? "null" : __instance.geodeSpot.item.Name)} animTimer={__instance.geodeAnimationTimer} waitingForServer={__instance.waitingForServerResponse}", LogLevel.Info);
+
             if (ModEntry.Config?.EnableConsoleGeodeMenu != true)
+            {
+                Monitor.Log("[GeodeMenu] Prefix: config disabled, passing through.", LogLevel.Info);
                 return true;
+            }
 
             if (_selectedItemIndexField == null || _onPlaceGeodeOnAnvilMethod == null)
+            {
+                Monitor.Log("[GeodeMenu] Prefix: reflection failed at startup, passing through.", LogLevel.Info);
                 return true;
+            }
 
             try
             {
                 if (__instance.geodeAnimationTimer > 0 || __instance.waitingForServerResponse)
+                {
+                    Monitor.Log("[GeodeMenu] Prefix: animation/mutex busy, blocking input.", LogLevel.Info);
                     return false;
+                }
 
                 bool anvilOccupied = _geodeOnAnvilIndex >= 0 && __instance.geodeSpot?.item != null;
+                Monitor.Log($"[GeodeMenu] Prefix: anvilOccupied={anvilOccupied}", LogLevel.Info);
 
                 switch (b)
                 {
                     case Buttons.A:
                     case Buttons.X:
                         if (anvilOccupied)
+                        {
+                            Monitor.Log($"[GeodeMenu] Prefix: routing {b} → CrackPlacedGeode", LogLevel.Info);
                             CrackPlacedGeode(__instance);
+                        }
                         else
+                        {
+                            Monitor.Log($"[GeodeMenu] Prefix: routing {b} → TryPlaceOnAnvil", LogLevel.Info);
                             TryPlaceOnAnvil(__instance);
+                        }
                         return false;
 
                     case Buttons.B:
                         if (anvilOccupied)
                         {
+                            Monitor.Log("[GeodeMenu] Prefix: routing B → CancelPlacement", LogLevel.Info);
                             CancelPlacement(__instance);
                             return false;
                         }
+                        Monitor.Log("[GeodeMenu] Prefix: routing B → vanilla close.", LogLevel.Info);
                         return true;
 
                     default:
+                        Monitor.Log($"[GeodeMenu] Prefix: passing {b} through to vanilla.", LogLevel.Info);
                         return true;
                 }
             }
@@ -139,29 +167,47 @@ namespace AndroidConsolizer.Patches
         private static void TryPlaceOnAnvil(GeodeMenu menu)
         {
             int selected = (int)_selectedItemIndexField.GetValue(menu);
+            Monitor.Log($"[GeodeMenu] TryPlaceOnAnvil: _selectedItemIndex={selected} inventoryCount={menu.inventory?.actualInventory?.Count} heldItem={(menu.heldItem == null ? "null" : menu.heldItem.Name)}", LogLevel.Info);
+
             if (selected < 0)
-                return; // No selection — vanilla X-case has the same guard (line 633).
+            {
+                Monitor.Log("[GeodeMenu] TryPlaceOnAnvil: no selection, bail.", LogLevel.Info);
+                return;
+            }
 
             if (selected >= menu.inventory.actualInventory.Count)
+            {
+                Monitor.Log("[GeodeMenu] TryPlaceOnAnvil: selected index out of range, bail.", LogLevel.Info);
                 return;
+            }
 
             var slot = menu.inventory.actualInventory[selected];
+            Monitor.Log($"[GeodeMenu] TryPlaceOnAnvil: slot={(slot == null ? "null" : slot.Name + " x" + slot.Stack)} IsGeode={(slot == null ? "n/a" : Utility.IsGeode(slot).ToString())}", LogLevel.Info);
             if (slot == null || !Utility.IsGeode(slot))
+            {
+                Monitor.Log("[GeodeMenu] TryPlaceOnAnvil: not a geode, bail.", LogLevel.Info);
                 return;
+            }
 
             if (menu.heldItem != null)
-                return; // Something is mid-flight; let it resolve.
+            {
+                Monitor.Log("[GeodeMenu] TryPlaceOnAnvil: heldItem non-null, bail.", LogLevel.Info);
+                return;
+            }
 
             menu.geodeSpot.item = slot.getOne();
             _geodeOnAnvilIndex = selected;
             Game1.playSound("stoneStep");
+            Monitor.Log($"[GeodeMenu] TryPlaceOnAnvil: PLACED geodeSpot.item={menu.geodeSpot.item?.Name} _geodeOnAnvilIndex={_geodeOnAnvilIndex}", LogLevel.Info);
         }
 
         private static void CrackPlacedGeode(GeodeMenu menu)
         {
             int idx = _geodeOnAnvilIndex;
+            Monitor.Log($"[GeodeMenu] CrackPlacedGeode: _geodeOnAnvilIndex={idx}", LogLevel.Info);
             if (idx < 0 || idx >= menu.inventory.actualInventory.Count)
             {
+                Monitor.Log("[GeodeMenu] CrackPlacedGeode: index invalid, cancel.", LogLevel.Info);
                 CancelPlacement(menu);
                 return;
             }
@@ -169,6 +215,7 @@ namespace AndroidConsolizer.Patches
             var slot = menu.inventory.actualInventory[idx];
             if (slot == null || !Utility.IsGeode(slot))
             {
+                Monitor.Log($"[GeodeMenu] CrackPlacedGeode: slot stale (slot={(slot == null ? "null" : slot.Name)}), cancel.", LogLevel.Info);
                 CancelPlacement(menu);
                 return;
             }
@@ -188,7 +235,9 @@ namespace AndroidConsolizer.Patches
             menu.geodeSpot.item = null;
             menu.heldItem = slot;
 
+            Monitor.Log("[GeodeMenu] CrackPlacedGeode: invoking OnPlaceGeodeOnAnvil via reflection.", LogLevel.Info);
             _onPlaceGeodeOnAnvilMethod.Invoke(menu, null);
+            Monitor.Log($"[GeodeMenu] CrackPlacedGeode: post-invoke animTimer={menu.geodeAnimationTimer} waitingForServer={menu.waitingForServerResponse} heldItem={(menu.heldItem == null ? "null" : menu.heldItem.Name)} geodeSpotItem={(menu.geodeSpot?.item == null ? "null" : menu.geodeSpot.item.Name)}", LogLevel.Info);
 
             // If vanilla bailed for no money / no inventory space (neither
             // animation started nor mutex pending), null heldItem so the menu
@@ -199,11 +248,13 @@ namespace AndroidConsolizer.Patches
                 menu.heldItem = null;
                 if (menu.geodeSpot.item == null)
                     menu.geodeSpot.item = slot.getOne();
+                Monitor.Log("[GeodeMenu] CrackPlacedGeode: failed-cleanup branch — restored visual, cleared heldItem.", LogLevel.Info);
             }
         }
 
         private static void CancelPlacement(GeodeMenu menu)
         {
+            Monitor.Log("[GeodeMenu] CancelPlacement: clearing anvil.", LogLevel.Info);
             menu.geodeSpot.item = null;
             _geodeOnAnvilIndex = -1;
             Game1.playSound("smallSelect");
@@ -213,6 +264,7 @@ namespace AndroidConsolizer.Patches
         {
             // The vanilla startGeodeCrack consumed the geode from inventory
             // and now owns geodeSpot.item for the duration of the animation.
+            Monitor.Log($"[GeodeMenu] StartGeodeCrack_Postfix: resetting _geodeOnAnvilIndex (was {_geodeOnAnvilIndex})", LogLevel.Info);
             _geodeOnAnvilIndex = -1;
         }
 
@@ -226,6 +278,7 @@ namespace AndroidConsolizer.Patches
                 && __instance.geodeSpot?.item == null
                 && _geodeOnAnvilIndex >= 0)
             {
+                Monitor.Log($"[GeodeMenu] Update_Postfix: defensive reset (was {_geodeOnAnvilIndex})", LogLevel.Info);
                 _geodeOnAnvilIndex = -1;
             }
         }
