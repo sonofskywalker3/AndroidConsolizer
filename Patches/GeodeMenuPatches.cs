@@ -238,30 +238,35 @@ namespace AndroidConsolizer.Patches
             {
                 int row = current / INV_COLS;
                 int col = current % INV_COLS;
+                int totalRows = (total + INV_COLS - 1) / INV_COLS;
                 switch (direction)
                 {
-                    case 0: // UP — scan column above
-                        for (int r = row - 1; r >= 0; r--)
+                    case 0: // UP — scan column above first, then any geode in rows above (nearest column wins)
+                        for (int r = row - 1; r >= 0 && target < 0; r--)
                         {
                             int idx = r * INV_COLS + col;
                             if (idx < total && IsGeodeAt(menu.inventory, idx)) { target = idx; break; }
                         }
+                        if (target < 0)
+                            target = NearestGeodeInRowRange(menu.inventory, 0, row - 1, col, total);
                         break;
-                    case 2: // DOWN — scan column below
-                        for (int r = row + 1; r * INV_COLS + col < total; r++)
+                    case 2: // DOWN — scan column below first, then any geode in rows below
+                        for (int r = row + 1; r < totalRows && target < 0; r++)
                         {
                             int idx = r * INV_COLS + col;
                             if (idx < total && IsGeodeAt(menu.inventory, idx)) { target = idx; break; }
                         }
+                        if (target < 0)
+                            target = NearestGeodeInRowRange(menu.inventory, row + 1, totalRows - 1, col, total);
                         break;
-                    case 1: // RIGHT — scan within row
+                    case 1: // RIGHT — within row
                         for (int c = col + 1; c < INV_COLS; c++)
                         {
                             int idx = row * INV_COLS + c;
                             if (idx < total && IsGeodeAt(menu.inventory, idx)) { target = idx; break; }
                         }
                         break;
-                    case 3: // LEFT — scan within row
+                    case 3: // LEFT — within row
                         for (int c = col - 1; c >= 0; c--)
                         {
                             int idx = row * INV_COLS + c;
@@ -303,6 +308,44 @@ namespace AndroidConsolizer.Patches
             var item = inv.actualInventory[idx];
             if (item == null) return false;
             return inv.highlightMethod == null || inv.highlightMethod(item);
+        }
+
+        /// <summary>
+        /// Fallback for UP/DOWN when no geode exists directly above/below
+        /// in the same column. Scans rows in [rowMin, rowMax] for any
+        /// geode and returns the one whose column is closest to
+        /// preferredCol. Empty range or no geode found → -1.
+        /// </summary>
+        private static int NearestGeodeInRowRange(InventoryMenu inv, int rowMin, int rowMax, int preferredCol, int total)
+        {
+            if (rowMin > rowMax) return -1;
+            int best = -1, bestDist = int.MaxValue;
+            for (int r = rowMin; r <= rowMax; r++)
+            {
+                for (int c = 0; c < INV_COLS; c++)
+                {
+                    int idx = r * INV_COLS + c;
+                    if (idx >= total) break;
+                    if (!IsGeodeAt(inv, idx)) continue;
+                    int dist = Math.Abs(c - preferredCol);
+                    // Prefer nearest column. Tie-break: nearer row (rowMin is
+                    // already the immediate neighbour row for DOWN, last row
+                    // for UP, so iteration order picks nearer row first by
+                    // accident — explicit distance check would be:
+                    // overall_dist = dist + |r-row|*INV_COLS, but column
+                    // preference is good enough.)
+                    if (dist < bestDist)
+                    {
+                        best = idx;
+                        bestDist = dist;
+                        if (bestDist == 0) return best;
+                    }
+                }
+                // If we already found something in this row, prefer it
+                // over geodes farther away. Stop scanning subsequent rows.
+                if (best >= 0) return best;
+            }
+            return best;
         }
 
         /// <summary>

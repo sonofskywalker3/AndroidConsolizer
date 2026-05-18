@@ -1488,9 +1488,17 @@ namespace AndroidConsolizer.Patches
         /// clearing currentlySelectedItem. The draw method uses this only for the slot background
         /// tile choice (56=red vs 10=normal). We save the value and restore in postfix.
         /// currentlySelectedItem is Android-only, so we use reflection.
+        /// Skipped on GeodeMenu — GeodeMenuPatches manages its own snap cursor at the slot's
+        /// bottom-right, so drawing this top-left finger as well produces "two cursors."
         /// </summary>
         private static void InventoryMenu_Draw_Prefix(InventoryMenu __instance)
         {
+            if (Game1.activeClickableMenu is GeodeMenu)
+            {
+                _savedSelectedItem = -1;
+                return;
+            }
+
             if (InvMenu_CurrentlySelectedItemField == null)
             {
                 _savedSelectedItem = -1;
@@ -1505,9 +1513,13 @@ namespace AndroidConsolizer.Patches
         /// <summary>
         /// Postfix on InventoryMenu.draw — restore currentlySelectedItem and draw finger cursor
         /// at the selected slot position (replacing the red box visual).
+        /// Skipped on GeodeMenu (see prefix note).
         /// </summary>
         private static void InventoryMenu_Draw_Postfix(InventoryMenu __instance, SpriteBatch b)
         {
+            if (Game1.activeClickableMenu is GeodeMenu)
+                return;
+
             if (InvMenu_CurrentlySelectedItemField != null)
                 InvMenu_CurrentlySelectedItemField.SetValue(__instance, _savedSelectedItem);
 
