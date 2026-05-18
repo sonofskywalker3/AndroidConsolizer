@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
+using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Input;
 using StardewModdingAPI;
 using StardewValley;
@@ -71,6 +72,23 @@ namespace AndroidConsolizer.Patches
         // See decompile InventoryMenu.cs:523 (set) and :835 (read).
         private static FieldInfo _iconShakeTimerField;
 
+        // Tooltip state fields on InventoryMenu — written every tick from
+        // Update_Postfix to keep the GeodeMenu tooltip from flickering.
+        // Something (almost certainly Android touch-sim releaseLeftClick at
+        // decompile InventoryMenu.cs:1409) resets showItemInfo to false
+        // intermittently; re-asserting all the fields GamePadShowInfoPanel
+        // writes (decompile InventoryMenu.cs:2059) keeps the tooltip stable.
+        // We bypass the playSound call inside GamePadShowInfoPanel by
+        // writing fields directly via reflection — calling it 60 times/sec
+        // would emit 60 smallSelect sounds.
+        private static FieldInfo _showItemInfoField;
+        private static FieldInfo _actualItemSelectedField;
+        private static FieldInfo _hoverTextField;
+        private static FieldInfo _hoverTitleField;
+        private static FieldInfo _infoPanelPositionField;
+        private static MethodInfo _getPositionOfSellPanelMethod;
+        private static MethodInfo _getItemFromClickableComponentMethod;
+
         // Diagnostic state (v3.7.30 — observation only, throttled to changes).
         private static int _lastLoggedSelIdx = -99;
         private static int _lastLoggedCurSel = -99;
@@ -87,10 +105,23 @@ namespace AndroidConsolizer.Patches
                 _selectedItemIndexField = AccessTools.Field(typeof(GeodeMenu), "_selectedItemIndex");
                 _gamePadShowInfoPanelMethod = AccessTools.Method(typeof(InventoryMenu), "GamePadShowInfoPanel");
                 _iconShakeTimerField = AccessTools.Field(typeof(InventoryMenu), "_iconShakeTimer");
+                _showItemInfoField = AccessTools.Field(typeof(InventoryMenu), "showItemInfo");
+                _actualItemSelectedField = AccessTools.Field(typeof(InventoryMenu), "actualItemSelected");
+                _hoverTextField = AccessTools.Field(typeof(InventoryMenu), "hoverText");
+                _hoverTitleField = AccessTools.Field(typeof(InventoryMenu), "hoverTitle");
+                _infoPanelPositionField = AccessTools.Field(typeof(InventoryMenu), "infoPanelPosition");
+                _getPositionOfSellPanelMethod = AccessTools.Method(typeof(InventoryMenu), "getPositionOfSellPanel");
+                _getItemFromClickableComponentMethod = AccessTools.Method(typeof(InventoryMenu), "getItemFromClickableComponent");
                 monitor.Log($"[GeodeMenu] reflection: _showTooltip={(_showTooltipField != null ? "OK" : "NULL")}, "
                     + $"currentlySelectedItem={(_inventoryCurrentlySelectedItemField != null ? "OK" : "NULL")}, "
                     + $"_selectedItemIndex={(_selectedItemIndexField != null ? "OK" : "NULL")}, "
                     + $"_iconShakeTimer={(_iconShakeTimerField != null ? "OK" : "NULL")}, "
+                    + $"showItemInfo={(_showItemInfoField != null ? "OK" : "NULL")}, "
+                    + $"actualItemSelected={(_actualItemSelectedField != null ? "OK" : "NULL")}, "
+                    + $"hoverText={(_hoverTextField != null ? "OK" : "NULL")}, "
+                    + $"infoPanelPosition={(_infoPanelPositionField != null ? "OK" : "NULL")}, "
+                    + $"getPositionOfSellPanel={(_getPositionOfSellPanelMethod != null ? "OK" : "NULL")}, "
+                    + $"getItemFromClickableComponent={(_getItemFromClickableComponentMethod != null ? "OK" : "NULL")}, "
                     + $"GamePadShowInfoPanel={(_gamePadShowInfoPanelMethod != null ? "OK" : "NULL")}", LogLevel.Info);
 
                 harmony.Patch(
@@ -545,6 +576,71 @@ namespace AndroidConsolizer.Patches
         }
 
         /// <summary>
+        /// Replicates the writes vanilla GamePadShowInfoPanel performs
+        /// (decompile InventoryMenu.cs:2059) without the Game1.playSound call —
+        /// safe to invoke every tick. Keeps the tooltip visible for as long as the
+        /// menu is open + a geode is selected, overriding whatever resets
+        /// showItemInfo (most likely Android touch-sim releaseLeftClick at
+        /// InventoryMenu.cs:1409 firing after the A press that opens the menu).
+        /// Also logs the computed infoPanelPosition once per fresh open via the
+        /// _pendingTooltipShow gate so we have diagnostic data for the
+        /// "tooltip positioned wrong" report.
+        /// </summary>
+        private static void ReassertTooltipState(GeodeMenu menu)
+        {
+            if (ModEntry.Config?.EnableConsoleGeodeMenu != true) return;
+            if (menu?.inventory?.actualInventory == null || menu.inventory.inventory == null) return;
+            if (_inventoryCurrentlySelectedItemField == null || _showItemInfoField == null) return;
+
+            try
+            {
+                int idx = (int)_inventoryCurrentlySelectedItemField.GetValue(menu.inventory);
+                if (idx < 0
+                    || idx >= menu.inventory.actualInventory.Count
+                    || idx >= menu.inventory.inventory.Count) return;
+
+                var item = menu.inventory.actualInventory[idx];
+                var slot = menu.inventory.inventory[idx];
+                if (item == null || slot == null) return;
+
+                _showItemInfoField.SetValue(menu.inventory, true);
+
+                if (_actualItemSelectedField != null)
+                {
+                    object actualItem = item;
+                    if (_getItemFromClickableComponentMethod != null)
+                    {
+                        try { actualItem = _getItemFromClickableComponentMethod.Invoke(menu.inventory, new object[] { slot }) ?? item; } catch { }
+                    }
+                    _actualItemSelectedField.SetValue(menu.inventory, actualItem);
+                }
+                if (_hoverTextField != null) _hoverTextField.SetValue(menu.inventory, item.getDescription() ?? "");
+                if (_hoverTitleField != null) _hoverTitleField.SetValue(menu.inventory, item.DisplayName ?? "");
+
+                Vector2 pos = Vector2.Zero;
+                if (_getPositionOfSellPanelMethod != null && _infoPanelPositionField != null)
+                {
+                    try
+                    {
+                        pos = (Vector2)_getPositionOfSellPanelMethod.Invoke(menu.inventory, new object[] { slot.bounds.X, slot.bounds.Y, 0 });
+                        _infoPanelPositionField.SetValue(menu.inventory, pos);
+                    }
+                    catch { }
+                }
+
+                if (_pendingTooltipShow)
+                {
+                    _pendingTooltipShow = false;
+                    try { Monitor?.Log($"[GeodeMenu] tooltip re-assert ON: slot={idx} bounds={slot.bounds} infoPanelPosition=({pos.X:F0},{pos.Y:F0}) item={item.DisplayName}", LogLevel.Info); } catch { }
+                }
+            }
+            catch (Exception ex)
+            {
+                try { Monitor?.Log($"[GeodeMenu] tooltip re-assert failed: {ex.Message}", LogLevel.Warn); } catch { }
+            }
+        }
+
+        /// <summary>
         /// Sync the snap cursor to the selected geode slot after each
         /// nav press. Vanilla GeodeMenu.receiveGamePadButton's D-pad /
         /// stick cases (decompile lines 563-622) walk _selectedItemIndex
@@ -623,31 +719,18 @@ namespace AndroidConsolizer.Patches
         /// </summary>
         private static void Update_Postfix(GeodeMenu __instance)
         {
-            // Deferred tooltip: fire on the first stable Update tick after
-            // auto-select. Direct invocation from OnMenuChanged / the snap
-            // postfix doesn't render the tooltip (showItemInfo getting reset
-            // before first draw, per v3.7.35 test).
-            if (_pendingTooltipShow
-                && _gamePadShowInfoPanelMethod != null
-                && _inventoryCurrentlySelectedItemField != null
-                && __instance?.inventory != null)
-            {
-                try
-                {
-                    int curSelForTooltip = (int)_inventoryCurrentlySelectedItemField.GetValue(__instance.inventory);
-                    if (curSelForTooltip >= 0)
-                    {
-                        _gamePadShowInfoPanelMethod.Invoke(__instance.inventory, null);
-                        _pendingTooltipShow = false;
-                        try { Monitor?.Log($"[GeodeMenu] deferred tooltip fired for slot {curSelForTooltip}", LogLevel.Info); } catch { }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    try { Monitor?.Log($"[GeodeMenu] deferred tooltip invoke failed: {ex.Message}", LogLevel.Warn); } catch { }
-                    _pendingTooltipShow = false;
-                }
-            }
+            // Re-assert tooltip state each tick. v3.7.37's deferred GamePadShowInfoPanel
+            // call fired correctly (logs confirm) but the tooltip still flickered out —
+            // something (almost certainly Android touch-sim releaseLeftClick at
+            // InventoryMenu.cs:1409, which unconditionally sets showItemInfo = false
+            // when the click is inside the inventory bounds) was wiping showItemInfo
+            // after our first set. Writing all the GamePadShowInfoPanel fields directly
+            // each tick keeps the tooltip stable for as long as the menu is open. We
+            // skip the smallSelect sound vanilla plays in GamePadShowInfoPanel —
+            // calling the method 60×/sec would emit 60 sounds. _pendingTooltipShow
+            // remains as a "first tick" signal so we can log the initial positioning
+            // numbers for the position-issue diagnostic.
+            ReassertTooltipState(__instance);
 
             if (Monitor == null) return;
             try
