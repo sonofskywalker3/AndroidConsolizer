@@ -27,11 +27,34 @@ Small to medium parity fixes that can each be solved with localized patches. No 
 - **Public bug report:** Nexus user throyiii filed Bug #1050718 ("Can't resize the toolbar") against v3.5.10 on 5 Mar 2026 — bumped priority since there is now a public report.
 - **Files:** `Patches/ToolbarPatches.cs`, possibly new `Patches/OptionsPagePatches.cs`.
 
-### 19. Geode Breaking Menu — Visual Feedback
-- Partially works but no visual feedback.
-- Geode highlighted in inventory but does NOT visually move to anvil. Pushing up invisibly moves to anvil area, A cracks it. Functional but unintuitive.
-- **Fix approach:** Apply inventory-style patches on `GeodeMenu`. A-button to select geode, visual feedback of geode moving to anvil, A on anvil to crack.
-- **Note:** Originally bundled with #12 in the GSD-era M3, but doesn't actually require a free cursor — same pattern as the GameMenu tab work.
+### 19. Geode Breaking Menu — Console Parity (IN PROGRESS, v3.7.21 → v3.7.32 + more)
+
+**Original ask:** A-press to crack a geode the way Switch does it; no visible movement on Android today.
+
+**What ships in v3.7.32 and works:**
+- ✅ Single-press A places + cracks (A→X redirect, vanilla X path), Switch parity. See `Patches/GeodeMenuPatches.cs` `ReceiveGamePadButton_Prefix`.
+- ✅ Android touch-sim `receiveLeftClick` after A is suppressed (same-tick guard `_redirectTick`) — otherwise it picks up the partially-consumed geode stack.
+- ✅ Tooltip auto-shows for the selected geode (`_showTooltip` forced true on menu open via reflection).
+- ✅ Spatial geode-only nav replaces vanilla's linear `_selectedItemIndex ±1` scan. 12-col grid math. UP/DOWN fall back to scanning adjacent rows for nearest-column geode when same-column has nothing.
+- ✅ `IClickableMenu.applyMovementKey` suppressed for GeodeMenu only — was racing our snap and dragging cursor to spatial neighbours.
+- ✅ Mouse cursor sprite forced visible (`mouseCursorTransparency = 1f`) and snapped to bottom-right of selected slot via vanilla `snapCursorToCurrentSnappedComponent`.
+- ✅ GMCM toggle `EnableConsoleGeodeMenu` (default true). Off restores vanilla one-press X + A-toggle-tooltip.
+
+**Remaining (next agent picks up here):**
+
+**19a. Red box selection highlight at top-left of selected slot.**
+v3.7.32 attempted to hide the duplicate top-left finger drawn by `Patches/InventoryManagementPatches.cs::InventoryMenu_Draw_Prefix/Postfix` for the GeodeMenu case. It works for the finger draw but VANILLA tile 56 (red box) now shows instead. **The early-return bug is in `InventoryMenu_Draw_Prefix`** — when `Game1.activeClickableMenu is GeodeMenu`, it sets `_savedSelectedItem = -1` and returns without actually clearing the InventoryMenu's `currentlySelectedItem` field. So vanilla sees the selection set and draws tile 56. Fix: in the prefix's GeodeMenu branch, do the same save-and-clear the non-GeodeMenu path does (save the real value, set the field to -1) — just skip drawing the replacement finger in the postfix.
+
+**19b. No buzzer + no shake when cracking a geode with inventory full.**
+User reports a quiet "bloop" instead of a clear rejection cue (probably `Game1.playSound("smallSelect")` from `GamePadShowInfoPanel`, which we call after every nav). Vanilla `OnPlaceGeodeOnAnvil` for the inventory-full branch (`Patches/decompile reference: GeodeMenu.cs:683-688`) sets `descriptionText = fullText`, `wiggleWordsTimer = 500`, `alertTimer = 1500` — and that's it. No sound, no shake at the geode. User wants a buzzer + a visual shake matching other "invalid action" feedback.
+
+Suggested fix: pre-check in the A→X redirect before forwarding to vanilla X. If `Game1.player.freeSpotsInInventory() < 1 && selectedGeode.Stack > 1` (which is the same condition vanilla checks), play `Game1.playSound("cancel")` and trigger a shake on the highlighted slot (look at how other inventory menus shake — `_iconShakeTimer` dictionary on `InventoryMenu` is referenced in the draw loop, decompile line 836). Then return false to skip vanilla so the silent vanilla branch doesn't run.
+
+**Heavy diagnostic logging in `Patches/GeodeMenuPatches.cs`** (added v3.7.30 / kept v3.7.32) — every nav button, every state delta, every snap result is logged at Info level. Useful for the next iteration BUT noisy in shipped logs. Demote to Trace (or remove) before marking #19 done.
+
+**Spec:** `docs/superpowers/specs/2026-05-18-geode-menu-design.md` (note: spec assumed two-press A — turned out wrong after Switch hardware testing, see commit `v3.7.24` message). The implementation diverged from spec; update or write a new spec post-completion.
+
+**Test setup helper:** `tools/seed-crackables-into-chest.ps1` injects 5x each of Geode/Frozen/Magma/Artifact Trove/Golden Coconut/Mystery Box/Golden Mystery Box into the Cheatside save's Farm chest at tile (89, 50). Backup auto-written. Useful for next agent.
 
 ### 68. Craftable Placement — Single Ghost Tile Instead of Multi-Tile Map
 - Holding any placeable craftable (furnace, mayo machine, preserves jar, recycling machine, kegs, sprinklers, etc.) highlights EVERY valid placement tile on the screen as a green-tile map. Visually cluttered and useless for controller play — the player only cares about where the item will land *right now*.
