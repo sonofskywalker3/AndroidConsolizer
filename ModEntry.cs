@@ -256,10 +256,15 @@ namespace AndroidConsolizer
                 Patches.JunimoNoteMenuPatches.OnMenuChanged();
             }
 
-            // Reset GeodeMenu two-press state on every transition.
+            // Reset GeodeMenu state on every transition; on open, force
+            // _showTooltip=true so the auto-tooltip kicks in.
             if (e.OldMenu is GeodeMenu || e.NewMenu is GeodeMenu)
             {
                 Patches.GeodeMenuPatches.OnMenuChanged();
+            }
+            if (e.NewMenu is GeodeMenu newGeodeMenu)
+            {
+                Patches.GeodeMenuPatches.OnGeodeMenuOpened(newGeodeMenu);
             }
 
             // Notify GameMenuPatches on open
