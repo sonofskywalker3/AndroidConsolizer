@@ -12,10 +12,6 @@ Shipped: **v3.6.0** (Bug Fix Release). Roadmap structure was re-evaluated post-3
 
 Small to medium parity fixes that can each be solved with localized patches. No multi-patch system arc. Bumps the mod from "most parity items done" to "every menu has correct defaults and visible cursors."
 
-### 39. Monster Eradication Tracking Page
-- No cursor visible on the monster eradication goals page (Adventurer's Guild tracking). Can't switch pages with controller.
-- **Investigation:** Check which menu class this is, how pages are structured, what navigation exists.
-
 ### 46. Grey Out Non-Donatable Items on Bundle Page
 - When a bundle donation page is open, items in inventory that cannot be donated to that bundle should be greyed out.
 - Same pattern as #44 (zero-price items greyed out on sell tab) — override `highlightMethod` on the inventory to only highlight valid donation items.
