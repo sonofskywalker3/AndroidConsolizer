@@ -47,6 +47,9 @@ namespace AndroidConsolizer.Patches
         // at every use so a missing field on some port silently degrades
         // rather than crashing.
         private static FieldInfo _showTooltipField;
+        // InventoryMenu.currentlySelectedItem is Android-only — not in
+        // the PC DLL the project compiles against.
+        private static FieldInfo _inventoryCurrentlySelectedItemField;
 
         public static void Apply(Harmony harmony, IMonitor monitor)
         {
@@ -54,12 +57,16 @@ namespace AndroidConsolizer.Patches
             try
             {
                 _showTooltipField = AccessTools.Field(typeof(GeodeMenu), "_showTooltip");
+                _inventoryCurrentlySelectedItemField = AccessTools.Field(typeof(InventoryMenu), "currentlySelectedItem");
                 if (_showTooltipField == null)
                     monitor.Log("[GeodeMenu] _showTooltip not found — tooltip auto-show disabled.", LogLevel.Warn);
+                if (_inventoryCurrentlySelectedItemField == null)
+                    monitor.Log("[GeodeMenu] InventoryMenu.currentlySelectedItem not found — cursor sync disabled.", LogLevel.Warn);
 
                 harmony.Patch(
                     original: AccessTools.Method(typeof(GeodeMenu), nameof(GeodeMenu.receiveGamePadButton)),
-                    prefix: new HarmonyMethod(typeof(GeodeMenuPatches), nameof(ReceiveGamePadButton_Prefix))
+                    prefix: new HarmonyMethod(typeof(GeodeMenuPatches), nameof(ReceiveGamePadButton_Prefix)),
+                    postfix: new HarmonyMethod(typeof(GeodeMenuPatches), nameof(ReceiveGamePadButton_Postfix))
                 );
                 harmony.Patch(
                     original: AccessTools.Method(typeof(GeodeMenu), nameof(GeodeMenu.receiveLeftClick)),
@@ -143,15 +150,49 @@ namespace AndroidConsolizer.Patches
             try { Monitor.Log($"[GeodeMenu] startGeodeCrack fired. animTimer={__instance.geodeAnimationTimer}", LogLevel.Info); } catch { }
         }
 
-        // Cursor recenter + transparency-force removed in v3.7.28.
-        // The "cursor in wrong corner" the user reports is the slot
-        // selection-highlight rendering (drawn on the slot at
-        // _selectedItemIndex), NOT the mouse cursor sprite. Forcing the
-        // mouse cursor visible + moving it to the snapped component
-        // revealed that snap and selection target different slots on
-        // GeodeMenu (snap walks one slot at a time; _selectedItemIndex
-        // jumps over non-geodes), producing two visible cursors at
-        // different positions. Fixing the selection-highlight position
-        // requires changing InventoryMenu draw — out of scope for #19.
+        /// <summary>
+        /// Sync the snap cursor to the selected geode slot after each
+        /// nav press. Vanilla GeodeMenu.receiveGamePadButton's D-pad /
+        /// stick cases (decompile lines 563-622) walk _selectedItemIndex
+        /// directly over geode slots without calling applyMovementKey,
+        /// so currentlySnappedComponent never updates and snapCursor
+        /// never runs — the mouse cursor stays at slot 0 (set by the
+        /// constructor's snapToDefaultClickableComponent) while the
+        /// selection highlight tracks elsewhere. Every other inventory
+        /// menu delegates nav to applyMovementKey which calls snapCursor
+        /// at the end, putting the cursor on the bottom-right of the
+        /// newly snapped slot. This postfix replicates that for
+        /// GeodeMenu: after vanilla nav updates _selectedItemIndex (and
+        /// the fall-through syncs inventory.currentlySelectedItem), we
+        /// find the slot at that index, point currentlySnappedComponent
+        /// at it, and call snapCursorToCurrentSnappedComponent so
+        /// vanilla's own positioning math runs.
+        /// </summary>
+        private static void ReceiveGamePadButton_Postfix(GeodeMenu __instance, Buttons b)
+        {
+            if (ModEntry.Config?.EnableConsoleGeodeMenu != true) return;
+            if (_inventoryCurrentlySelectedItemField == null) return;
+
+            if (b != Buttons.DPadUp && b != Buttons.DPadDown && b != Buttons.DPadLeft && b != Buttons.DPadRight
+                && b != Buttons.LeftThumbstickUp && b != Buttons.LeftThumbstickDown
+                && b != Buttons.LeftThumbstickLeft && b != Buttons.LeftThumbstickRight)
+                return;
+
+            try
+            {
+                if (__instance.inventory?.inventory == null) return;
+                int selected = (int)_inventoryCurrentlySelectedItemField.GetValue(__instance.inventory);
+                if (selected < 0 || selected >= __instance.inventory.inventory.Count) return;
+                var slot = __instance.inventory.inventory[selected];
+                if (slot == null) return;
+
+                __instance.currentlySnappedComponent = slot;
+                __instance.snapCursorToCurrentSnappedComponent();
+            }
+            catch (Exception ex)
+            {
+                try { Monitor.Log($"[GeodeMenu] cursor sync failed: {ex.Message}", LogLevel.Warn); } catch { }
+            }
+        }
     }
 }
