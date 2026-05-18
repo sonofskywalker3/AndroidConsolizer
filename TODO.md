@@ -33,6 +33,14 @@ Small to medium parity fixes that can each be solved with localized patches. No 
 - **Fix approach:** Apply inventory-style patches on `GeodeMenu`. A-button to select geode, visual feedback of geode moving to anvil, A on anvil to crack.
 - **Note:** Originally bundled with #12 in the GSD-era M3, but doesn't actually require a free cursor — same pattern as the GameMenu tab work.
 
+### 68. Craftable Placement — Single Ghost Tile Instead of Multi-Tile Map
+- Holding any placeable craftable (furnace, mayo machine, preserves jar, recycling machine, kegs, sprinklers, etc.) highlights EVERY valid placement tile on the screen as a green-tile map. Visually cluttered and useless for controller play — the player only cares about where the item will land *right now*.
+- **Fix model:** same as `DONE.md` "Console Furniture Placement — v3.5.38, v3.5.39". That patch hooked `Object.DrawRedGreenRectangleForPlacing` (mobile-only, resolved by string with `AccessTools.Method`) and, for `Furniture` instances, drew a single colored rectangle at `__instance.TileLocation` sized via `getTilesWide()`/`getTilesHigh()`, then drew the furniture sprite translucently on top. Same engine artifact already handles single-tile rendering for tap/touch placement — we just bypass the `weaponControl` gate.
+- **What's different here:** the v3.5.38 patch was gated on `__instance is Furniture`. Craftables are plain `StardewValley.Object` (or BigCraftable subclasses), not Furniture. The same engine method serves both; we just need to extend the gate (or add a parallel `is Object && !Furniture && isPlaceable` branch) and pick a sensible single-tile size — for BigCraftables that's typically 1×2 (machine + 1 floor tile under).
+- **Investigation:** Confirm `DrawRedGreenRectangleForPlacing` is the path for non-Furniture craftables too (the multi-tile map suggests yes). If yes, extend `FurniturePlacementPatches.DrawRedGreenRectangleForPlacing_Prefix` rather than adding a new patch. Decide whether to gate behind the existing `EnableConsoleFurniturePlacement` toggle or add a sibling `EnableConsoleCraftablePlacement` — leaning sibling so users can opt out per-category.
+- **Files:** `Patches/FurniturePlacementPatches.cs` (extend), `ModConfig.cs` (toggle), `ModEntry.cs` (GMCM entry).
+- **Belongs in v3.8.0** — same console-parity-quick-win shape as the geode work. Small, localized patch; no new system arc.
+
 ### 54b. Trigger Column-Skip — Rare Recurrence Despite v3.6.6 Fix
 - **Status:** parent #54 shipped fix in v3.6.6 (see `DONE.md` "#54 Trigger Column-Skip"). One recurrence observed during v3.7.26 G Cloud test session 2026-05-18 — does NOT invalidate v3.6.6, just isn't 100%.
 - **Captured evidence** (`test-output/log-archive/SMAPI-v3.7.26-20260518-123505.txt`, lines ~1774-1786, around tick 15814-15830):
