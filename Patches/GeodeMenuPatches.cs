@@ -615,40 +615,59 @@ namespace AndroidConsolizer.Patches
         }
 
         /// <summary>
-        /// Draw the rich item tooltip ourselves, positioned in the GeodeMenu's
-        /// infoBox area (the right-side description panel) so it doesn't cover
-        /// the inventory slot, cursor, or selected item. v3.7.39 used
-        /// drawToolTip's cursor-relative positioning, which still covered the
-        /// item because controller-snap puts the cursor on the slot itself.
-        /// drawToolTipOverridePosition lets us pin the tooltip to a fixed spot;
-        /// infoBox is the right-of-Clint area vanilla intended for hover text.
+        /// Floating popup near the cursor — what the user asked for: an item
+        /// tooltip matching regular-inventory hover behaviour. We position it
+        /// just outside whichever side of the selected slot has more room
+        /// (right of slot for left-half columns, left of slot for right-half
+        /// columns) so vanilla's drawHoverText screen-edge auto-flip can't
+        /// kick in and push the tooltip back over the slot. Vertically anchored
+        /// at slot top so the tooltip starts at the same Y as the slot.
         /// </summary>
         private static void Draw_Postfix(GeodeMenu __instance, Microsoft.Xna.Framework.Graphics.SpriteBatch b)
         {
             if (ModEntry.Config?.EnableConsoleGeodeMenu != true) return;
-            if (__instance?.inventory?.actualInventory == null) return;
+            if (__instance?.inventory?.actualInventory == null || __instance.inventory.inventory == null) return;
             if (_selectedItemIndexField == null) return;
 
             try
             {
                 int idx = (int)_selectedItemIndexField.GetValue(__instance);
-                if (idx < 0 || idx >= __instance.inventory.actualInventory.Count) return;
+                if (idx < 0
+                    || idx >= __instance.inventory.actualInventory.Count
+                    || idx >= __instance.inventory.inventory.Count) return;
 
                 var item = __instance.inventory.actualInventory[idx];
-                if (item == null) return;
+                var slot = __instance.inventory.inventory[idx];
+                if (item == null || slot == null) return;
 
-                // Anchor tooltip top-left to the infoBox top-left (with a small
-                // inset so it doesn't hug the panel border). drawHoverText
-                // auto-flips at screen edges if the tooltip would overflow.
-                int overrideX = -1, overrideY = -1;
-                if (_infoBoxField != null)
+                int overrideX, overrideY;
+                int col = idx % INV_COLS;
+                int viewportWidth = Game1.uiViewport.Width;
+                int slotLeft = slot.bounds.X;
+                int slotRight = slot.bounds.X + slot.bounds.Width;
+
+                // 12-column grid: cols 0-5 = left half, cols 6-11 = right half.
+                // For left-half slots place tooltip to the right of the slot.
+                // For right-half slots place it to the left, far enough that the
+                // tooltip won't push into the selected slot.
+                if (col <= 5)
                 {
-                    var ibox = (Microsoft.Xna.Framework.Rectangle)_infoBoxField.GetValue(__instance);
-                    overrideX = ibox.X + 16;
-                    overrideY = ibox.Y + 16;
+                    overrideX = slotRight + 16;
+                }
+                else
+                {
+                    // Crude tooltip-width estimate: drawHoverText will flip if it
+                    // overflows safe-area-right, so a too-narrow estimate just
+                    // means the right-edge flip handles it. Better to err small
+                    // and let the engine clamp than overshoot off-screen-left.
+                    int estimatedWidth = 420;
+                    overrideX = slotLeft - estimatedWidth - 16;
+                    if (overrideX < 0) overrideX = 0;
                 }
 
-                if (overrideX >= 0 && overrideY >= 0 && _drawToolTipOverridePositionMethod != null)
+                overrideY = slot.bounds.Y;
+
+                if (_drawToolTipOverridePositionMethod != null)
                 {
                     _drawToolTipOverridePositionMethod.Invoke(
                         null,
@@ -656,8 +675,9 @@ namespace AndroidConsolizer.Patches
                 }
                 else
                 {
-                    // Fallback: cursor-relative position (will cover the slot, but at
-                    // least visible). Used only if reflection lookups failed.
+                    // Fallback: cursor-relative position. drawToolTipOverridePosition
+                    // is Android-only — if reflection lookup fails, fall back to the
+                    // default cursor-relative path.
                     IClickableMenu.drawToolTip(
                         b,
                         item.getDescription() ?? "",
