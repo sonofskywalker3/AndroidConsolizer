@@ -1,13 +1,15 @@
 # AndroidConsolizer — Status
 
-**Shipped version:** 3.7.0 — released on GitHub 2026-05-14 (`v3.7.0`). **v3.7.1 through v3.7.14 are committed locally**, not yet pushed:
+**Shipped version:** 3.7.0 — released on GitHub 2026-05-14 (`v3.7.0`). **v3.7.1 through v3.7.20 are committed locally**, not yet pushed:
 - **v3.7.1** — #22b dialogue option box pre-selection (device-verified).
 - **v3.7.2** — first attempt at #17 title cursor; FAILED on device (spec premises were wrong about snappyMenus and transparency).
 - **v3.7.3** — #17 diagnostic build that revealed the real root cause (drawMouse suppression on Android title screen, snappyMenus=True on Ayaneo, transparency was already 1, `GamePad.IsConnected` unreliable on Ayaneo).
-- **v3.7.4** — #17 real fix: draw the cursor ourselves in a `TitleMenu.draw` postfix (per #40a pattern). Device-verified on Ayaneo (cursor visible on Load) and S26 (touch-only: no cursor — vanilla preserved).
+- **v3.7.4** — #17 real fix: draw the cursor ourselves in a `TitleMenu.draw` postfix (per #40a pattern). Device-verified on Ayaneo (cursor visible on Load) and S26 (touch-only: no cursor — vanilla preserved). *Reverted in v3.7.19 — see below.*
 - **v3.7.5–v3.7.14** — #35 LoadGameMenu cursor + navigation arc. Two diagnostic builds (v3.7.5, v3.7.7) and eight fix iterations resolved entry snap, wasted-first-press, vanilla scroll-flicker, and the delete-confirmation dialog cursor. Final fix v3.7.14 device-verified on G Cloud. See `DONE.md` "#35 Load Game Screen Cursor / Navigation".
+- **v3.7.15–v3.7.19** — #39 Adventurer's Guild kill list + multipage mail (`LetterViewerMenu`). Diagnostic (v3.7.15) → ctor snap fix on the `(string)` overload (v3.7.16) → diagnostic-with-fix to verify (v3.7.17) → re-snap on page change when arrow becomes invisible + transient cursor-draw debug aid (v3.7.18) → final, cursor-draw removed (v3.7.19). v3.7.19 also deleted `Patches/TitleMenuPatches.cs` — the title cursor sprite drawn by v3.7.4 turned out to be wrong UX: console SDV doesn't show a visible cursor on these menus, snap is the indicator. See memory note `feedback_console_ux_no_cursor`. Device-verified on Ayaneo Pocket Air Mini.
+- **v3.7.20** — #46 bundle donation greyout. Save/swap/restore `InventoryMenu.highlightMethod` on `JunimoNoteMenu` donation-page enter/exit; filter delegates to `Bundle.canAcceptThisItem(item, null, ignore_stack_count: true)`. Mirrors #44 sell-tab greyout pattern. Device-verified on Ayaneo.
 
-Nexus mod page may still need the v3.7.0 description/version paste (manual step). Current milestone: **v3.8.0 — Console Parity: Quick Wins** (in progress — #22b, #17, and #35 done).
+Nexus mod page may still need the v3.7.0 description/version paste (manual step). Current milestone: **v3.8.0 — Console Parity: Quick Wins** (in progress — #22b, #17, #35, #39, #46 done; #47, #27, #19 remaining).
 
 ## Latest commits since v3.6.0
 
@@ -63,7 +65,7 @@ See [`TODO.md`](./TODO.md) for full detail. High-level summary:
 - ✅ #48 Y button overlap on Xbox/PS layout — **confirmed stale.** v3.6.8 diagnostic + G Cloud device test showed no double-fire; the v3.3/v3.4 symptom was fixed by intervening input-pipeline work. Diagnostic reverted in **v3.6.9**. See `DONE.md` "#48 X/Y Button Overlap"
 - 🗑 #56 Luna freeze — **dropped 2026-05-13** (cold case; only artifact was a clean v3.3.0 startup log, no freeze captured)
 
-**v3.8.0 — Console Parity: Quick Wins:** ✅ #22b dialogue defaults (v3.7.1), ✅ #17 title cursor (v3.7.4), ✅ #35 load game cursor (v3.7.5–v3.7.14). Remaining: #39 monster eradication, #46 bundle highlight greying, #47 missed rewards chest, #27 toolbar size slider, #19 geode visual feedback.
+**v3.8.0 — Console Parity: Quick Wins:** ✅ #22b dialogue defaults (v3.7.1), ✅ #17 title cursor (v3.7.4, then reverted to cursor-less in v3.7.19 — snap was the right console-parity behaviour all along), ✅ #35 load game cursor (v3.7.5–v3.7.14), ✅ #39 monster eradication kill list + multipage mail (v3.7.15–v3.7.19), ✅ #46 bundle donation greyout (v3.7.20). Remaining: #47 missed rewards chest, #27 toolbar size slider, #19 geode visual feedback.
 
 **v3.9.0 — Console Parity: Big Systems:** #18 museum donations (snap-based), #25 tool charging while moving, #25b slingshot aim (explicit right-stick rule exception).
 
