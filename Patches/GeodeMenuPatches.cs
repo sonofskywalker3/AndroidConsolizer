@@ -64,6 +64,19 @@ namespace AndroidConsolizer.Patches
         // See decompile InventoryMenu.cs:523 (set) and :835 (read).
         private static FieldInfo _iconShakeTimerField;
 
+        // GeodeMenu.infoBox is the right-side description panel rectangle
+        // (decompile GeodeMenu.cs:49, set in constructor at line 104). We
+        // position our custom tooltip here so it doesn't cover the cursor or
+        // selected slot. It's also where vanilla's descriptionText was supposed
+        // to render — the natural place for hover info.
+        private static FieldInfo _infoBoxField;
+
+        // IClickableMenu.drawToolTipOverridePosition is Android-only (mobile
+        // builds added the override-position helper). Resolve via reflection so
+        // the PC DLL compile doesn't break; fall back to cursor-relative drawToolTip
+        // if it can't be resolved.
+        private static MethodInfo _drawToolTipOverridePositionMethod;
+
         // Tooltip state fields on InventoryMenu — written every tick from
         // Update_Postfix to keep the GeodeMenu tooltip from flickering.
         // Something (almost certainly Android touch-sim releaseLeftClick at
@@ -97,6 +110,8 @@ namespace AndroidConsolizer.Patches
                 _selectedItemIndexField = AccessTools.Field(typeof(GeodeMenu), "_selectedItemIndex");
                 _gamePadShowInfoPanelMethod = AccessTools.Method(typeof(InventoryMenu), "GamePadShowInfoPanel");
                 _iconShakeTimerField = AccessTools.Field(typeof(InventoryMenu), "_iconShakeTimer");
+                _infoBoxField = AccessTools.Field(typeof(GeodeMenu), "infoBox");
+                _drawToolTipOverridePositionMethod = AccessTools.Method(typeof(IClickableMenu), "drawToolTipOverridePosition");
                 _showItemInfoField = AccessTools.Field(typeof(InventoryMenu), "showItemInfo");
                 _actualItemSelectedField = AccessTools.Field(typeof(InventoryMenu), "actualItemSelected");
                 _hoverTextField = AccessTools.Field(typeof(InventoryMenu), "hoverText");
@@ -600,9 +615,13 @@ namespace AndroidConsolizer.Patches
         }
 
         /// <summary>
-        /// Draw the rich item tooltip ourselves at the cursor, matching the
-        /// regular player-inventory hover experience. Replaces the suppressed
-        /// vanilla drawInfoPanel for GeodeMenu.
+        /// Draw the rich item tooltip ourselves, positioned in the GeodeMenu's
+        /// infoBox area (the right-side description panel) so it doesn't cover
+        /// the inventory slot, cursor, or selected item. v3.7.39 used
+        /// drawToolTip's cursor-relative positioning, which still covered the
+        /// item because controller-snap puts the cursor on the slot itself.
+        /// drawToolTipOverridePosition lets us pin the tooltip to a fixed spot;
+        /// infoBox is the right-of-Clint area vanilla intended for hover text.
         /// </summary>
         private static void Draw_Postfix(GeodeMenu __instance, Microsoft.Xna.Framework.Graphics.SpriteBatch b)
         {
@@ -618,11 +637,33 @@ namespace AndroidConsolizer.Patches
                 var item = __instance.inventory.actualInventory[idx];
                 if (item == null) return;
 
-                IClickableMenu.drawToolTip(
-                    b,
-                    item.getDescription() ?? "",
-                    item.DisplayName ?? "",
-                    item);
+                // Anchor tooltip top-left to the infoBox top-left (with a small
+                // inset so it doesn't hug the panel border). drawHoverText
+                // auto-flips at screen edges if the tooltip would overflow.
+                int overrideX = -1, overrideY = -1;
+                if (_infoBoxField != null)
+                {
+                    var ibox = (Microsoft.Xna.Framework.Rectangle)_infoBoxField.GetValue(__instance);
+                    overrideX = ibox.X + 16;
+                    overrideY = ibox.Y + 16;
+                }
+
+                if (overrideX >= 0 && overrideY >= 0 && _drawToolTipOverridePositionMethod != null)
+                {
+                    _drawToolTipOverridePositionMethod.Invoke(
+                        null,
+                        new object[] { b, item.getDescription() ?? "", item.DisplayName ?? "", item, overrideX, overrideY, 0 });
+                }
+                else
+                {
+                    // Fallback: cursor-relative position (will cover the slot, but at
+                    // least visible). Used only if reflection lookups failed.
+                    IClickableMenu.drawToolTip(
+                        b,
+                        item.getDescription() ?? "",
+                        item.DisplayName ?? "",
+                        item);
+                }
             }
             catch (Exception ex)
             {
