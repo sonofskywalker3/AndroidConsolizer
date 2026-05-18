@@ -69,8 +69,13 @@ namespace AndroidConsolizer.Patches
                     original: AccessTools.Method(typeof(GeodeMenu), nameof(GeodeMenu.startGeodeCrack)),
                     postfix: new HarmonyMethod(typeof(GeodeMenuPatches), nameof(StartGeodeCrack_Postfix))
                 );
+                // snapCursorToCurrentSnappedComponent is declared on
+                // IClickableMenu and not overridden by GeodeMenu. Harmony
+                // refuses to patch the unimplemented derived method; we
+                // patch the base method and gate the postfix on the
+                // instance type so other menus are unaffected.
                 harmony.Patch(
-                    original: AccessTools.Method(typeof(GeodeMenu), nameof(GeodeMenu.snapCursorToCurrentSnappedComponent)),
+                    original: AccessTools.Method(typeof(IClickableMenu), nameof(IClickableMenu.snapCursorToCurrentSnappedComponent)),
                     postfix: new HarmonyMethod(typeof(GeodeMenuPatches), nameof(SnapCursorToCurrentSnappedComponent_Postfix))
                 );
                 monitor.Log("GeodeMenu patches attached (A→X + touch-sim suppression + tooltip + cursor center).", LogLevel.Info);
@@ -148,22 +153,34 @@ namespace AndroidConsolizer.Patches
         }
 
         /// <summary>
-        /// Re-anchor the snap cursor at the slot center. Vanilla
-        /// IClickableMenu.snapCursorToCurrentSnappedComponent positions
-        /// the mouse at (bounds.Right - Width/4, bounds.Bottom - Height/4),
-        /// which on G Cloud's UI scale renders the cursor sprite at the
-        /// top-left of the slot rather than the expected bottom-right.
-        /// Centering puts the cursor visually inside the slot regardless
-        /// of how the scale path resolves.
+        /// Re-anchor the snap cursor at the slot center + force the
+        /// cursor sprite visible.
+        ///
+        /// Vanilla IClickableMenu.snapCursorToCurrentSnappedComponent
+        /// positions the mouse at (bounds.Right - Width/4,
+        /// bounds.Bottom - Height/4) which on G Cloud's UI scale renders
+        /// the cursor sprite at the top-left of the slot rather than
+        /// the expected bottom-right. Centering puts the cursor visually
+        /// inside the slot regardless of how the scale path resolves.
+        ///
+        /// Vanilla also leaves Game1.mouseCursorTransparency at 0 on
+        /// some menus until first input — same family as the v3.4.57
+        /// sell-tab fix. Bumping it to 1 here makes the cursor visible
+        /// on menu open instead of requiring a phantom first nav.
+        ///
+        /// Gated on (instance is GeodeMenu) so other menus' snap
+        /// behaviour is untouched.
         /// </summary>
-        private static void SnapCursorToCurrentSnappedComponent_Postfix(GeodeMenu __instance)
+        private static void SnapCursorToCurrentSnappedComponent_Postfix(IClickableMenu __instance)
         {
+            if (!(__instance is GeodeMenu geode)) return;
             if (ModEntry.Config?.EnableConsoleGeodeMenu != true) return;
-            var snapped = __instance.currentlySnappedComponent;
+            var snapped = geode.currentlySnappedComponent;
             if (snapped == null) return;
             try
             {
                 Game1.setMousePosition(snapped.bounds.Center, ui_scale: true);
+                if (Game1.mouseCursorTransparency < 0.99f) Game1.mouseCursorTransparency = 1f;
             }
             catch (Exception ex)
             {
