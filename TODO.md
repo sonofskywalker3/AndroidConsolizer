@@ -50,7 +50,13 @@ User reports a quiet "bloop" instead of a clear rejection cue (probably `Game1.p
 
 Suggested fix: pre-check in the A→X redirect before forwarding to vanilla X. If `Game1.player.freeSpotsInInventory() < 1 && selectedGeode.Stack > 1` (which is the same condition vanilla checks), play `Game1.playSound("cancel")` and trigger a shake on the highlighted slot (look at how other inventory menus shake — `_iconShakeTimer` dictionary on `InventoryMenu` is referenced in the draw loop, decompile line 836). Then return false to skip vanilla so the silent vanilla branch doesn't run.
 
-**Heavy diagnostic logging in `Patches/GeodeMenuPatches.cs`** (added v3.7.30 / kept v3.7.32) — every nav button, every state delta, every snap result is logged at Info level. Useful for the next iteration BUT noisy in shipped logs. Demote to Trace (or remove) before marking #19 done.
+**19c. Menu opens with nothing selected.**
+Vanilla GeodeMenu opens with `_selectedItemIndex = -1` — the cursor sits at slot 0 but no slot is highlighted, and A doesn't crack anything until the user presses a direction first. Shipped v3.7.35: `OnGeodeMenuOpened` now finds the first geode via `IsGeodeAt` and snaps selection + cursor to it (mirrors `DoSpatialNav`'s pattern). Awaiting user confirmation on G Cloud.
+
+**19d. "Inventory Full" descriptionText never renders on Android (open issue).**
+After v3.7.34's buzzer+shake landed, user confirmed the audio/visual cue works but observed that the right-side infoBox text goes BLANK after a failed crack — the vanilla "Tap a geode..." disappears (matches `alertTimer > 0` guard at `GeodeMenu.cs:535`) but the replacement "Inventory Full" never appears even after the 1500ms `alertTimer` should have decremented to 0. By the decompile, `update()` keeps `descriptionText = fullText` as long as `heldItem` is set, so by 1.5s the draw at line 548 should render it. Possible causes: `descriptionText` getting overwritten downstream, `infoBox` rect off-screen at G Cloud 1920×1080, or an Android-specific draw suppression. Diagnostic patch needed. Buzzer + shake from 19b cover the immediate "rejection feedback" gap; this is polish. Cleanest fallback: draw our own short floating "Inventory Full!" toast above the geode slot for ~1.2s.
+
+**Heavy diagnostic logging in `Patches/GeodeMenuPatches.cs`** (added v3.7.30 / kept v3.7.35) — every nav button, every state delta, every snap result is logged at Info level. Useful for the next iteration BUT noisy in shipped logs. Demote to Trace (or remove) before marking #19 done.
 
 **Spec:** `docs/superpowers/specs/2026-05-18-geode-menu-design.md` (note: spec assumed two-press A — turned out wrong after Switch hardware testing, see commit `v3.7.24` message). The implementation diverged from spec; update or write a new spec post-completion.
 
@@ -75,6 +81,13 @@ Suggested fix: pre-check in the A→X redirect before forwarding to vanilla X. I
 - **Fix direction:** either (a) suppress vanilla's `pressSwitchToolButton` while AC's toolbar logic owns trigger handling (e.g. zero the trigger value in `GetState_Postfix` for tool-switch purposes after AC has consumed the edge — same pattern as the analog-trigger zeroing in `GameplayButtonPatches` for the v3.3.x trigger work), or (b) detect that vanilla just advanced the tool index and skip AC's advance for that edge (e.g. record `_lastVanillaToolSwitchTick` from the existing `CurrentToolIndex_Prefix` diagnostic and have `HandleTriggersDirectly` ignore presses within ~5 ticks of that timestamp).
 - **Priority:** low — single occurrence per session is rare and the user can correct with one Y/X press in the other direction. Address when the next user complaint lands OR when v3.8 / v3.9 work brings trigger handling under examination anyway.
 - **Files to touch:** `ModEntry.cs` (`HandleTriggersDirectly`), possibly `Patches/GameplayButtonPatches.cs` (GetState-level suppression), `Patches/FarmerPatches.cs` (existing `[ToolIdx]` diagnostic stays — it's how we caught this).
+
+### 69. Crafting Quantity — Hold-to-Craft (Console Parity)
+- On the crafting menu, the controller can only craft one item per A press. There's no way to change the crafted quantity without touching the screen. Sell/buy quantity in the shop menu solved the same problem with hold-to-repeat — crafting needs the same treatment.
+- **Reuse model:** mirror the hold-to-buy / hold-to-sell pattern already implemented in `Patches/ShopMenuPatches.cs`. Same edge-on-press for the first item, then accelerating repeat while held, capped at the recipe's max-craftable from current ingredients.
+- **Investigation:** Find the crafting menu code path (likely `CraftingPage.cs` on Android — check decompile). Confirm A-button currently routes through `clickCraftingRecipe` or similar. Decide whether to patch `receiveGamePadButton` for hold-detection or hook into the existing button-repeat machinery used by ShopMenu patches.
+- **Files:** likely new `Patches/CraftingPagePatches.cs`, possibly extends `Patches/GameplayButtonPatches.cs` for the GetState-side hold tracking.
+- **Toggle:** `EnableConsoleCraftingQuantity` (default true).
 
 ---
 
@@ -163,6 +176,22 @@ Genuinely Android-better territory, not parity. No version commitment yet — th
   4. **Two GMCM pages:** "Quick Setup" page with presets/categories, "Advanced" page with every individual toggle. Check if GMCM API supports multiple pages per mod.
 - **Investigation:** What does the GMCM API support? Section headers? Multiple pages? Conditional visibility (show/hide based on another toggle)?
 - **Files:** `ModEntry.cs` (GMCM registration), `ModConfig.cs`.
+
+---
+
+## Beyond Vanilla — Optimizations Over Console
+
+These items intentionally diverge from console parity to make the Android experience FASTER or more efficient than vanilla / Switch. No version commitment yet — each likely needs its own brainstorming session.
+
+### 70. Geode Cracking — Speed Past Vanilla
+- v3.7.33–v3.7.35 brought the Clint geode menu to single-press A console parity (A redirects to X, full inventory gives a buzzer + slot shake, menu opens auto-selected on the first geode). This item is the FOLLOW-UP that goes beyond parity: cracking a 999-stack of Omni Geodes one-press-at-a-time is still a chore even with parity.
+- **Vanilla flow recap:** each A press triggers ~2.7s of animation (geode lands on anvil → Clint swings hammer → fluff sprites → reward drawn). The animation is single-threaded — no overlap between cracks. So 999 geodes ≈ 45 minutes of holding A.
+- **Possible improvements** (pick + brainstorm later):
+  - Hold-to-crack with auto-repeat (same as #69 pattern): A press → crack one, hold A → keep cracking at the animation's natural cadence, ignoring single-press intent.
+  - Bulk-crack mode: A long-press or a separate button cracks N at once with a single condensed animation. Treasure stacks merge into inventory in one batch.
+  - Skip-animation toggle: GMCM option to compress the geode-crack animation to ~0.3s (or skip entirely) when a stack is being processed. Keep full animation for single cracks to preserve the satisfying feel.
+- **Files:** new `Patches/GeodeMenuPatches.cs` extensions (existing file owns the menu); possibly a new `BulkActionMenu` UI if we add a confirm-to-bulk-crack flow.
+- **Toggle:** `EnableFastGeodeCracking` (default true — most players will want this).
 
 ---
 
