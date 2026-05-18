@@ -476,6 +476,17 @@ Headline release: shop-cursor fixes, CarpenterMenu polish, CC bundle reward menu
   - **Update_Postfix is one frame late for visible flicker fixes.** When a vanilla path renders the wrong state for one frame before your correction runs, mirror the correction in `ReceiveGamePadButton_Postfix` so it runs same-frame. Same pattern as v3.7.10 → v3.7.11 scroll clamp and v3.7.13 → v3.7.14 dialog snap.
   - **Diagnostic-first paid off again.** Two diagnostic builds (v3.7.5, v3.7.7) drove the fix arc to ground truth; v3.7.12's wrong-API guess (the only spot I skipped re-reading the decompile) cost an extra fix round — exactly what the workflow exists to prevent.
 
+### #46 Grey Out Non-Donatable Items on Bundle Donation Page — v3.7.20
+- **Symptom:** On `JunimoNoteMenu`'s per-bundle donation page, inventory items are shown at full brightness regardless of whether they can be donated to that bundle. Console SDV greys out the non-matching items.
+- **Fix:** Save/swap/restore `InventoryMenu.highlightMethod` on donation-page enter/exit (same hook as #44 sell-tab greyout). Filter delegates to `Bundle.canAcceptThisItem(item, slot: null, ignore_stack_count: true)` — identity-only matching, partial stacks of valid items stay highlighted. Returns `false` for everything when `bundle.depositsAllowed = false` (completed/locked bundles, greys all). Returns `true` when bundle reflection or menu reference is null (fail-open, no false-grey).
+- **Scope:** Always-on, no GMCM toggle. Cash/vault bundles are also greyed (no ingredient slots → nothing matches), which is the correct outcome — donation on those bundles goes through `purchaseButton`, not inventory clicks.
+- **Bundle reference:** `JunimoNoteMenu.currentPageBundle` is private — reflected via `AccessTools.Field` cached at `Apply()` time. Reflection-failure path logs a Warn and leaves the rest of `JunimoNoteMenuPatches` functioning normally; greyout becomes a no-op.
+- **File:** `Patches/JunimoNoteMenuPatches.cs` (additions only — no behaviour change to existing patches).
+- **Verified:** Device test on Ayaneo Pocket Air Mini — non-matching items greyed on bundle entry, partial-stack rule confirmed, greyout cleared on exit. Log clean: `JunimoNoteMenu patches applied` with no reflection-failure warning.
+- **Key lessons:**
+  - `Bundle.canAcceptThisItem(item, null, true)` is the canonical identity-only "can this item ever satisfy any uncompleted ingredient" check. `null` slot + `ignore_stack_count: true` are the right defaults for visual filters where current stack size shouldn't decide visibility.
+  - `Bundle.depositsAllowed` is the right gate for "is this bundle currently accepting anything at all" — covers completed bundles cleanly without needing to enumerate ingredient completion state.
+
 ### #39 Monster Eradication Tracking Page (kill list + multipage mail) — v3.7.15 (diag) → v3.7.16 (snap fix) → v3.7.17 (diag-with-fix) → v3.7.18 (re-snap + transient cursor draw) → v3.7.19 (final, cursor removed)
 - **Symptom (Adventurer's Guild kill list, controller, Ayaneo):** Opening the kill list left the forward arrow "breathing" and A did nothing until the player nudged the joystick. After joystick wiggle, A worked but the snap didn't follow page changes — on a 2-page list, page 2's back arrow never got the snap.
 - **Two real defects + one misread of console UX:**

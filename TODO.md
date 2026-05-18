@@ -12,12 +12,6 @@ Shipped: **v3.6.0** (Bug Fix Release). Roadmap structure was re-evaluated post-3
 
 Small to medium parity fixes that can each be solved with localized patches. No multi-patch system arc. Bumps the mod from "most parity items done" to "every menu has correct defaults and visible cursors."
 
-### 46. Grey Out Non-Donatable Items on Bundle Page
-- When a bundle donation page is open, items in inventory that cannot be donated to that bundle should be greyed out.
-- Same pattern as #44 (zero-price items greyed out on sell tab) — override `highlightMethod` on the inventory to only highlight valid donation items.
-- **Investigation:** How does the game determine valid donations? Check `Bundle.canAcceptThisItem()` or equivalent. Need to match against the bundle's remaining required ingredients.
-- **File:** `Patches/JunimoNoteMenuPatches.cs`.
-
 ### 47. Missed Rewards Chest Not Appearing
 - After completing a CC room with unclaimed bundle rewards, the "missed rewards" chest should appear at tile (22, 10) in the Community Center. On Android, the chest never appears — even when reward stacks are left completely untouched.
 - **Vanilla system:** `CommunityCenter.checkForMissedRewards()` iterates `bundleRewards`, checks `bundleRewards[key] == true && areasComplete[area] == true`, populates `missedRewardsChest` items. Called from `doRestoreAreaCutscene` (line 875), `resetSharedState` (line 562), and `performAction` on "MissedRewards" tile (line 357). Chest tile modification via `showMissedRewardsChestEvent`.
