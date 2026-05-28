@@ -91,17 +91,22 @@ After v3.7.34's buzzer+shake landed, user confirmed the audio/visual cue works b
 - **Files:** likely new `Patches/CraftingPagePatches.cs`, possibly extends `Patches/GameplayButtonPatches.cs` for the GetState-side hold tracking.
 - **Toggle:** `EnableConsoleCraftingQuantity` (default true).
 
-### 71. Books Can't Be Read (Consumed for Skill/Power) Via Controller
-- **Public report (Nexus comment, 2026-05-28):** *"When I used the controller to collect the Dwarf Language Translation Manual, it gave me a book, not a skill."* (Reported alongside the #18 museum-donation complaint by the same user, in the same museum session.)
-- **What's happening:** Books in Category **-102 (Books)** and **-103 (skill books)** grant their effect — skill XP, a recipe, or a permanent power — through `StardewValley.Object.performUseAction` → `readBook(location)` (decompile `Object.cs:3398-3402`: `if (flag && (Category == -102 || Category == -103)) { readBook(location); return true; }`). On console you "use" the book and it's consumed into the skill/power. Via the Android controller the use-item path apparently never reaches `performUseAction`, so the book just sits in inventory as a plain item and the skill/power is never applied.
-- **Caveat — verify the item first:** The "Dwarvish Translation Guide" is historically a permanent key item (donate 4 Dwarf Scrolls), NOT a -102/-103 book, so the user may be describing a *different* 1.6 skill/power book and mis-naming it, OR the museum reward they collected was a -103 book. **Step 1 is to confirm exactly which item and category is involved** before designing a fix — pull the item ID from a save or reproduce on device.
-- **Investigation:**
-  1. Reproduce: give the user (or a test save) a -102/-103 book, try to "read"/use it with the controller. Confirm it stays an item instead of triggering `readBook`.
-  2. Find the Android controller "use held item" code path — does it call `Object.performUseAction` at all? Compare to how A/tool button routes use-item in the overworld. (Decompile: `Farmer.cs` use-tool / `Game1.pressUseToolButton` and the mobile use-item button.)
-  3. Decide the fix: likely route the controller's use-item press through `ActiveObject.performUseAction(currentLocation)` when the held item is a -102/-103 book, mirroring vanilla.
-- **Possible relation to #18:** Both surfaced in the museum, but mechanically distinct — #18 is the donation *menu* (snap placement), #71 is *using/reading a book item* in the world. Likely separate patches.
-- **Files:** probably new `Patches/` file for use-item routing, or extend an existing gameplay-button patch. Decompile reference: `Object.cs:3278` (`readBook`), `Object.cs:3391` (`performUseAction`).
-- **Milestone:** tentatively v3.8.0 (likely a small localized patch) — confirm after the Step-1 reproduction/brainstorm.
+### 71. Consume-on-Grab Rewards Dumped Into Bag (Museum/Reward ItemGrabMenu via Controller)
+- **Public report (Nexus comment, 2026-05-28):** *"When I used the controller to collect the Dwarf Language Translation Manual, it gave me a book, not a skill."*
+- **ROOT CAUSE — CONFIRMED on device (v3.7.43 session, G Cloud, 2026-05-28).** Earlier hypothesis (a `readBook` / `performUseAction -102/-103` use-item gap) was **WRONG** — discard it. The guide is `(O)326`, delivered through the museum's **"Rewards" `ItemGrabMenu`** (`LibraryMuseum.cs:337`, `showReceivingMenu: true`, `behaviorOnItemGrab = OnRewardCollected`). Vanilla's grab handler (`ItemGrabMenu.cs:826-867`) has three **consume-on-grab** special cases that DISCARD the item (`heldItem = null`) instead of giving it to the player:
+  1. **`(O)326`** → `Game1.player.canUnderstandDwarves = true` + `playSound("fireball")` (the dwarf guide — this report);
+  2. **`parentSheetIndex == 102`** → `foundArtifact("(O)102", 1)` (Lost Book) + fireball;
+  3. **`isRecipe`** → learns the cooking/crafting recipe.
+- **AC bypasses all three.** AC treats the Rewards `ItemGrabMenu` as a generic chest: `ItemGrabMenuPatches.TransferOneFromChest` / `TransferStackFromChest` do a plain `Game1.player.addItemToInventory(...)` then `InvokeBehaviorOnItemGrab`. So the controller grab dumps `(O)326` (or a lost book, or a recipe) into the bag, the consume-on-grab special never runs, and the skill/effect is never applied. Device proof (session `SMAPI-v3.7.43-20260528-160022.txt`, 15:32:18):
+  - `[ChestTransfer] behaviorOnItemGrab invoked for Dwarvish Translation Guide`
+  - `[ChestTransfer] Took 1x Dwarvish Translation Guide from chest`
+  - `canUnderstandDwarves` setter NEVER fired → flag stayed false → dwarf stayed gibberish.
+- **Why the v3.7.43 diagnostic logged nothing useful:** it patched vanilla `receiveGamePadButtonGrabbingItems` / `receiveLeftClick`, but AC's chest-transfer owns the grab and never calls those. `Patches/BookRewardDiagnosticPatches.cs` is therefore on the wrong path — **remove it** (or repoint to `TransferOneFromChest`/`TransferStackFromChest`) when implementing the fix.
+- **Recommended fix (robust):** in AC's chest→player grab path, detect a **receiving/reward menu** (`ItemGrabMenu.source == source_chest`? no — use `showReceivingMenu` / a non-null `behaviorOnItemGrab` reward callback, or `reverseGrab == false` receiving menu) and, for the grabbed item, route through **vanilla's own reward-grab handler** rather than AC's transfer — that handler already covers `(O)326`, lost books, recipes, AND any future consume-on-grab rewards. Targeted alternative: replicate the three special cases inline before the `addItemToInventory` in `TransferOneFromChest`/`TransferStackFromChest` (set the flag / `foundArtifact` / learn recipe, play fireball, remove from grab menu, do NOT add to bag). Prefer route-through-vanilla so we don't have to chase every special case.
+- **Regression caution:** this is shared chest-transfer code used by every chest/JunimoHut/AutoGrabber/StorageFurniture grab — gate the new behaviour strictly to reward/receiving menus so normal chest grabbing is untouched. Re-test a normal chest grab + a CC-bundle reward grab after the fix.
+- **Files:** `Patches/ItemGrabMenuPatches.cs` (`TransferOneFromChest` ~1351, `TransferStackFromChest`, `InvokeBehaviorOnItemGrab` ~1582). Decompile ref: `ItemGrabMenu.cs:826-905` (the consume-on-grab special cases), `LibraryMuseum.cs:337` (reward menu construction).
+- **Relation to #18:** both surfaced in the museum but are mechanically distinct — #18 is the donation *placement* menu (snap), #71 is the *reward collection* grab. Separate patches. (Note: the user had to use touch to donate because of #18, then grabbed the reward with the controller → hit #71.)
+- **Milestone:** v3.8.0 — localized to `ItemGrabMenuPatches`, no new system.
 
 ---
 
