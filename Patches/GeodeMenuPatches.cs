@@ -129,7 +129,7 @@ namespace AndroidConsolizer.Patches
                     + $"infoPanelPosition={(_infoPanelPositionField != null ? "OK" : "NULL")}, "
                     + $"getPositionOfSellPanel={(_getPositionOfSellPanelMethod != null ? "OK" : "NULL")}, "
                     + $"getItemFromClickableComponent={(_getItemFromClickableComponentMethod != null ? "OK" : "NULL")}, "
-                    + $"GamePadShowInfoPanel={(_gamePadShowInfoPanelMethod != null ? "OK" : "NULL")}", LogLevel.Info);
+                    + $"GamePadShowInfoPanel={(_gamePadShowInfoPanelMethod != null ? "OK" : "NULL")}", LogLevel.Trace);
 
                 harmony.Patch(
                     original: AccessTools.Method(typeof(GeodeMenu), nameof(GeodeMenu.receiveGamePadButton)),
@@ -196,7 +196,7 @@ namespace AndroidConsolizer.Patches
                     original: AccessTools.Method(typeof(GeodeMenu), nameof(GeodeMenu.draw), new System.Type[] { typeof(Microsoft.Xna.Framework.Graphics.SpriteBatch) }),
                     postfix: new HarmonyMethod(typeof(GeodeMenuPatches), nameof(Draw_Postfix))
                 );
-                monitor.Log("GeodeMenu patches attached (A→X + touch-sim + tooltip + spatial nav + diagnostic).", LogLevel.Info);
+                monitor.Log("GeodeMenu patches attached (A→X + touch-sim + tooltip + spatial nav + diagnostic).", LogLevel.Trace);
             }
             catch (Exception ex)
             {
@@ -254,7 +254,7 @@ namespace AndroidConsolizer.Patches
             }
             if (firstGeode < 0)
             {
-                try { Monitor.Log("[GeodeMenu] auto-select: no geodes in inventory, leaving selection unset", LogLevel.Info); } catch { }
+                try { Monitor.Log("[GeodeMenu] auto-select: no geodes in inventory, leaving selection unset", LogLevel.Trace); } catch { }
                 return;
             }
 
@@ -272,7 +272,7 @@ namespace AndroidConsolizer.Patches
                 }
             }
 
-            try { Monitor.Log($"[GeodeMenu] auto-selected first geode at slot {firstGeode}", LogLevel.Info); } catch { }
+            try { Monitor.Log($"[GeodeMenu] auto-selected first geode at slot {firstGeode}", LogLevel.Trace); } catch { }
         }
 
         private static bool ReceiveGamePadButton_Prefix(GeodeMenu __instance, Buttons b)
@@ -287,7 +287,7 @@ namespace AndroidConsolizer.Patches
                 try
                 {
                     _redirectTick = Game1.ticks;
-                    try { Monitor.Log($"[GeodeMenu] A redirect → X at tick {_redirectTick}", LogLevel.Info); } catch { }
+                    try { Monitor.Log($"[GeodeMenu] A redirect → X at tick {_redirectTick}", LogLevel.Trace); } catch { }
                     // Inventory-full rejection feedback before vanilla runs. Vanilla's
                     // inventory-full branch (decompile GeodeMenu.cs:683-688) is silent
                     // and invisible — just descriptionText + wiggle/alert timers. We
@@ -456,7 +456,7 @@ namespace AndroidConsolizer.Patches
                 }
             }
 
-            try { Monitor.Log($"[GeodeMenu/nav] dir={direction} from={current} → target={target}", LogLevel.Info); } catch { }
+            try { Monitor.Log($"[GeodeMenu/nav] dir={direction} from={current} → target={target}", LogLevel.Trace); } catch { }
             if (target < 0) return; // no geode in that direction — stay put.
 
             _selectedItemIndexField.SetValue(menu, target);
@@ -559,7 +559,7 @@ namespace AndroidConsolizer.Patches
                 __instance.currentlySnappedComponent = slot;
                 __instance.snapCursorToCurrentSnappedComponent();
                 if (Game1.mouseCursorTransparency < 0.99f) Game1.mouseCursorTransparency = 1f;
-                try { Monitor?.Log($"[GeodeMenu] snap-to-default → first geode at slot {firstGeode}", LogLevel.Info); } catch { }
+                try { Monitor?.Log($"[GeodeMenu] snap-to-default → first geode at slot {firstGeode}", LogLevel.Trace); } catch { }
             }
             catch (Exception ex)
             {
@@ -589,14 +589,14 @@ namespace AndroidConsolizer.Patches
             // Same-tick touch-sim leftClick from the A press we just
             // redirected. Eat it so it can't pick up the partially-
             // consumed geode stack or disturb snap state.
-            try { Monitor.Log($"[GeodeMenu] suppressing touch-sim leftClick at tick {Game1.ticks}", LogLevel.Info); } catch { }
+            try { Monitor.Log($"[GeodeMenu] suppressing touch-sim leftClick at tick {Game1.ticks}", LogLevel.Trace); } catch { }
             _redirectTick = -1;
             return false;
         }
 
         private static void StartGeodeCrack_Postfix(GeodeMenu __instance)
         {
-            try { Monitor.Log($"[GeodeMenu] startGeodeCrack fired. animTimer={__instance.geodeAnimationTimer}", LogLevel.Info); } catch { }
+            try { Monitor.Log($"[GeodeMenu] startGeodeCrack fired. animTimer={__instance.geodeAnimationTimer}", LogLevel.Trace); } catch { }
         }
 
         /// <summary>
@@ -730,22 +730,22 @@ namespace AndroidConsolizer.Patches
             {
                 if (__instance.inventory?.inventory == null)
                 {
-                    try { Monitor.Log("[GeodeMenu/diag] cursor sync: inventory or inventory.inventory NULL", LogLevel.Info); } catch { }
+                    try { Monitor.Log("[GeodeMenu/diag] cursor sync: inventory or inventory.inventory NULL", LogLevel.Trace); } catch { }
                     return;
                 }
                 int selected = (int)_inventoryCurrentlySelectedItemField.GetValue(__instance.inventory);
                 int invCount = __instance.inventory.inventory.Count;
-                try { Monitor.Log($"[GeodeMenu/diag] cursor sync: selected={selected}, inventoryComponentCount={invCount}", LogLevel.Info); } catch { }
+                try { Monitor.Log($"[GeodeMenu/diag] cursor sync: selected={selected}, inventoryComponentCount={invCount}", LogLevel.Trace); } catch { }
 
                 if (selected < 0 || selected >= invCount)
                 {
-                    try { Monitor.Log($"[GeodeMenu/diag] cursor sync bail: selected out of range", LogLevel.Info); } catch { }
+                    try { Monitor.Log($"[GeodeMenu/diag] cursor sync bail: selected out of range", LogLevel.Trace); } catch { }
                     return;
                 }
                 var slot = __instance.inventory.inventory[selected];
                 if (slot == null)
                 {
-                    try { Monitor.Log($"[GeodeMenu/diag] cursor sync bail: slot[{selected}] is NULL", LogLevel.Info); } catch { }
+                    try { Monitor.Log($"[GeodeMenu/diag] cursor sync bail: slot[{selected}] is NULL", LogLevel.Trace); } catch { }
                     return;
                 }
 
@@ -753,7 +753,7 @@ namespace AndroidConsolizer.Patches
                 __instance.currentlySnappedComponent = slot;
                 __instance.snapCursorToCurrentSnappedComponent();
                 int postX = Game1.getMouseX(), postY = Game1.getMouseY();
-                try { Monitor.Log($"[GeodeMenu/diag] cursor sync ran. slot.bounds={slot.bounds}, mouse {preX},{preY} → {postX},{postY}, mouseCursorTransparency={Game1.mouseCursorTransparency:F2}", LogLevel.Info); } catch { }
+                try { Monitor.Log($"[GeodeMenu/diag] cursor sync ran. slot.bounds={slot.bounds}, mouse {preX},{preY} → {postX},{postY}, mouseCursorTransparency={Game1.mouseCursorTransparency:F2}", LogLevel.Trace); } catch { }
             }
             catch (Exception ex)
             {
@@ -785,7 +785,7 @@ namespace AndroidConsolizer.Patches
                     string snapped = __instance.currentlySnappedComponent != null
                         ? $"snap={__instance.currentlySnappedComponent.myID}@{__instance.currentlySnappedComponent.bounds}"
                         : "snap=null";
-                    Monitor.Log($"[GeodeMenu/diag] state Δ: _selectedItemIndex={selIdx} currentlySelectedItem={curSel} mouse=({mx},{my}) transparency={Game1.mouseCursorTransparency:F2} {snapped}", LogLevel.Info);
+                    Monitor.Log($"[GeodeMenu/diag] state Δ: _selectedItemIndex={selIdx} currentlySelectedItem={curSel} mouse=({mx},{my}) transparency={Game1.mouseCursorTransparency:F2} {snapped}", LogLevel.Trace);
                     _lastLoggedSelIdx = selIdx;
                     _lastLoggedCurSel = curSel;
                     _lastLoggedMouseX = mx;
@@ -807,7 +807,7 @@ namespace AndroidConsolizer.Patches
                     ? (int)_inventoryCurrentlySelectedItemField.GetValue(menu.inventory)
                     : -99;
                 int snapID = menu.currentlySnappedComponent?.myID ?? -99;
-                Monitor.Log($"[GeodeMenu/diag] {label} button={b}: _selectedItemIndex={selIdx} currentlySelectedItem={curSel} snap.myID={snapID} mouse=({Game1.getMouseX()},{Game1.getMouseY()})", LogLevel.Info);
+                Monitor.Log($"[GeodeMenu/diag] {label} button={b}: _selectedItemIndex={selIdx} currentlySelectedItem={curSel} snap.myID={snapID} mouse=({Game1.getMouseX()},{Game1.getMouseY()})", LogLevel.Trace);
             }
             catch (Exception ex)
             {
