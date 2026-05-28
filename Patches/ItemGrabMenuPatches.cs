@@ -1300,6 +1300,76 @@ namespace AndroidConsolizer.Patches
             }
         }
 
+        // #71: cached setter for Farmer.canUnderstandDwarves (a mail-backed property;
+        // resolved by string per the platform-differing-member rule).
+        private static MethodInfo _canUnderstandDwarvesSetter;
+        private static bool _canUnderstandDwarvesResolved;
+
+        /// <summary>
+        /// #71 — replicate vanilla's CONSUME-ON-GRAB reward handling that AC's chest
+        /// transfer otherwise bypasses. Vanilla's reward grab (decompile
+        /// ItemGrabMenu.cs:826-867) DISCARDS certain items into their effect instead of
+        /// handing them to the player:
+        ///   (O)326               -> Farmer.canUnderstandDwarves = true (Dwarvish Translation Guide)
+        ///   parentSheetIndex 102 -> Farmer.foundArtifact("(O)102", 1)   (Lost Book)
+        /// AC's TransferFromChest/TransferOneFromChest just addItemToInventory + invoke
+        /// the grab callback, so the museum's Dwarvish Translation Guide reward landed in
+        /// the bag and never granted dwarf-understanding when grabbed with the controller
+        /// (Nexus report 2026-05-28; confirmed in the v3.7.43 G Cloud log). Keyed on item
+        /// identity (not menu) to match vanilla and leave every normal item untouched —
+        /// only (O)326 / lost books, which only ever surface in reward menus, take this
+        /// path. The recipe-reward case (isRecipe) is vanilla's third special but isn't
+        /// reachable through the museum reward menu — deferred (see TODO #71).
+        /// Returns true if the item was consumed in place (caller must NOT transfer it).
+        /// </summary>
+        private static bool TryConsumeRewardOnGrab(ItemGrabMenu menu, Item item, int slotIndex)
+        {
+            if (item is not StardewValley.Object obj)
+                return false;
+
+            bool isGuide = item.QualifiedItemId == "(O)326";
+            bool isLostBook = obj.ParentSheetIndex == 102;
+            if (!isGuide && !isLostBook)
+                return false;
+
+            try
+            {
+                // Vanilla invokes behaviorOnItemGrab before the consume (ItemGrabMenu.cs:826-829);
+                // for the museum this marks the reward collected so Gunther won't re-offer it.
+                InvokeBehaviorOnItemGrab(menu, item);
+
+                if (isGuide)
+                {
+                    if (!_canUnderstandDwarvesResolved)
+                    {
+                        _canUnderstandDwarvesSetter = AccessTools.PropertySetter(typeof(Farmer), "canUnderstandDwarves");
+                        _canUnderstandDwarvesResolved = true;
+                    }
+                    _canUnderstandDwarvesSetter?.Invoke(Game1.player, new object[] { true });
+                }
+                else // lost book
+                {
+                    Game1.player.foundArtifact("(O)102", 1);
+                }
+
+                Game1.playSound("fireball");
+
+                // Consume in place — remove from the reward menu, do NOT add to the bag.
+                var chestInv = menu.ItemsToGrabMenu?.actualInventory;
+                if (chestInv != null && slotIndex >= 0 && slotIndex < chestInv.Count)
+                    chestInv[slotIndex] = null;
+
+                Monitor.Log($"[#71] Consumed reward on grab: {item.DisplayName} ({item.QualifiedItemId}) — "
+                    + (isGuide ? "canUnderstandDwarves set" : "lost book recorded"), LogLevel.Info);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Monitor.Log($"[#71] consume-on-grab failed for {item?.DisplayName}: {ex.Message} — falling back to normal transfer", LogLevel.Warn);
+                return false;
+            }
+        }
+
         /// <summary>Transfer full stack from chest to player inventory.</summary>
         private static void TransferFromChest(ItemGrabMenu menu, int slotIndex)
         {
@@ -1312,6 +1382,10 @@ namespace AndroidConsolizer.Patches
                 Game1.playSound("cancel");
                 return;
             }
+
+            // #71: consume-on-grab reward special-case (Dwarvish guide / lost book).
+            if (TryConsumeRewardOnGrab(menu, item, slotIndex))
+                return;
 
             int stackBefore = item.Stack;
             Item leftover = Game1.player.addItemToInventory(item);
@@ -1359,6 +1433,10 @@ namespace AndroidConsolizer.Patches
                 Game1.playSound("cancel");
                 return;
             }
+
+            // #71: consume-on-grab reward special-case (Dwarvish guide / lost book).
+            if (TryConsumeRewardOnGrab(menu, item, slotIndex))
+                return;
 
             Item one = item.getOne();
             Item leftover = Game1.player.addItemToInventory(one);
