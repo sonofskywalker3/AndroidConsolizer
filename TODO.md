@@ -56,7 +56,9 @@ Vanilla GeodeMenu opens with `_selectedItemIndex = -1` — the cursor sits at sl
 **19d. "Inventory Full" descriptionText never renders on Android (open issue).**
 After v3.7.34's buzzer+shake landed, user confirmed the audio/visual cue works but observed that the right-side infoBox text goes BLANK after a failed crack — the vanilla "Tap a geode..." disappears (matches `alertTimer > 0` guard at `GeodeMenu.cs:535`) but the replacement "Inventory Full" never appears even after the 1500ms `alertTimer` should have decremented to 0. By the decompile, `update()` keeps `descriptionText = fullText` as long as `heldItem` is set, so by 1.5s the draw at line 548 should render it. Possible causes: `descriptionText` getting overwritten downstream, `infoBox` rect off-screen at G Cloud 1920×1080, or an Android-specific draw suppression. Diagnostic patch needed. Buzzer + shake from 19b cover the immediate "rejection feedback" gap; this is polish. Cleanest fallback: draw our own short floating "Inventory Full!" toast above the geode slot for ~1.2s.
 
-**Heavy diagnostic logging in `Patches/GeodeMenuPatches.cs`** (added v3.7.30 / kept v3.7.35) — every nav button, every state delta, every snap result is logged at Info level. Useful for the next iteration BUT noisy in shipped logs. Demote to Trace (or remove) before marking #19 done.
+**Heavy diagnostic logging in `Patches/GeodeMenuPatches.cs`** — ✅ **DONE in v3.7.42:** all geode diagnostics demoted from Info to Trace (still available behind verbose logging for the open 19d investigation, no longer spams shipped logs). No behavioural change.
+
+**Status note (2026-05-28):** docs above lag the code. Shipped reality: 19a (red box) done v3.7.33, 19b (buzzer+shake) done v3.7.34, 19c (auto-select on open) done v3.7.35. v3.7.36–v3.7.41 = a tooltip-placement arc (flicker, edge-flip, infoBox pinning) not separately itemised here — awaiting device confirmation it's settled. **Only 19d remains open** plus that tooltip-arc verification before #19 can be marked done in DONE.md.
 
 **Spec:** `docs/superpowers/specs/2026-05-18-geode-menu-design.md` (note: spec assumed two-press A — turned out wrong after Switch hardware testing, see commit `v3.7.24` message). The implementation diverged from spec; update or write a new spec post-completion.
 
@@ -89,6 +91,18 @@ After v3.7.34's buzzer+shake landed, user confirmed the audio/visual cue works b
 - **Files:** likely new `Patches/CraftingPagePatches.cs`, possibly extends `Patches/GameplayButtonPatches.cs` for the GetState-side hold tracking.
 - **Toggle:** `EnableConsoleCraftingQuantity` (default true).
 
+### 71. Books Can't Be Read (Consumed for Skill/Power) Via Controller
+- **Public report (Nexus comment, 2026-05-28):** *"When I used the controller to collect the Dwarf Language Translation Manual, it gave me a book, not a skill."* (Reported alongside the #18 museum-donation complaint by the same user, in the same museum session.)
+- **What's happening:** Books in Category **-102 (Books)** and **-103 (skill books)** grant their effect — skill XP, a recipe, or a permanent power — through `StardewValley.Object.performUseAction` → `readBook(location)` (decompile `Object.cs:3398-3402`: `if (flag && (Category == -102 || Category == -103)) { readBook(location); return true; }`). On console you "use" the book and it's consumed into the skill/power. Via the Android controller the use-item path apparently never reaches `performUseAction`, so the book just sits in inventory as a plain item and the skill/power is never applied.
+- **Caveat — verify the item first:** The "Dwarvish Translation Guide" is historically a permanent key item (donate 4 Dwarf Scrolls), NOT a -102/-103 book, so the user may be describing a *different* 1.6 skill/power book and mis-naming it, OR the museum reward they collected was a -103 book. **Step 1 is to confirm exactly which item and category is involved** before designing a fix — pull the item ID from a save or reproduce on device.
+- **Investigation:**
+  1. Reproduce: give the user (or a test save) a -102/-103 book, try to "read"/use it with the controller. Confirm it stays an item instead of triggering `readBook`.
+  2. Find the Android controller "use held item" code path — does it call `Object.performUseAction` at all? Compare to how A/tool button routes use-item in the overworld. (Decompile: `Farmer.cs` use-tool / `Game1.pressUseToolButton` and the mobile use-item button.)
+  3. Decide the fix: likely route the controller's use-item press through `ActiveObject.performUseAction(currentLocation)` when the held item is a -102/-103 book, mirroring vanilla.
+- **Possible relation to #18:** Both surfaced in the museum, but mechanically distinct — #18 is the donation *menu* (snap placement), #71 is *using/reading a book item* in the world. Likely separate patches.
+- **Files:** probably new `Patches/` file for use-item routing, or extend an existing gameplay-button patch. Decompile reference: `Object.cs:3278` (`readBook`), `Object.cs:3391` (`performUseAction`).
+- **Milestone:** tentatively v3.8.0 (likely a small localized patch) — confirm after the Step-1 reproduction/brainstorm.
+
 ---
 
 ## v3.9.0 — Console Parity: Big Systems
@@ -99,6 +113,7 @@ Three player-facing real-time gameplay systems. Each likely needs multiple patch
 - Controller-only placement inaccessible. Confirmed on G Cloud. Touch required to select/place items.
 - **Approach:** Snap-based item selection overlay over the museum's free-placement grid. Confirmed possible without #12 (Switch handles museum donations with snap nav, no free cursor required).
 - **Implementation challenge:** The museum grid doesn't map cleanly to discrete components. Will need a custom selection model — likely tracking a virtual cursor in tile-space and rendering placement preview at the snapped tile.
+- **Public report (Nexus comment, 2026-05-28):** *"When I wanted to donate items at the museum, I couldn't use my controller to donate."* Confirms the report independently — there is now a public user complaint, same as #27. Same user also hit #71 (see below) in the same session.
 
 ### 25. Tool Charging Broken While Moving
 - Holding tool button while moving rapid-fires single uses instead of charging. Player stops moving and tool keeps firing.
