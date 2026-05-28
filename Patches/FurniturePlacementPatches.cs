@@ -21,6 +21,11 @@ namespace AndroidConsolizer.Patches
     /// Our prefix forces the single-rectangle path for Furniture instances, returning
     /// true so <see cref="StardewValley.Object.drawPlacementBounds"/> short-circuits
     /// before drawing the multi-tile map.
+    ///
+    /// #68: the same treatment is applied to placeable CRAFTABLES (machines, kegs,
+    /// sprinklers, etc. — plain Object / BigCraftable, 1x1 footprint) via a parallel
+    /// branch, gated on the sibling toggle <c>EnableConsoleCraftablePlacement</c>.
+    /// Bombs and crab pots are excluded (vanilla renders those specially).
     /// </summary>
     internal static class FurniturePlacementPatches
     {
@@ -57,57 +62,123 @@ namespace AndroidConsolizer.Patches
             GameLocation location,
             ref bool __result)
         {
-            if (ModEntry.Config?.EnableConsoleFurniturePlacement != true)
-                return true;
-            if (!(__instance is Furniture furniture))
-                return true;
             if (location == null || spriteBatch == null)
                 return true;
 
-            // drawPlacementBounds has already computed and assigned TileLocation to the
-            // snapped placement target by the time it calls DrawRedGreenRectangleForPlacing,
-            // so reading TileLocation gives us the same tile the engine would place at.
-            Vector2 tile = __instance.TileLocation;
-            int x = (int)tile.X * 64;
-            int y = (int)tile.Y * 64;
-            bool canPlace = Utility.playerCanPlaceItemHere(location, __instance, x, y, Game1.player);
-
-            int width = furniture.getTilesWide();
-            int height = furniture.getTilesHigh();
-            int srcX = canPlace ? 194 : 210;
-
-            for (int i = (int)tile.X; i < (int)tile.X + width; i++)
+            // --- Furniture (v3.5.38/39): single ghost sized to the tile footprint. ---
+            if (__instance is Furniture furniture)
             {
-                for (int j = (int)tile.Y; j < (int)tile.Y + height; j++)
+                if (ModEntry.Config?.EnableConsoleFurniturePlacement != true)
+                    return true;
+
+                // drawPlacementBounds has already computed and assigned TileLocation to the
+                // snapped placement target by the time it calls DrawRedGreenRectangleForPlacing,
+                // so reading TileLocation gives us the same tile the engine would place at.
+                Vector2 tile = __instance.TileLocation;
+                int x = (int)tile.X * 64;
+                int y = (int)tile.Y * 64;
+                bool canPlace = Utility.playerCanPlaceItemHere(location, __instance, x, y, Game1.player);
+
+                int width = furniture.getTilesWide();
+                int height = furniture.getTilesHigh();
+                int srcX = canPlace ? 194 : 210;
+
+                for (int i = (int)tile.X; i < (int)tile.X + width; i++)
                 {
-                    spriteBatch.Draw(
-                        Game1.mouseCursors,
-                        new Vector2(i * 64 - Game1.viewport.X, j * 64 - Game1.viewport.Y),
-                        new Microsoft.Xna.Framework.Rectangle(srcX, 388, 16, 16),
-                        Color.White,
-                        0f,
-                        Vector2.Zero,
-                        4f,
-                        SpriteEffects.None,
-                        0.01f
-                    );
+                    for (int j = (int)tile.Y; j < (int)tile.Y + height; j++)
+                    {
+                        spriteBatch.Draw(
+                            Game1.mouseCursors,
+                            new Vector2(i * 64 - Game1.viewport.X, j * 64 - Game1.viewport.Y),
+                            new Microsoft.Xna.Framework.Rectangle(srcX, 388, 16, 16),
+                            Color.White,
+                            0f,
+                            Vector2.Zero,
+                            4f,
+                            SpriteEffects.None,
+                            0.01f
+                        );
+                    }
                 }
+
+                // Translucent furniture sprite over the colored squares — matches the console
+                // ghost (and the carpenter building ghost) so the user sees what they're about
+                // to place, with the validity highlight showing through.
+                try
+                {
+                    furniture.draw(spriteBatch, (int)tile.X, (int)tile.Y, 0.5f);
+                }
+                catch
+                {
+                    // Failsafe: never let a draw exception break placement preview rendering.
+                }
+
+                Game1.isCheckingNonMousePlacement = false;
+                __result = true;
+                return false;
             }
 
-            // Translucent furniture sprite over the colored squares — matches the console
-            // ghost (and the carpenter building ghost) so the user sees what they're about
-            // to place, with the validity highlight showing through.
-            try
+            // --- #68: placeable craftables (machines, kegs, sprinklers, etc.). ---
+            // Plain Object / BigCraftable, 1x1 placement footprint. On controller vanilla
+            // draws the full multi-tile green map over every valid tile (cluttered/useless);
+            // we draw one ghost at the landing tile instead. Parallel branch so the working
+            // furniture path above is left untouched.
+            if (ModEntry.Config?.EnableConsoleCraftablePlacement == true
+                && __instance.isPlaceable()
+                && !(__instance is Wallpaper)
+                && !IsSpecialPlacementObject(__instance))
             {
-                furniture.draw(spriteBatch, (int)tile.X, (int)tile.Y, 0.5f);
-            }
-            catch
-            {
-                // Failsafe: never let a draw exception break placement preview rendering.
+                Vector2 tile = __instance.TileLocation;
+                int x = (int)tile.X * 64;
+                int y = (int)tile.Y * 64;
+                bool canPlace = Utility.playerCanPlaceItemHere(location, __instance, x, y, Game1.player);
+                int srcX = canPlace ? 194 : 210;
+
+                // Single 1x1 validity square at the landing tile.
+                spriteBatch.Draw(
+                    Game1.mouseCursors,
+                    new Vector2((int)tile.X * 64 - Game1.viewport.X, (int)tile.Y * 64 - Game1.viewport.Y),
+                    new Microsoft.Xna.Framework.Rectangle(srcX, 388, 16, 16),
+                    Color.White,
+                    0f,
+                    Vector2.Zero,
+                    4f,
+                    SpriteEffects.None,
+                    0.01f
+                );
+
+                // Translucent craftable sprite on top. Object.draw(sb, x, y, alpha) anchors a
+                // BigCraftable's 2-tall sprite correctly (y*64-64). Wrapped because a held
+                // item's Location can be null mid-placement — the square still renders.
+                try
+                {
+                    __instance.draw(spriteBatch, (int)tile.X, (int)tile.Y, 0.5f);
+                }
+                catch
+                {
+                    // Failsafe: never let a draw exception break placement preview rendering.
+                }
+
+                Game1.isCheckingNonMousePlacement = false;
+                __result = true;
+                return false;
             }
 
-            Game1.isCheckingNonMousePlacement = false;
-            __result = true;
+            return true;
+        }
+
+        /// <summary>
+        /// Items whose placement preview vanilla handles specially — let the engine draw them
+        /// rather than forcing our single-tile ghost. Bombs (286/287/288) are thrown, not
+        /// tile-placed; crab pots (685) get a water-specific preview.
+        /// </summary>
+        private static bool IsSpecialPlacementObject(SObject obj)
+        {
+            if (!obj.bigCraftable.Value
+                && (obj.ParentSheetIndex == 286 || obj.ParentSheetIndex == 287 || obj.ParentSheetIndex == 288))
+                return true;
+            if (obj.ParentSheetIndex == 685)
+                return true;
             return false;
         }
     }
