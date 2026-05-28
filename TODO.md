@@ -85,12 +85,16 @@ After v3.7.34's buzzer+shake landed, user confirmed the audio/visual cue works b
 - **Priority:** low — single occurrence per session is rare and the user can correct with one Y/X press in the other direction. Address when the next user complaint lands OR when v3.8 / v3.9 work brings trigger handling under examination anyway.
 - **Files to touch:** `ModEntry.cs` (`HandleTriggersDirectly`), possibly `Patches/GameplayButtonPatches.cs` (GetState-level suppression), `Patches/FarmerPatches.cs` (existing `[ToolIdx]` diagnostic stays — it's how we caught this).
 
-### 69. Crafting Quantity — Hold-to-Craft (Console Parity)
-- On the crafting menu, the controller can only craft one item per A press. There's no way to change the crafted quantity without touching the screen. Sell/buy quantity in the shop menu solved the same problem with hold-to-repeat — crafting needs the same treatment.
-- **Reuse model:** mirror the hold-to-buy / hold-to-sell pattern already implemented in `Patches/ShopMenuPatches.cs`. Same edge-on-press for the first item, then accelerating repeat while held, capped at the recipe's max-craftable from current ingredients.
-- **Investigation:** Find the crafting menu code path (likely `CraftingPage.cs` on Android — check decompile). Confirm A-button currently routes through `clickCraftingRecipe` or similar. Decide whether to patch `receiveGamePadButton` for hold-detection or hook into the existing button-repeat machinery used by ShopMenu patches.
-- **Files:** likely new `Patches/CraftingPagePatches.cs`, possibly extends `Patches/GameplayButtonPatches.cs` for the GetState-side hold tracking.
-- **Toggle:** `EnableConsoleCraftingQuantity` (default true).
+### 69. Crafting Quantity — make the EXISTING Android quantity slider usable on controller
+- **PREMISE CORRECTED (decompile, 2026-05-28).** The original framing — "controller can only craft one per A press, no way to change quantity, build a hold-to-craft like ShopMenu" — is **WRONG**. Android's `CraftingPage` already has a full multi-craft quantity system; do NOT build a parallel hold-to-repeat (it would fight the engine — anti-pattern).
+- **How vanilla Android crafting actually works** (`CraftingPage.cs`):
+  - `receiveGamePadButton` (line 465): **A** → `CraftSelectedRecipe()`; **X / LeftTrigger** → quantity −1; **Y / RightTrigger** → quantity +1 (lines 502-523), gated on `showQuantitySlider`.
+  - `CraftSelectedRecipe()` (612): crafts the batch, then if `quantityWeCanMake > 1` sets `showQuantitySlider = true`, `quantityToCraft = 1` (line 618-626). So the **slider only appears AFTER the first craft**.
+  - `clickCraftingRecipe()` (821): actually crafts `quantityToCraft` at once (`crafted.Stack = quantityToCraft`, consumes ingredients `num` times) — multi-craft works.
+- **So the real bug is one (or more) of:** (a) AC's low-level X/Y menu swap INVERTS the quantity buttons (physical X→+1, Y→−1) — confusing, not broken; (b) the slider is undiscoverable (only shows after first craft, no prompt that X/Y change it); (c) something in AC consumes X/Y before they reach `CraftingPage.receiveGamePadButton`; or (d) `showQuantitySlider` never goes true on the controller path. **Cannot be determined from code alone — needs a device diagnostic.**
+- **NEXT STEP (device session):** small diagnostic on `CraftingPage` — log when `showQuantitySlider`/`showCraftButton` flip, and log every `receiveGamePadButton` arrival (which button reaches it, post-AC-swap). Reproduce: open crafting, craft one, try X/Y. Then fix appropriately — most likely either un-swap (or correctly map) X/Y for the crafting page so +/- match the on-screen slider, and/or add a clearer prompt. Hold-to-repeat could be a *later* enhancement on top, not the core fix.
+- **Files:** likely new `Patches/CraftingPagePatches.cs`; possibly `Patches/GameplayButtonPatches.cs` (X/Y swap scope) or `Patches/GameMenuPatches.cs`.
+- **Status:** moved out of the "code-blind, build-verify" bucket — **device-diagnosis required** before any fix. Not started.
 
 ### 71. Consume-on-Grab Rewards Dumped Into Bag (Museum/Reward ItemGrabMenu via Controller)
 - **Public report (Nexus comment, 2026-05-28):** *"When I used the controller to collect the Dwarf Language Translation Manual, it gave me a book, not a skill."*
