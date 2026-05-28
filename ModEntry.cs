@@ -165,6 +165,7 @@ namespace AndroidConsolizer
             Patches.LoadGameMenuPatches.Apply(harmony, this.Monitor);
             Patches.LetterViewerMenuPatches.Apply(harmony, this.Monitor);
             Patches.GeodeMenuPatches.Apply(harmony, this.Monitor);
+            Patches.CraftingPagePatches.Apply(harmony, this.Monitor);
             Patches.BootDiagnosticPatches.Apply(harmony, this.Monitor);
             Patches.BootDiagnosticPatches.ApplyAdditionalPatches(harmony, this.Monitor);
 
@@ -1200,6 +1201,14 @@ namespace AndroidConsolizer
                 tooltip: () => "Replace the cluttered multi-tile green map shown when holding a placeable craftable (machines, kegs, sprinklers, etc.) with a single ghost rectangle at the tile it will actually land on. Matches console behavior.",
                 getValue: () => Config.EnableConsoleCraftablePlacement,
                 setValue: value => Config.EnableConsoleCraftablePlacement = value
+            );
+
+            configMenu.AddBoolOption(
+                mod: this.ModManifest,
+                name: () => "Hold A to Craft",
+                tooltip: () => "Hold the A button on the crafting/cooking menu to craft continuously, like buying/selling in shops. Stops automatically when you run out of ingredients or inventory space.",
+                getValue: () => Config.EnableHoldToCraft,
+                setValue: value => Config.EnableHoldToCraft = value
             );
 
             configMenu.AddBoolOption(

@@ -106,6 +106,14 @@ namespace AndroidConsolizer
         /// </summary>
         public bool EnableConsoleCraftablePlacement { get; set; } = true;
 
+        /// <summary>
+        /// #69: Hold A on the crafting/cooking menu to craft continuously (console parity),
+        /// mirroring hold-to-buy/sell and hold-Y single-stack transfers. Android crafts one
+        /// per A press; the quantity slider is only adjustable by touch, so this gives the
+        /// controller a rapid-craft. Self-limits when ingredients or inventory space run out.
+        /// </summary>
+        public bool EnableHoldToCraft { get; set; } = true;
+
         /// <summary>Whether to fix controller navigation on GameMenu tabs (Social, Animals, Crafting, Collections, Options).</summary>
         public bool EnableGameMenuNavigation { get; set; } = true;
 
