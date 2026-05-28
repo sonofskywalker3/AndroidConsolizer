@@ -96,6 +96,16 @@ namespace AndroidConsolizer
         /// </summary>
         public bool EnableConsoleFurniturePlacement { get; set; } = true;
 
+        /// <summary>
+        /// #68: Same single-ghost treatment as furniture, but for placeable CRAFTABLES
+        /// (machines, kegs, preserves jars, sprinklers, etc. — plain Object / BigCraftable).
+        /// On Android with a controller these otherwise show the full multi-tile green map
+        /// over every valid tile, which is cluttered and useless. Replaces it with one ghost
+        /// rectangle at the tile the craftable will actually land on. Sibling toggle so users
+        /// can opt out per-category (separate from furniture).
+        /// </summary>
+        public bool EnableConsoleCraftablePlacement { get; set; } = true;
+
         /// <summary>Whether to fix controller navigation on GameMenu tabs (Social, Animals, Crafting, Collections, Options).</summary>
         public bool EnableGameMenuNavigation { get; set; } = true;
 

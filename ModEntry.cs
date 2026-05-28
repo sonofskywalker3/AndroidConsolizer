@@ -1196,6 +1196,14 @@ namespace AndroidConsolizer
 
             configMenu.AddBoolOption(
                 mod: this.ModManifest,
+                name: () => "Console Craftable Placement",
+                tooltip: () => "Replace the cluttered multi-tile green map shown when holding a placeable craftable (machines, kegs, sprinklers, etc.) with a single ghost rectangle at the tile it will actually land on. Matches console behavior.",
+                getValue: () => Config.EnableConsoleCraftablePlacement,
+                setValue: value => Config.EnableConsoleCraftablePlacement = value
+            );
+
+            configMenu.AddBoolOption(
+                mod: this.ModManifest,
                 name: () => "Console Menus",
                 tooltip: () => "Fix controller navigation on GameMenu tabs that lack it (Social, Animals, Crafting, Collections, Options, Mod Config).",
                 getValue: () => Config.EnableGameMenuNavigation,
