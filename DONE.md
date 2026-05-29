@@ -23,6 +23,14 @@ Technical reference for all completed work. Implementation notes, root causes, a
 - **Fix:** `Patches/CraftingPagePatches.cs` polls A in a `CraftingPage.update` postfix and re-fires `receiveGamePadButton(A)` (delay 15 / rate 8 ticks). Self-limited by `showCraftButton`, which `CraftSelectedRecipe` clears when ingredients/space run out (`CraftingPage.cs:612-644`) — can't over-craft. `GameMenu.update` forwards to the page (`GameMenu.cs:378`), so it covers the crafting tab + standalone cooking. Toggle `EnableHoldToCraft` (default true).
 - **File:** `Patches/CraftingPagePatches.cs`, `ModConfig.cs`, `ModEntry.cs`.
 
+### #54b Trigger Double-Skip on First Press After Row Switch — v3.7.49
+- **Symptom:** the first trigger (LT/RT) press after switching backpack rows (LB/RB) jumped 2 slots instead of 1, almost every time.
+- **Root cause (from G Cloud logs):** AC tolerates vanilla's trigger handling rather than suppressing it — vanilla `pressSwitchToolButton` still moves `CurrentToolIndex` on a trigger press (+1), and AC's `HandleTriggersDirectly` also moves (+1). Normally `_triggerSlotTarget` (the "immune base", enforced pre-`Game.Update` by `OnUpdateTicking`) + the post-move Slot correction absorb vanilla's move → net +1. BUT a row switch clears `_triggerSlotTarget = -1` (`OnButtonsChanged`), and `HandleToolbarNavigation` left it -1 — so the first trigger press had NO enforcement, vanilla's +1 landed, and AC added another → +2.
+- **Failed first attempt (v3.7.48):** snapshot `CurrentToolIndex` at tick start and use it as the clean base when `_triggerSlotTarget < 0`. Didn't work — logs showed vanilla's corruption (tick N) and AC's handler (tick N+2) fire on DIFFERENT ticks, so the snapshot already held the corrupted value. The corruption persists across ticks; a snapshot can't recover it. (Left in as a harmless secondary fallback.)
+- **Fix (v3.7.49):** in the LB/RB row-switch blocks (standard trigger mode), set `_triggerSlotTarget = newIndex` after moving. Enforcement then keeps holding the new row's slot pre-Update, so vanilla can't corrupt the first trigger press — it lands exactly one slot over. Verified on G Cloud: every first-post-switch press now +1, `Slot correction` catches vanilla's move.
+- **Lesson:** AC's trigger model is "let vanilla move, then correct via `_triggerSlotTarget`/enforcement" — any path that clears `_triggerSlotTarget` opens a one-press window where vanilla wins. Re-arm the target, don't just clear it.
+- **File:** `ModEntry.cs` (`HandleToolbarNavigation`, `OnUpdateTicking`, `HandleTriggersDirectly`). The `[ToolIdx]` setter diagnostic in `FarmerPatches.cs` (VerboseLogging-gated) stays — it's how #54/#54b were caught.
+
 ---
 
 ## Shop System (v2.7.5-v2.8.22)
