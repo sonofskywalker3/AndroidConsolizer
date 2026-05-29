@@ -100,6 +100,19 @@ namespace AndroidConsolizer.Patches
         private static int _lastLoggedMouseX = -99999;
         private static int _lastLoggedMouseY = -99999;
 
+        // [19d] diagnostic (v3.7.50, TEMPORARY — remove once root cause is
+        // confirmed). When a full-inventory rejection is detected in
+        // TryEmitInventoryFullFeedback we open a ~2.5s observation window
+        // (150 ticks). Within it, Update_Postfix logs alertTimer / heldItem /
+        // descriptionText on change at Info level so the post-failed-crack
+        // state evolution lands in the standard pulled log. The releaseLeftClick
+        // prefix logs whether the Android touch-sim release nulls heldItem
+        // (leading hypothesis for why "Inventory Full" never renders).
+        private static int _failedCrackWindowEnd = -1;
+        private static int _last19dAlert = int.MinValue;
+        private static string _last19dHeld = "?";
+        private static string _last19dDesc = "?";
+
         public static void Apply(Harmony harmony, IMonitor monitor)
         {
             Monitor = monitor;
@@ -139,6 +152,14 @@ namespace AndroidConsolizer.Patches
                 harmony.Patch(
                     original: AccessTools.Method(typeof(GeodeMenu), nameof(GeodeMenu.receiveLeftClick)),
                     prefix: new HarmonyMethod(typeof(GeodeMenuPatches), nameof(ReceiveLeftClick_Prefix))
+                );
+                // [19d] diagnostic (TEMPORARY) — observe whether the Android
+                // touch-sim release nulls heldItem after the A→X redirect,
+                // which would explain the "Inventory Full" text never rendering.
+                // Pure logging prefix; returns true so vanilla runs unchanged.
+                harmony.Patch(
+                    original: AccessTools.Method(typeof(GeodeMenu), nameof(GeodeMenu.releaseLeftClick)),
+                    prefix: new HarmonyMethod(typeof(GeodeMenuPatches), nameof(ReleaseLeftClick_Diag_Prefix))
                 );
                 harmony.Patch(
                     original: AccessTools.Method(typeof(GeodeMenu), nameof(GeodeMenu.startGeodeCrack)),
@@ -212,6 +233,11 @@ namespace AndroidConsolizer.Patches
             _lastLoggedCurSel = -99;
             _lastLoggedMouseX = -99999;
             _lastLoggedMouseY = -99999;
+            // [19d] diagnostic reset
+            _failedCrackWindowEnd = -1;
+            _last19dAlert = int.MinValue;
+            _last19dHeld = "?";
+            _last19dDesc = "?";
         }
 
         /// <summary>Called from ModEntry.OnMenuChanged when a GeodeMenu OPENS.
@@ -357,6 +383,18 @@ namespace AndroidConsolizer.Patches
 
                 Game1.playSound("cancel");
                 AddInventorySlotShake(menu.inventory, idx);
+
+                // [19d] diagnostic (TEMPORARY): open a ~2.5s observation window
+                // so Update_Postfix logs how alertTimer / heldItem / descriptionText
+                // evolve after this full-inventory rejection. Vanilla X (which sets
+                // alertTimer=1500 + descriptionText=fullText) runs immediately after
+                // we return, so the window starts one step early — that's intended,
+                // it captures the "before" state too.
+                _failedCrackWindowEnd = Game1.ticks + 150;
+                _last19dAlert = int.MinValue;
+                _last19dHeld = "?";
+                _last19dDesc = "?";
+                try { Monitor.Log($"[19d] full-inventory rejection at tick {Game1.ticks}: opening observation window → {_failedCrackWindowEnd}. heldItem={Describe(menu.heldItem)} alertTimer={menu.alertTimer} desc=\"{menu.descriptionText}\"", LogLevel.Info); } catch { }
             }
             catch (Exception ex)
             {
@@ -594,6 +632,32 @@ namespace AndroidConsolizer.Patches
             return false;
         }
 
+        /// <summary>
+        /// [19d] diagnostic (TEMPORARY): log every GeodeMenu.releaseLeftClick
+        /// with heldItem BEFORE vanilla runs (vanilla unconditionally nulls
+        /// heldItem at GeodeMenu.cs:231). If this fires same-tick as the A→X
+        /// redirect and heldItem is the geode, it confirms the touch-sim
+        /// release is what wipes the inventory-full state. Returns true —
+        /// behaviour is unchanged, this is observation only.
+        /// </summary>
+        private static bool ReleaseLeftClick_Diag_Prefix(GeodeMenu __instance, int x, int y)
+        {
+            try
+            {
+                bool sameTickAsRedirect = (_redirectTick == Game1.ticks);
+                bool inWindow = (_failedCrackWindowEnd >= 0 && Game1.ticks <= _failedCrackWindowEnd);
+                Monitor.Log($"[19d] releaseLeftClick tick={Game1.ticks} at=({x},{y}) heldItem(before)={Describe(__instance.heldItem)} alertTimer={__instance.alertTimer} sameTickAsA→X={sameTickAsRedirect} inWindow={inWindow}", LogLevel.Info);
+            }
+            catch { }
+            return true;
+        }
+
+        private static string Describe(Item item)
+        {
+            if (item == null) return "null";
+            try { return $"{item.QualifiedItemId} x{item.Stack}"; } catch { return "?"; }
+        }
+
         private static void StartGeodeCrack_Postfix(GeodeMenu __instance)
         {
             try { Monitor.Log($"[GeodeMenu] startGeodeCrack fired. animTimer={__instance.geodeAnimationTimer}", LogLevel.Trace); } catch { }
@@ -771,6 +835,34 @@ namespace AndroidConsolizer.Patches
         private static void Update_Postfix(GeodeMenu __instance)
         {
             if (Monitor == null) return;
+
+            // [19d] diagnostic (TEMPORARY): within the post-failed-crack window,
+            // log alertTimer / heldItem / descriptionText on change. This shows
+            // whether alertTimer decrements to 0, whether heldItem survives, and
+            // what descriptionText ends up as once alertTimer expires — the three
+            // facts that determine whether "Inventory Full" should render.
+            if (_failedCrackWindowEnd >= 0 && Game1.ticks <= _failedCrackWindowEnd)
+            {
+                try
+                {
+                    int alert = __instance.alertTimer;
+                    string held = Describe(__instance.heldItem);
+                    string desc = __instance.descriptionText ?? "(null)";
+                    if (alert != _last19dAlert || held != _last19dHeld || desc != _last19dDesc)
+                    {
+                        Monitor.Log($"[19d] tick={Game1.ticks} alertTimer={alert} heldItem={held} descriptionText=\"{desc}\"", LogLevel.Info);
+                        _last19dAlert = alert;
+                        _last19dHeld = held;
+                        _last19dDesc = desc;
+                    }
+                }
+                catch { }
+                if (Game1.ticks == _failedCrackWindowEnd)
+                {
+                    try { Monitor.Log("[19d] observation window closed.", LogLevel.Info); } catch { }
+                }
+            }
+
             try
             {
                 int selIdx = (_selectedItemIndexField != null) ? (int)_selectedItemIndexField.GetValue(__instance) : -99;
