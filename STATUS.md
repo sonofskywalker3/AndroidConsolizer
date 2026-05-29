@@ -1,6 +1,15 @@
 # AndroidConsolizer — Status
 
-**Shipped version:** 3.7.0 — released on GitHub 2026-05-14 (`v3.7.0`). **v3.7.1 through v3.7.20 are committed locally**, not yet pushed:
+**Current version:** **3.7.49** (committed locally). **Last GitHub release: v3.7.0** (2026-05-14). **Everything from v3.7.1 → v3.7.49 is committed locally but NOT pushed** — a publish is owed whenever the user gives the explicit go-ahead (push + GitHub release + README + Nexus).
+
+**Session 2026-05-29 (device-verified on G Cloud, all closed):**
+- **#71** v3.7.45 — museum reward grab consumes the Dwarvish Translation Guide `(O)326` into the skill (set `canUnderstandDwarves`) instead of dumping the book in the bag; also lost books (pSI 102). Fix in `Patches/ItemGrabMenuPatches.cs` (`TryConsumeRewardOnGrab`). Diagnostic `BookRewardDiagnosticPatches` was wrong-path, removed v3.7.44.
+- **#68** v3.7.46 — single-tile placement ghost for craftables (machines/sprinklers), parallel branch in `Patches/FurniturePlacementPatches.cs`; toggle `EnableConsoleCraftablePlacement`.
+- **#69** v3.7.47 — hold A to craft continuously; new `Patches/CraftingPagePatches.cs`; toggle `EnableHoldToCraft`.
+- **#54b** v3.7.49 — trigger double-skip on first press after a row switch: re-arm `_triggerSlotTarget` on LB/RB row switch in `ModEntry.HandleToolbarNavigation` (v3.7.48 snapshot attempt failed — see `DONE.md`).
+- See `DONE.md` "v3.8.0 Console Parity: Quick Wins" + "#54b Trigger Double-Skip" for full root causes/lessons.
+
+**Earlier (v3.7.1–v3.7.20), still committed-not-pushed:**
 - **v3.7.1** — #22b dialogue option box pre-selection (device-verified).
 - **v3.7.2** — first attempt at #17 title cursor; FAILED on device (spec premises were wrong about snappyMenus and transparency).
 - **v3.7.3** — #17 diagnostic build that revealed the real root cause (drawMouse suppression on Android title screen, snappyMenus=True on Ayaneo, transparency was already 1, `GamePad.IsConnected` unreliable on Ayaneo).
@@ -9,7 +18,9 @@
 - **v3.7.15–v3.7.19** — #39 Adventurer's Guild kill list + multipage mail (`LetterViewerMenu`). Diagnostic (v3.7.15) → ctor snap fix on the `(string)` overload (v3.7.16) → diagnostic-with-fix to verify (v3.7.17) → re-snap on page change when arrow becomes invisible + transient cursor-draw debug aid (v3.7.18) → final, cursor-draw removed (v3.7.19). v3.7.19 also deleted `Patches/TitleMenuPatches.cs` — the title cursor sprite drawn by v3.7.4 turned out to be wrong UX: console SDV doesn't show a visible cursor on these menus, snap is the indicator. See memory note `feedback_console_ux_no_cursor`. Device-verified on Ayaneo Pocket Air Mini.
 - **v3.7.20** — #46 bundle donation greyout. Save/swap/restore `InventoryMenu.highlightMethod` on `JunimoNoteMenu` donation-page enter/exit; filter delegates to `Bundle.canAcceptThisItem(item, null, ignore_stack_count: true)`. Mirrors #44 sell-tab greyout pattern. Device-verified on Ayaneo.
 
-Nexus mod page may still need the v3.7.0 description/version paste (manual step). Current milestone: **v3.8.0 — Console Parity: Quick Wins** (in progress — #22b, #17, #35, #39, #46 done; #47, #27, #19 remaining).
+**Current milestone: v3.8.0 — Console Parity: Quick Wins** (nearly complete). Done: #22b, #17, #35, #39, #46, #71, #68, #69, #54b. **Remaining: #27** (toolbar size slider — has public Nexus bug #1050718) and **#47** (missed-rewards chest) — both need on-device diagnosis to start. **#19 geode** core is done (single-press crack, spatial nav, auto-select) but has loose ends: **19d** ("Inventory Full" text never renders — minor) and the v3.7.36–v3.7.41 tooltip-placement arc still wants a device confirmation it's settled.
+
+**Test setup:** primary device is **G Cloud** (ADB push works; `2240TN022448`/`GR0006`). Test save **Cheatside** has CJB Item Spawner installed (menu key `I`), plus SVE/Grandpa's Farm content packs. `tools/seed-dwarf-test.ps1` seeds bombs + 4 Dwarf Scrolls into a save's player inventory for the #71 repro. Deploy via direct ADB or `../SyncdewValley/sync.ps1`; `sync.ps1 logs` pulls + archives.
 
 ## Latest commits since v3.6.0
 
