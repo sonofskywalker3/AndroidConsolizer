@@ -81,6 +81,13 @@ namespace AndroidConsolizer
         /// with no new trigger input, so other navigation methods can take over.</summary>
         private int _triggerSlotTarget = -1;
 
+        /// <summary>#54b: CurrentToolIndex snapshot taken at the START of each tick (before
+        /// Game.Update runs vanilla's pressSwitchToolButton). Used as the clean base for the
+        /// FIRST trigger press after a row switch, when _triggerSlotTarget has been cleared to
+        /// -1 — reading the post-Update index there would include vanilla's own +1 and stack on
+        /// ours, producing the +2 "double slot skip". -1 = not yet captured.</summary>
+        private int _preUpdateToolIndex = -1;
+
 
         /// <summary>Tick when Start was first pressed during a skippable event (for double-press skip).</summary>
         private int cutsceneSkipFirstPressTick = -1;
@@ -281,7 +288,16 @@ namespace AndroidConsolizer
         {
             if (!Context.IsWorldReady) return;
             var player = Game1.player;
-            if (player == null || _triggerSlotTarget < 0) return;
+            if (player == null) return;
+
+            // #54b: capture the tool index at the start of the tick, before Game.Update
+            // runs vanilla's pressSwitchToolButton. This is the clean, uncorrupted base
+            // HandleTriggersDirectly falls back to for the first trigger press after a row
+            // switch (when _triggerSlotTarget == -1). Snapshot unconditionally — it must be
+            // valid even when there's no active trigger target.
+            _preUpdateToolIndex = player.CurrentToolIndex;
+
+            if (_triggerSlotTarget < 0) return;
 
             // Enforce our target position BEFORE Game.Update() runs.
             // This prevents the game's native trigger code from compounding moves.
@@ -451,7 +467,12 @@ namespace AndroidConsolizer
             // Use _triggerSlotTarget as base — it persists our last trigger-set position
             // and is immune to the game's corruption. OnUpdateTicking enforces it before
             // Game.Update each tick, so the game can never compound moves.
-            int baseIndex = _triggerSlotTarget >= 0 ? _triggerSlotTarget : player.CurrentToolIndex;
+            // #54b: when _triggerSlotTarget is cleared (first press after a row switch), use
+            // the start-of-tick snapshot, NOT player.CurrentToolIndex — the latter has already
+            // been moved by vanilla's pressSwitchToolButton this tick, which would stack on our
+            // own move and skip two slots.
+            int baseIndex = _triggerSlotTarget >= 0 ? _triggerSlotTarget
+                : (_preUpdateToolIndex >= 0 ? _preUpdateToolIndex : player.CurrentToolIndex);
             int positionInRow = baseIndex % 12;
 
             // LEFT TRIGGER state machine
@@ -486,7 +507,8 @@ namespace AndroidConsolizer
             // else: between thresholds — hysteresis band, keep current state, don't accumulate streak
 
             // Recompute base AFTER LT may have moved it, so RT-same-tick uses the new position.
-            baseIndex = _triggerSlotTarget >= 0 ? _triggerSlotTarget : player.CurrentToolIndex;
+            baseIndex = _triggerSlotTarget >= 0 ? _triggerSlotTarget
+                : (_preUpdateToolIndex >= 0 ? _preUpdateToolIndex : player.CurrentToolIndex);
             positionInRow = baseIndex % 12;
 
             // RIGHT TRIGGER state machine
