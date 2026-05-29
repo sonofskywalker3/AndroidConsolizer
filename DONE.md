@@ -4,6 +4,27 @@ Technical reference for all completed work. Implementation notes, root causes, a
 
 ---
 
+## v3.8.0 Console Parity: Quick Wins (device-verified G Cloud 2026-05-29)
+
+### #71 Consume-on-Grab Rewards (Dwarvish Translation Guide) — v3.7.45
+- **Root cause:** AC treats the museum "Rewards" `ItemGrabMenu` (`LibraryMuseum.cs:337`) as a generic chest. Its grab paths (`ItemGrabMenuPatches.TransferFromChest` / `TransferOneFromChest`) `addItemToInventory` + `InvokeBehaviorOnItemGrab`, bypassing vanilla's CONSUME-ON-GRAB special cases (`ItemGrabMenu.cs:826-867`). So the Dwarvish Translation Guide `(O)326` landed in the bag and `canUnderstandDwarves` never flipped.
+- **Fix:** `TryConsumeRewardOnGrab(menu, item, slotIndex)` at the top of both grab paths. For `(O)326` → set `canUnderstandDwarves` (reflected setter, mail-backed); for `parentSheetIndex 102` → `foundArtifact("(O)102",1)` (Lost Book). Both invoke `behaviorOnItemGrab` (marks collected), play "fireball", remove from the reward menu, do NOT add to bag. Keyed on item identity so normal chest grabs are untouched.
+- **Deferred:** `isRecipe` (vanilla's third consume-on-grab special) — not reachable via museum rewards.
+- **Diagnostic lesson:** the first diagnostic (`BookRewardDiagnosticPatches`, v3.7.43, removed v3.7.44) watched vanilla `receiveGamePadButtonGrabbingItems`, which AC never calls here — logged nothing. AC's `[ChestTransfer]` path was the real locus. Always confirm WHICH layer (AC vs vanilla) owns the action before instrumenting.
+- **File:** `Patches/ItemGrabMenuPatches.cs`.
+
+### #68 Single-Tile Craftable Placement Ghost — v3.7.46
+- **Root cause:** same as the v3.5.38 furniture fix — on controller `weaponControl` is 0, so `Object.DrawRedGreenRectangleForPlacing`'s gate fails and `drawPlacementBounds` draws the full multi-tile green map. Applied to placeable craftables (machines/sprinklers), not just furniture.
+- **Fix:** parallel branch in `Patches/FurniturePlacementPatches.cs` for placeable non-furniture `Object`/`BigCraftable` (1×1 footprint): one validity square at `TileLocation` + translucent `Object.draw(sb,x,y,0.5f)` ghost, then suppress the map. Furniture branch left byte-identical. Bombs (286/287/288) + crab pots (685) excluded. Toggle `EnableConsoleCraftablePlacement` (default true).
+- **File:** `Patches/FurniturePlacementPatches.cs`, `ModConfig.cs`, `ModEntry.cs`.
+
+### #69 Hold A to Craft Continuously — v3.7.47
+- Android already has a quantity slider (X/Y adjust, A crafts the batch) but it's touch-only to adjust; user wanted console-style hold-A rapid-craft.
+- **Fix:** `Patches/CraftingPagePatches.cs` polls A in a `CraftingPage.update` postfix and re-fires `receiveGamePadButton(A)` (delay 15 / rate 8 ticks). Self-limited by `showCraftButton`, which `CraftSelectedRecipe` clears when ingredients/space run out (`CraftingPage.cs:612-644`) — can't over-craft. `GameMenu.update` forwards to the page (`GameMenu.cs:378`), so it covers the crafting tab + standalone cooking. Toggle `EnableHoldToCraft` (default true).
+- **File:** `Patches/CraftingPagePatches.cs`, `ModConfig.cs`, `ModEntry.cs`.
+
+---
+
 ## Shop System (v2.7.5-v2.8.22)
 
 ### 2. Shop Purchase Flow Fix (CRITICAL) — v2.7.5-v2.7.14
