@@ -872,6 +872,13 @@ namespace AndroidConsolizer
                     currentToolbarRow = newRow;
                     int newIndex = (newRow * 12) + positionInRow;
                     player.CurrentToolIndex = newIndex;
+                    // #54b: re-arm trigger enforcement on the new row's slot. OnButtonsChanged
+                    // cleared _triggerSlotTarget to -1 just before this; leaving it -1 means the
+                    // FIRST trigger press after the row switch isn't enforced pre-Update, so
+                    // vanilla pressSwitchToolButton moves the index and HandleTriggersDirectly
+                    // then adds another move => +2. Holding the target here keeps OnUpdateTicking
+                    // enforcing the position so vanilla can't corrupt it.
+                    _triggerSlotTarget = newIndex;
                     Game1.playSound("shwip");
                     if (Config.VerboseLogging)
                         this.Monitor.Log($"LB: Row {currentRow} -> {newRow}, Index {currentIndex} -> {newIndex}", LogLevel.Debug);
@@ -886,6 +893,8 @@ namespace AndroidConsolizer
                     currentToolbarRow = newRow;
                     int newIndex = (newRow * 12) + positionInRow;
                     player.CurrentToolIndex = newIndex;
+                    // #54b: re-arm trigger enforcement on the new row's slot (see LB block above).
+                    _triggerSlotTarget = newIndex;
                     Game1.playSound("shwip");
                     if (Config.VerboseLogging)
                         this.Monitor.Log($"RB: Row {currentRow} -> {newRow}, Index {currentIndex} -> {newIndex}", LogLevel.Debug);
