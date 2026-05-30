@@ -113,43 +113,39 @@ namespace AndroidConsolizer.Patches
         private static string _last19dHeld = "?";
         private static string _last19dDesc = "?";
 
-        // [CRASH BISECT v3.7.51 — TEMPORARY] When true, Apply attaches NO
-        // GeodeMenu Harmony patches at all. Used to determine whether the
-        // native SIGSEGV (pc=0) on geode-menu open comes from any of our
-        // geode patches' attachment, or from elsewhere (vanilla / another
-        // patch file). Revert to false once the source is identified.
-        // v3.7.51 result: DETACHED = no crash — BUT that test may not have
-        // exercised nav/A interaction (instructions were "just open"). v3.7.54
-        // re-establishes the baseline with ALL patches off AND the full crash
-        // repro (open + navigate + press A + press X). Back to true for that.
-        private const bool DIAGNOSTIC_SKIP_ALL_GEODE_PATCHES = true;
+        // [CRASH BISECT — TEMPORARY scaffolding] Per-patch attach toggles.
+        // Baseline (all false) is confirmed crash-free: v3.7.54 cracked a golden
+        // coconut fine with every geode patch detached. So one of these
+        // attachments causes the native SIGSEGV on the geode menu. Flip groups
+        // true to bisect. Once found + fixed, delete this scaffolding and restore
+        // unconditional patching.
+        //
+        // v3.7.55 split: Group A (open/draw/state — runs without input) = ON,
+        // Group B (input-triggered) = OFF.
+        //   Crash    -> culprit in Group A (Draw_Postfix / DrawInfoPanel_Prefix
+        //               bodies are the untested v3.7.36-41 tooltip arc).
+        //   No crash -> culprit in Group B (releaseLeftClick diag is newest/v3.7.50).
+        private const bool ATTACH_RECEIVE_GAMEPAD   = false; // receiveGamePadButton pre+post  (B)
+        private const bool ATTACH_RECEIVE_LEFTCLICK = false; // receiveLeftClick prefix          (B)
+        private const bool ATTACH_RELEASE_LEFTCLICK = false; // releaseLeftClick diag prefix     (B, v3.7.50)
+        private const bool ATTACH_STARTGEODECRACK   = false; // startGeodeCrack postfix          (B)
+        private const bool ATTACH_APPLYMOVEMENTKEY  = false; // IClickableMenu.applyMovementKey  (B)
+        private const bool ATTACH_UPDATE            = true;  // update postfix                   (A)
+        private const bool ATTACH_SNAPDEFAULT       = true;  // snapToDefaultClickableComponent  (A)
+        private const bool ATTACH_DRAWINFOPANEL     = true;  // InventoryMenu.drawInfoPanel       (A)
+        private const bool ATTACH_DRAW              = true;  // GeodeMenu.draw postfix            (A)
 
-        // [CRASH BISECT v3.7.52 — TEMPORARY] All geode patches re-enabled EXCEPT
-        // the GeodeMenu.draw postfix (Draw_Postfix — the never-device-verified
-        // v3.7.36-41 tooltip arc). The crash hits on the first draw frame; the
-        // snap + update postfixes provably ran fine (they logged in v3.7.50), and
-        // the global InventoryMenu.drawInfoPanel patch can't be it (every other
-        // inventory menu uses it without crashing). So Draw_Postfix is the prime
-        // suspect. true => skip it. No crash with this build confirms it.
-        // v3.7.52 result: skipping Draw_Postfix ALONE still crashed. So the crash
-        // is INSIDE GeodeMenu.draw's body (the postfix runs after; detaching it
-        // can't help). The only patched method called from draw's body is
-        // InventoryMenu.drawInfoPanel — see next flag.
-        private const bool DIAGNOSTIC_SKIP_DRAW_POSTFIX = true;
-
-        // [CRASH BISECT v3.7.53 — TEMPORARY] Also detach DrawInfoPanel_Prefix
-        // (our patch on InventoryMenu.drawInfoPanel, called from GeodeMenu.draw
-        // line 555). v3.7.51 (this patch detached) did NOT crash even though
-        // vanilla drawInfoPanel still ran — so it is specifically OUR patch on
-        // drawInfoPanel that is fatal. true => skip it; no crash confirms it.
-        private const bool DIAGNOSTIC_SKIP_DRAWINFOPANEL_PREFIX = true;
+        private static bool AnyGeodePatchEnabled =>
+            ATTACH_RECEIVE_GAMEPAD || ATTACH_RECEIVE_LEFTCLICK || ATTACH_RELEASE_LEFTCLICK
+            || ATTACH_STARTGEODECRACK || ATTACH_APPLYMOVEMENTKEY || ATTACH_UPDATE
+            || ATTACH_SNAPDEFAULT || ATTACH_DRAWINFOPANEL || ATTACH_DRAW;
 
         public static void Apply(Harmony harmony, IMonitor monitor)
         {
             Monitor = monitor;
-            if (DIAGNOSTIC_SKIP_ALL_GEODE_PATCHES)
+            if (!AnyGeodePatchEnabled)
             {
-                monitor.Log("[GeodeMenu] CRASH BISECT (v3.7.51): all GeodeMenu patches DETACHED — none attached this run.", LogLevel.Warn);
+                monitor.Log("[GeodeMenu] CRASH BISECT: all GeodeMenu patches DETACHED — none attached this run.", LogLevel.Warn);
                 return;
             }
             try
@@ -180,11 +176,13 @@ namespace AndroidConsolizer.Patches
                     + $"getItemFromClickableComponent={(_getItemFromClickableComponentMethod != null ? "OK" : "NULL")}, "
                     + $"GamePadShowInfoPanel={(_gamePadShowInfoPanelMethod != null ? "OK" : "NULL")}", LogLevel.Trace);
 
+                if (ATTACH_RECEIVE_GAMEPAD)
                 harmony.Patch(
                     original: AccessTools.Method(typeof(GeodeMenu), nameof(GeodeMenu.receiveGamePadButton)),
                     prefix: new HarmonyMethod(typeof(GeodeMenuPatches), nameof(ReceiveGamePadButton_Prefix)),
                     postfix: new HarmonyMethod(typeof(GeodeMenuPatches), nameof(ReceiveGamePadButton_Postfix))
                 );
+                if (ATTACH_RECEIVE_LEFTCLICK)
                 harmony.Patch(
                     original: AccessTools.Method(typeof(GeodeMenu), nameof(GeodeMenu.receiveLeftClick)),
                     prefix: new HarmonyMethod(typeof(GeodeMenuPatches), nameof(ReceiveLeftClick_Prefix))
@@ -193,14 +191,17 @@ namespace AndroidConsolizer.Patches
                 // touch-sim release nulls heldItem after the A→X redirect,
                 // which would explain the "Inventory Full" text never rendering.
                 // Pure logging prefix; returns true so vanilla runs unchanged.
+                if (ATTACH_RELEASE_LEFTCLICK)
                 harmony.Patch(
                     original: AccessTools.Method(typeof(GeodeMenu), nameof(GeodeMenu.releaseLeftClick)),
                     prefix: new HarmonyMethod(typeof(GeodeMenuPatches), nameof(ReleaseLeftClick_Diag_Prefix))
                 );
+                if (ATTACH_STARTGEODECRACK)
                 harmony.Patch(
                     original: AccessTools.Method(typeof(GeodeMenu), nameof(GeodeMenu.startGeodeCrack)),
                     postfix: new HarmonyMethod(typeof(GeodeMenuPatches), nameof(StartGeodeCrack_Postfix))
                 );
+                if (ATTACH_UPDATE)
                 harmony.Patch(
                     original: AccessTools.Method(typeof(GeodeMenu), nameof(GeodeMenu.update)),
                     postfix: new HarmonyMethod(typeof(GeodeMenuPatches), nameof(Update_Postfix))
@@ -214,6 +215,7 @@ namespace AndroidConsolizer.Patches
                 // snapCursorToCurrentSnappedComponent — overwriting any
                 // snap state we set in our postfix. Suppress for GeodeMenu
                 // so our own nav (in the prefix) owns the entire state.
+                if (ATTACH_APPLYMOVEMENTKEY)
                 harmony.Patch(
                     original: AccessTools.Method(typeof(IClickableMenu), nameof(IClickableMenu.applyMovementKey), new System.Type[] { typeof(int) }),
                     prefix: new HarmonyMethod(typeof(GeodeMenuPatches), nameof(ApplyMovementKey_Prefix))
@@ -225,6 +227,7 @@ namespace AndroidConsolizer.Patches
                 // first rendered frame — calling our own snap from OnGeodeMenuOpened
                 // (which fires AFTER the ctor) caused a visible 1-2 frame cursor
                 // blink at slot 0 before re-snapping.
+                if (ATTACH_SNAPDEFAULT)
                 harmony.Patch(
                     original: AccessTools.Method(typeof(GeodeMenu), nameof(GeodeMenu.snapToDefaultClickableComponent)),
                     postfix: new HarmonyMethod(typeof(GeodeMenuPatches), nameof(SnapToDefaultClickableComponent_Postfix))
@@ -238,33 +241,25 @@ namespace AndroidConsolizer.Patches
                 // drawInfoPanel is Android-only; resolve by string so the PC DLL
                 // compile doesn't break. Patch is silently skipped on PC.
                 var drawInfoPanelMethod = AccessTools.Method(typeof(InventoryMenu), "drawInfoPanel");
-                if (drawInfoPanelMethod != null && !DIAGNOSTIC_SKIP_DRAWINFOPANEL_PREFIX)
+                if (ATTACH_DRAWINFOPANEL && drawInfoPanelMethod != null)
                 {
                     harmony.Patch(
                         original: drawInfoPanelMethod,
                         prefix: new HarmonyMethod(typeof(GeodeMenuPatches), nameof(DrawInfoPanel_Prefix))
                     );
                 }
-                else if (DIAGNOSTIC_SKIP_DRAWINFOPANEL_PREFIX)
-                {
-                    monitor.Log("[GeodeMenu] CRASH BISECT (v3.7.53): DrawInfoPanel_Prefix (InventoryMenu.drawInfoPanel) NOT attached this run.", LogLevel.Warn);
-                }
                 // Draw our own cursor-relative tooltip via IClickableMenu.drawToolTip,
                 // matching the regular player-inventory hover experience (rich tooltip
                 // with item icon + name + description, auto-positioned near the cursor
                 // and flipped at screen edges).
-                if (!DIAGNOSTIC_SKIP_DRAW_POSTFIX)
+                if (ATTACH_DRAW)
                 {
                     harmony.Patch(
                         original: AccessTools.Method(typeof(GeodeMenu), nameof(GeodeMenu.draw), new System.Type[] { typeof(Microsoft.Xna.Framework.Graphics.SpriteBatch) }),
                         postfix: new HarmonyMethod(typeof(GeodeMenuPatches), nameof(Draw_Postfix))
                     );
                 }
-                else
-                {
-                    monitor.Log("[GeodeMenu] CRASH BISECT (v3.7.52): Draw_Postfix (GeodeMenu.draw) NOT attached this run.", LogLevel.Warn);
-                }
-                monitor.Log("GeodeMenu patches attached (A→X + touch-sim + tooltip + spatial nav + diagnostic).", LogLevel.Trace);
+                monitor.Log($"[GeodeMenu] CRASH BISECT attached: rcvGamepad={ATTACH_RECEIVE_GAMEPAD} rcvLeft={ATTACH_RECEIVE_LEFTCLICK} relLeft={ATTACH_RELEASE_LEFTCLICK} startCrack={ATTACH_STARTGEODECRACK} update={ATTACH_UPDATE} applyMove={ATTACH_APPLYMOVEMENTKEY} snap={ATTACH_SNAPDEFAULT} drawInfo={ATTACH_DRAWINFOPANEL} draw={ATTACH_DRAW}", LogLevel.Warn);
             }
             catch (Exception ex)
             {
