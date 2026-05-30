@@ -77,6 +77,12 @@ namespace AndroidConsolizer.Patches
                     original: AccessTools.Method(typeof(LibraryMuseum), "OpenDonationMenu"),
                     prefix: new HarmonyMethod(typeof(MuseumMenuPatches), nameof(OpenDonationMenu_Prefix))
                 );
+                // #18 rearrange: same machinery, different entry point. Engaging snappy +
+                // cursor here lets us observe/handle the rearrange (move/swap) flow too.
+                harmony.Patch(
+                    original: AccessTools.Method(typeof(LibraryMuseum), "OpenRearrangeMenu"),
+                    prefix: new HarmonyMethod(typeof(MuseumMenuPatches), nameof(OpenRearrangeMenu_Prefix))
+                );
                 // Force the SnappyMenus PROPERTY true while the donation menu is open.
                 // The property getter ANDs the field with gamepadControls + "no mouse
                 // button pressed"; the latter is false at ctor time on Android (A-press
@@ -191,7 +197,17 @@ namespace AndroidConsolizer.Patches
         /// ctor's `if (Game1.options.SnappyMenus)` snap-setup runs and Game1's
         /// D-pad -> receiveKeyPress dispatch becomes active for the controller.
         /// </summary>
-        private static void OpenDonationMenu_Prefix()
+        private static void OpenDonationMenu_Prefix() => EngageSnappyForMuseum("OpenDonationMenu");
+
+        /// <summary>
+        /// Same engage as donation, for the rearrange (move/swap existing pieces) menu.
+        /// Rearrange's in-menu navigation differs from donation (no donatable inventory phase),
+        /// so the v3.7.60 diagnostics are retained to confirm how the snap/cursor behaves here.
+        /// </summary>
+        private static void OpenRearrangeMenu_Prefix() => EngageSnappyForMuseum("OpenRearrangeMenu");
+
+        /// <summary>Save + force snappyMenus true before a museum menu is constructed, and arm restore.</summary>
+        private static void EngageSnappyForMuseum(string source)
         {
             if (ModEntry.Config?.EnableMuseumDonationController != true) return;
             if (_weForcedSnappy) return; // already forced; restore pending on close
@@ -205,15 +221,13 @@ namespace AndroidConsolizer.Patches
             Game1.options.snappyMenus = true;
             _weForcedSnappy = true;
 
-            // TRANSIENT DIAGNOSTIC (remove once the property-getter fix is device-confirmed):
-            // log the RAW property conditions so we can see which one (gamepadControls vs a
-            // pressed mouse button) was making the SnappyMenus property false at ctor time.
+            // TRANSIENT DIAGNOSTIC (remove once both flows are device-confirmed):
             try
             {
                 var ms = Game1.input.GetMouseState();
                 Monitor.Log(
-                    $"[MuseumMenu/diag] field snappyMenus(was)={_savedSnappyMenus}, gamepadControls={Game1.options.gamepadControls}, "
-                    + $"mouseL={ms.LeftButton}, mouseR={ms.RightButton} → getter now FORCED true while donating.",
+                    $"[MuseumMenu/diag] {source}: field snappyMenus(was)={_savedSnappyMenus}, gamepadControls={Game1.options.gamepadControls}, "
+                    + $"mouseL={ms.LeftButton}, mouseR={ms.RightButton} → getter now FORCED true.",
                     LogLevel.Info);
             }
             catch { }
