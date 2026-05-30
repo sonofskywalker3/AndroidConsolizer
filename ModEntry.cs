@@ -173,6 +173,7 @@ namespace AndroidConsolizer
             Patches.LetterViewerMenuPatches.Apply(harmony, this.Monitor);
             Patches.GeodeMenuPatches.Apply(harmony, this.Monitor);
             Patches.CraftingPagePatches.Apply(harmony, this.Monitor);
+            Patches.MuseumMenuPatches.Apply(harmony, this.Monitor);
             Patches.BootDiagnosticPatches.Apply(harmony, this.Monitor);
             Patches.BootDiagnosticPatches.ApplyAdditionalPatches(harmony, this.Monitor);
 
@@ -227,6 +228,14 @@ namespace AndroidConsolizer
         /// <summary>Raised when a menu is opened or closed.</summary>
         private void OnMenuChanged(object sender, StardewModdingAPI.Events.MenuChangedEventArgs e)
         {
+            // #18: When the museum donation menu closes, restore the SnappyMenus value
+            // we forced on while it was open. Guarded inside the patch, so this is a
+            // no-op for rearrange-mode MuseumMenu closes (we never forced the flag there).
+            if (e.OldMenu is StardewValley.Menus.MuseumMenu)
+            {
+                Patches.MuseumMenuPatches.RestoreSnappyOnMenuClose();
+            }
+
             // Clean up inventory management state when leaving inventory
             if (e.OldMenu is GameMenu oldGameMenu)
             {
@@ -1240,6 +1249,14 @@ namespace AndroidConsolizer
                 tooltip: () => "Hold the A button on the crafting/cooking menu to craft continuously, like buying/selling in shops. Stops automatically when you run out of ingredients or inventory space.",
                 getValue: () => Config.EnableHoldToCraft,
                 setValue: value => Config.EnableHoldToCraft = value
+            );
+
+            configMenu.AddBoolOption(
+                mod: this.ModManifest,
+                name: () => "Museum Donation (Controller)",
+                tooltip: () => "Use the controller to donate at the museum: snap-select an item, move across the museum grid with the D-pad, and place with A. Disable to restore vanilla touch-only donation.",
+                getValue: () => Config.EnableMuseumDonationController,
+                setValue: value => Config.EnableMuseumDonationController = value
             );
 
             configMenu.AddBoolOption(

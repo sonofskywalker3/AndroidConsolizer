@@ -114,6 +114,16 @@ namespace AndroidConsolizer
         /// </summary>
         public bool EnableHoldToCraft { get; set; } = true;
 
+        /// <summary>
+        /// #18: Controller support for the museum donation menu. On Android the
+        /// game's own console snap navigation (inventory selection, D-pad museum-grid
+        /// movement, A to place) is gated behind SnappyMenus, which is false on
+        /// Android — so a controller can't select or place donations. When true, we
+        /// turn SnappyMenus on only while the donation menu is open and let the
+        /// game's own code drive it. Disable to restore vanilla touch-only behaviour.
+        /// </summary>
+        public bool EnableMuseumDonationController { get; set; } = true;
+
         /// <summary>Whether to fix controller navigation on GameMenu tabs (Social, Animals, Crafting, Collections, Options).</summary>
         public bool EnableGameMenuNavigation { get; set; } = true;
 
