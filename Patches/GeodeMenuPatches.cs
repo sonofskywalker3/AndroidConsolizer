@@ -128,7 +128,18 @@ namespace AndroidConsolizer.Patches
         // the global InventoryMenu.drawInfoPanel patch can't be it (every other
         // inventory menu uses it without crashing). So Draw_Postfix is the prime
         // suspect. true => skip it. No crash with this build confirms it.
+        // v3.7.52 result: skipping Draw_Postfix ALONE still crashed. So the crash
+        // is INSIDE GeodeMenu.draw's body (the postfix runs after; detaching it
+        // can't help). The only patched method called from draw's body is
+        // InventoryMenu.drawInfoPanel — see next flag.
         private const bool DIAGNOSTIC_SKIP_DRAW_POSTFIX = true;
+
+        // [CRASH BISECT v3.7.53 — TEMPORARY] Also detach DrawInfoPanel_Prefix
+        // (our patch on InventoryMenu.drawInfoPanel, called from GeodeMenu.draw
+        // line 555). v3.7.51 (this patch detached) did NOT crash even though
+        // vanilla drawInfoPanel still ran — so it is specifically OUR patch on
+        // drawInfoPanel that is fatal. true => skip it; no crash confirms it.
+        private const bool DIAGNOSTIC_SKIP_DRAWINFOPANEL_PREFIX = true;
 
         public static void Apply(Harmony harmony, IMonitor monitor)
         {
@@ -224,12 +235,16 @@ namespace AndroidConsolizer.Patches
                 // drawInfoPanel is Android-only; resolve by string so the PC DLL
                 // compile doesn't break. Patch is silently skipped on PC.
                 var drawInfoPanelMethod = AccessTools.Method(typeof(InventoryMenu), "drawInfoPanel");
-                if (drawInfoPanelMethod != null)
+                if (drawInfoPanelMethod != null && !DIAGNOSTIC_SKIP_DRAWINFOPANEL_PREFIX)
                 {
                     harmony.Patch(
                         original: drawInfoPanelMethod,
                         prefix: new HarmonyMethod(typeof(GeodeMenuPatches), nameof(DrawInfoPanel_Prefix))
                     );
+                }
+                else if (DIAGNOSTIC_SKIP_DRAWINFOPANEL_PREFIX)
+                {
+                    monitor.Log("[GeodeMenu] CRASH BISECT (v3.7.53): DrawInfoPanel_Prefix (InventoryMenu.drawInfoPanel) NOT attached this run.", LogLevel.Warn);
                 }
                 // Draw our own cursor-relative tooltip via IClickableMenu.drawToolTip,
                 // matching the regular player-inventory hover experience (rich tooltip
