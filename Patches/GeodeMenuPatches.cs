@@ -113,9 +113,21 @@ namespace AndroidConsolizer.Patches
         private static string _last19dHeld = "?";
         private static string _last19dDesc = "?";
 
+        // [CRASH BISECT v3.7.51 — TEMPORARY] When true, Apply attaches NO
+        // GeodeMenu Harmony patches at all. Used to determine whether the
+        // native SIGSEGV (pc=0) on geode-menu open comes from any of our
+        // geode patches' attachment, or from elsewhere (vanilla / another
+        // patch file). Revert to false once the source is identified.
+        private const bool DIAGNOSTIC_SKIP_ALL_GEODE_PATCHES = true;
+
         public static void Apply(Harmony harmony, IMonitor monitor)
         {
             Monitor = monitor;
+            if (DIAGNOSTIC_SKIP_ALL_GEODE_PATCHES)
+            {
+                monitor.Log("[GeodeMenu] CRASH BISECT (v3.7.51): all GeodeMenu patches DETACHED — none attached this run.", LogLevel.Warn);
+                return;
+            }
             try
             {
                 _showTooltipField = AccessTools.Field(typeof(GeodeMenu), "_showTooltip");
