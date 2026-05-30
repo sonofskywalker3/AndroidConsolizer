@@ -1,4 +1,6 @@
 using System;
+using System.Collections;
+using System.Collections.Generic;
 using System.Reflection;
 using System.Text;
 using HarmonyLib;
@@ -41,12 +43,16 @@ namespace AndroidConsolizer.Patches
         private static IMonitor Monitor;
         private static FieldInfo _visibleField;  // CommunityCenter.missedRewardsChestVisible (NetBool)
         private static FieldInfo _chestField;    // CommunityCenter.missedRewardsChest (NetRef<Chest>)
+        private static FieldInfo _areasCompleteField; // CommunityCenter.areasComplete (NetArray<bool>)
+        private static FieldInfo _bundleToAreaField;  // CommunityCenter.bundleToAreaDictionary (Dictionary<int,int>)
 
         public static void Apply(Harmony harmony, IMonitor monitor)
         {
             Monitor = monitor;
             _visibleField = AccessTools.Field(typeof(CommunityCenter), "missedRewardsChestVisible");
             _chestField = AccessTools.Field(typeof(CommunityCenter), "missedRewardsChest");
+            _areasCompleteField = AccessTools.Field(typeof(CommunityCenter), "areasComplete");
+            _bundleToAreaField = AccessTools.Field(typeof(CommunityCenter), "bundleToAreaDictionary");
 
             try
             {
@@ -97,7 +103,7 @@ namespace AndroidConsolizer.Patches
                     chestItems = nr.Value.Items.Count;
 
                 Monitor.Log(
-                    $"{TAG} checkForMissedRewards ran: missedRewardsChestVisible={visible} chestItems={chestItems} | {DescribePendingRewards()}",
+                    $"{TAG} checkForMissedRewards ran: missedRewardsChestVisible={visible} chestItems={chestItems} | {DescribePendingRewards()} | {DescribeCondition(__instance)}",
                     LogLevel.Info);
             }
             catch (Exception ex)
@@ -175,6 +181,48 @@ namespace AndroidConsolizer.Patches
             catch (Exception ex)
             {
                 return $"pendingRewards=<read failed: {ex.Message}>";
+            }
+        }
+
+        /// <summary>
+        /// For each PENDING bundle, log its area and whether that area is marked complete — this is
+        /// exactly the condition that drives checkForMissedRewards' flag (pending &amp;&amp; areaComplete).
+        /// If a pending bundle's area shows complete=True but the chest never appeared, the bug is in
+        /// rendering; if complete=False, the area-complete state is the bug (and we see which area).
+        /// </summary>
+        private static string DescribeCondition(CommunityCenter cc)
+        {
+            try
+            {
+                var bundleRewards = Game1.netWorldState?.Value?.BundleRewards;
+                if (bundleRewards == null)
+                    return "cond=<no bundleRewards>";
+
+                // areasComplete (NetArray<bool>) → List<bool>
+                List<bool> areas = new List<bool>();
+                if (_areasCompleteField?.GetValue(cc) is IEnumerable areaEnum)
+                {
+                    foreach (object o in areaEnum)
+                        areas.Add(o is bool b && b);
+                }
+
+                IDictionary bundleToArea = _bundleToAreaField?.GetValue(cc) as IDictionary;
+
+                var sb = new StringBuilder("cond{");
+                foreach (int key in bundleRewards.Keys)
+                {
+                    if (!bundleRewards[key])
+                        continue; // only pending bundles matter
+                    int area = (bundleToArea != null && bundleToArea.Contains(key)) ? Convert.ToInt32(bundleToArea[key]) : -1;
+                    bool areaDone = area >= 0 && area < areas.Count && areas[area];
+                    sb.Append($"b{key}->area{area}(complete={areaDone}) ");
+                }
+                sb.Append('}');
+                return sb.ToString();
+            }
+            catch (Exception ex)
+            {
+                return $"cond=<failed: {ex.Message}>";
             }
         }
     }
