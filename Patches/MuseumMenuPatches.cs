@@ -19,12 +19,26 @@ namespace AndroidConsolizer.Patches
     /// a controller the D-pad does nothing and A fires a click at a stale, un-moved
     /// cursor. Result: donation requires touch.
     ///
-    /// Fix: force SnappyMenus true for the lifetime of the DONATION menu only
-    /// (prefix LibraryMuseum.OpenDonationMenu, which is the donate path only —
-    /// OpenRearrangeMenu is a separate method and is intentionally NOT patched), then
-    /// restore the prior value when the menu closes (driven from ModEntry.OnMenuChanged
-    /// when OldMenu is MuseumMenu). The game's own console code then performs all
-    /// navigation and placement; this patch writes zero navigation logic.
+    /// IMPORTANT (device-verified v3.7.58): the underlying `snappyMenus` FIELD is
+    /// already true on G Cloud, yet donation still required touch. The menu gates on
+    /// the `SnappyMenus` PROPERTY, whose getter is
+    ///   `snappyMenus && gamepadControls && mouseLeft != Pressed && mouseRight != Pressed`.
+    /// On Android the "Donate" dialogue is confirmed with an A-press that synthesizes a
+    /// touch leftClick, so at the instant the MuseumMenu ctor evaluates the property the
+    /// left button reads Pressed → property false → the ctor SKIPS its one-time snap
+    /// initialization, leaving the menu with no snap state for its whole lifetime.
+    /// Writing the field (which was already true) therefore changes nothing.
+    ///
+    /// Fix: force the SnappyMenus PROPERTY true for the lifetime of the DONATION menu
+    /// (Harmony postfix on Options.get_SnappyMenus, gated by our donation flag). The flag
+    /// is set in the OpenDonationMenu prefix BEFORE the menu is constructed, so the ctor's
+    /// property read returns true and snap init runs; every in-menu receiveKeyPress check
+    /// passes too. We also keep forcing the field true (belt-and-suspenders for devices
+    /// where the field itself is false, e.g. the Game1 D-pad->receiveKeyPress dispatch
+    /// which reads the lowercase field). OpenRearrangeMenu is intentionally NOT patched.
+    /// Restore is driven from ModEntry.OnMenuChanged when OldMenu is MuseumMenu (the
+    /// getter override auto-reverts when the flag clears). This patch writes zero
+    /// navigation logic — the game's own console code does it once snappy is engaged.
     ///
     /// We patch a single, plain managed method (OpenDonationMenu) and restore via the
     /// SMAPI MenuChanged event — deliberately NOT patching any input override
@@ -58,7 +72,15 @@ namespace AndroidConsolizer.Patches
                     original: AccessTools.Method(typeof(LibraryMuseum), "OpenDonationMenu"),
                     prefix: new HarmonyMethod(typeof(MuseumMenuPatches), nameof(OpenDonationMenu_Prefix))
                 );
-                monitor.Log("[MuseumMenu] patch applied (OpenDonationMenu prefix; restore via MenuChanged).", LogLevel.Trace);
+                // Force the SnappyMenus PROPERTY true while the donation menu is open.
+                // The property getter ANDs the field with gamepadControls + "no mouse
+                // button pressed"; the latter is false at ctor time on Android (A-press
+                // synthesizes a touch click), which is why the field-only flip failed.
+                harmony.Patch(
+                    original: AccessTools.PropertyGetter(typeof(Options), nameof(Options.SnappyMenus)),
+                    postfix: new HarmonyMethod(typeof(MuseumMenuPatches), nameof(SnappyMenusGetter_Postfix))
+                );
+                monitor.Log("[MuseumMenu] patch applied (OpenDonationMenu prefix + SnappyMenus getter override; restore via MenuChanged).", LogLevel.Trace);
             }
             catch (Exception ex)
             {
@@ -85,9 +107,30 @@ namespace AndroidConsolizer.Patches
             Game1.options.snappyMenus = true;
             _weForcedSnappy = true;
 
-            // TRANSIENT DIAGNOSTIC (remove in the follow-up strip-logging patch once
-            // root cause is device-confirmed): proves the flag was false and we flipped it.
-            try { Monitor.Log($"[MuseumMenu] OpenDonationMenu: forced SnappyMenus true (was {_savedSnappyMenus}).", LogLevel.Info); } catch { }
+            // TRANSIENT DIAGNOSTIC (remove once the property-getter fix is device-confirmed):
+            // log the RAW property conditions so we can see which one (gamepadControls vs a
+            // pressed mouse button) was making the SnappyMenus property false at ctor time.
+            try
+            {
+                var ms = Game1.input.GetMouseState();
+                Monitor.Log(
+                    $"[MuseumMenu/diag] field snappyMenus(was)={_savedSnappyMenus}, gamepadControls={Game1.options.gamepadControls}, "
+                    + $"mouseL={ms.LeftButton}, mouseR={ms.RightButton} → getter now FORCED true while donating.",
+                    LogLevel.Info);
+            }
+            catch { }
+        }
+
+        /// <summary>
+        /// While a donation menu is open, force the SnappyMenus property to true regardless
+        /// of the getter's gamepadControls / mouse-button conditions. Auto-reverts when the
+        /// donation flag clears on menu close (so it is a no-op the rest of the time, and a
+        /// no-op for rearrange-mode menus where we never set the flag).
+        /// </summary>
+        private static void SnappyMenusGetter_Postfix(ref bool __result)
+        {
+            if (_weForcedSnappy)
+                __result = true;
         }
 
         /// <summary>
