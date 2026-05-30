@@ -118,7 +118,17 @@ namespace AndroidConsolizer.Patches
         // native SIGSEGV (pc=0) on geode-menu open comes from any of our
         // geode patches' attachment, or from elsewhere (vanilla / another
         // patch file). Revert to false once the source is identified.
-        private const bool DIAGNOSTIC_SKIP_ALL_GEODE_PATCHES = true;
+        // v3.7.51 result: DETACHED = no crash. So an attachment is the cause.
+        private const bool DIAGNOSTIC_SKIP_ALL_GEODE_PATCHES = false;
+
+        // [CRASH BISECT v3.7.52 — TEMPORARY] All geode patches re-enabled EXCEPT
+        // the GeodeMenu.draw postfix (Draw_Postfix — the never-device-verified
+        // v3.7.36-41 tooltip arc). The crash hits on the first draw frame; the
+        // snap + update postfixes provably ran fine (they logged in v3.7.50), and
+        // the global InventoryMenu.drawInfoPanel patch can't be it (every other
+        // inventory menu uses it without crashing). So Draw_Postfix is the prime
+        // suspect. true => skip it. No crash with this build confirms it.
+        private const bool DIAGNOSTIC_SKIP_DRAW_POSTFIX = true;
 
         public static void Apply(Harmony harmony, IMonitor monitor)
         {
@@ -225,10 +235,17 @@ namespace AndroidConsolizer.Patches
                 // matching the regular player-inventory hover experience (rich tooltip
                 // with item icon + name + description, auto-positioned near the cursor
                 // and flipped at screen edges).
-                harmony.Patch(
-                    original: AccessTools.Method(typeof(GeodeMenu), nameof(GeodeMenu.draw), new System.Type[] { typeof(Microsoft.Xna.Framework.Graphics.SpriteBatch) }),
-                    postfix: new HarmonyMethod(typeof(GeodeMenuPatches), nameof(Draw_Postfix))
-                );
+                if (!DIAGNOSTIC_SKIP_DRAW_POSTFIX)
+                {
+                    harmony.Patch(
+                        original: AccessTools.Method(typeof(GeodeMenu), nameof(GeodeMenu.draw), new System.Type[] { typeof(Microsoft.Xna.Framework.Graphics.SpriteBatch) }),
+                        postfix: new HarmonyMethod(typeof(GeodeMenuPatches), nameof(Draw_Postfix))
+                    );
+                }
+                else
+                {
+                    monitor.Log("[GeodeMenu] CRASH BISECT (v3.7.52): Draw_Postfix (GeodeMenu.draw) NOT attached this run.", LogLevel.Warn);
+                }
                 monitor.Log("GeodeMenu patches attached (A→X + touch-sim + tooltip + spatial nav + diagnostic).", LogLevel.Trace);
             }
             catch (Exception ex)
