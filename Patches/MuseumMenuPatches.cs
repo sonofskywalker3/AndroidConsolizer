@@ -114,14 +114,7 @@ namespace AndroidConsolizer.Patches
                     original: AccessTools.Constructor(typeof(MuseumMenu), new Type[] { typeof(InventoryMenu.highlightThisItem) }),
                     postfix: new HarmonyMethod(typeof(MuseumMenuPatches), nameof(RearrangeCtor_Postfix))
                 );
-                // Right-stick free-pan of the museum view. At default zoom on G Cloud the
-                // far-right / top tiles can sit at the screen edge; let the right stick scroll
-                // the viewport so the player can see and reach them.
-                harmony.Patch(
-                    original: AccessTools.Method(typeof(MuseumMenu), nameof(MuseumMenu.update)),
-                    postfix: new HarmonyMethod(typeof(MuseumMenuPatches), nameof(Update_Pan_Postfix))
-                );
-                monitor.Log("[MuseumMenu] patch applied (OpenDonationMenu/OpenRearrangeMenu prefix + SnappyMenus getter + cursor draw + rearrange grid-nav + right-stick pan; restore via MenuChanged).", LogLevel.Trace);
+                monitor.Log("[MuseumMenu] patch applied (OpenDonationMenu/OpenRearrangeMenu prefix + SnappyMenus getter + cursor draw + rearrange grid-nav; restore via MenuChanged).", LogLevel.Trace);
             }
             catch (Exception ex)
             {
@@ -277,31 +270,6 @@ namespace AndroidConsolizer.Patches
         /// (vanilla getFreeDonationSpot path); subsequent presses walk the pieces, A picks
         /// up / swaps.
         /// </summary>
-        /// <summary>
-        /// Right-stick free-pan of the museum viewport while the donation/rearrange menu is
-        /// up and interactive (state 1). Uses Game1.panScreen — the same scroll mechanism the
-        /// menu's touch-drag (TestToPan) and snap auto-follow already use. Right stick is not
-        /// suppressed for the museum (SuppressRightStickInOverworld is gated on no active menu).
-        /// </summary>
-        private static void Update_Pan_Postfix(MuseumMenu __instance)
-        {
-            if (!_weForcedSnappy) return; // our museum menu only
-            if (ModEntry.Config?.EnableMuseumDonationController != true) return;
-            try
-            {
-                if (__instance.state != 1) return; // only the interactive (placing) state
-                var rs = Game1.input.GetGamePadState().ThumbSticks.Right;
-                const float deadzone = 0.25f;
-                const float speed = 12f;
-                int dx = (Math.Abs(rs.X) > deadzone) ? (int)(rs.X * speed) : 0;
-                // Stick up (rs.Y > 0) should reveal higher tiles → pan the viewport up (negative).
-                int dy = (Math.Abs(rs.Y) > deadzone) ? (int)(-rs.Y * speed) : 0;
-                if (dx != 0 || dy != 0)
-                    Game1.panScreen(dx, dy);
-            }
-            catch { }
-        }
-
         private static void RearrangeCtor_Postfix(MuseumMenu __instance)
         {
             if (ModEntry.Config?.EnableMuseumDonationController != true) return;
