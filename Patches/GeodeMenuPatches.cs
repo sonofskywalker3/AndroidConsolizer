@@ -120,14 +120,16 @@ namespace AndroidConsolizer.Patches
         // true to bisect. Once found + fixed, delete this scaffolding and restore
         // unconditional patching.
         //
-        // v3.7.55 split: Group A (open/draw/state — runs without input) = ON,
-        // Group B (input-triggered) = OFF.
-        //   Crash    -> culprit in Group A (Draw_Postfix / DrawInfoPanel_Prefix
-        //               bodies are the untested v3.7.36-41 tooltip arc).
-        //   No crash -> culprit in Group B (releaseLeftClick diag is newest/v3.7.50).
+        // v3.7.55 result: Group A only (input OFF) = NO crash. So the culprit is
+        // in Group B (input patches). v3.7.56: Group A + ONLY releaseLeftClick (my
+        // v3.7.50 diagnostic addition — the one thing new since the menu last
+        // worked). Crack/press A to trigger the touch-sim release.
+        //   Crash    -> releaseLeftClick patch confirmed; remove it (it was only
+        //               19d diagnostic scaffolding anyway).
+        //   No crash -> bisect the other 4 Group B patches (all old shipped code).
         private const bool ATTACH_RECEIVE_GAMEPAD   = false; // receiveGamePadButton pre+post  (B)
         private const bool ATTACH_RECEIVE_LEFTCLICK = false; // receiveLeftClick prefix          (B)
-        private const bool ATTACH_RELEASE_LEFTCLICK = false; // releaseLeftClick diag prefix     (B, v3.7.50)
+        private const bool ATTACH_RELEASE_LEFTCLICK = true;  // releaseLeftClick diag prefix     (B, v3.7.50)
         private const bool ATTACH_STARTGEODECRACK   = false; // startGeodeCrack postfix          (B)
         private const bool ATTACH_APPLYMOVEMENTKEY  = false; // IClickableMenu.applyMovementKey  (B)
         private const bool ATTACH_UPDATE            = true;  // update postfix                   (A)
