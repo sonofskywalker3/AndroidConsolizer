@@ -158,6 +158,7 @@ namespace AndroidConsolizer
             Patches.InventoryPagePatches.Apply(harmony, this.Monitor);
             Patches.FarmerPatches.Apply(harmony, this.Monitor);
             Patches.ToolbarPatches.Apply(harmony, this.Monitor);
+            Patches.ToolbarSizeDiagnosticPatches.Apply(harmony, this.Monitor); // #27 transient diagnostic — strip after root-cause confirmation
             Patches.ShippingBinPatches.Apply(harmony, this.Monitor);
             Patches.GameplayButtonPatches.Apply(harmony, this.Monitor);
             Patches.FishingRodPatches.Apply(harmony, this.Monitor);
