@@ -25,6 +25,7 @@ namespace AndroidConsolizer.Patches
         private const int HudSafeMarginX = 130;   // reserve for the bottom-right energy/health HUD
                                                   // (~vanilla's 116 right reserve + slack for the
                                                   //  mine health bar); applied both sides to stay centered
+        private const int MaxPadding = 160;       // vanilla "Toolbar Padding" slider max (OptionsPage id 134)
 
         /// <summary>Cached reflection accessor for Android-only Options.toolbarSlotSize field.</summary>
         private static System.Reflection.FieldInfo _toolbarSlotSizeField;
@@ -40,6 +41,9 @@ namespace AndroidConsolizer.Patches
 
         /// <summary>Cached reflection for Item.drawInToolbar (Android-only) — gates scaled overlay positioning.</summary>
         private static System.Reflection.FieldInfo _drawInToolbarField;
+
+        /// <summary>Cached reflection for Game1.toolbarPaddingX (Android-only) — drives the docked-edge gap.</summary>
+        private static System.Reflection.FieldInfo _toolbarPaddingXField;
 
         /// <summary>Apply Harmony patches.</summary>
         public static void Apply(Harmony harmony, IMonitor monitor)
@@ -59,6 +63,7 @@ namespace AndroidConsolizer.Patches
                 _itemSlotSizeField = AccessTools.Field(typeof(Item), "_itemSlotSize");
                 _toolbar_itemSlotSizeField = AccessTools.Field(typeof(Toolbar), "_itemSlotSize");
                 _drawInToolbarField = AccessTools.Field(typeof(Item), "drawInToolbar");
+                _toolbarPaddingXField = AccessTools.Field(typeof(Game1), "toolbarPaddingX");
 
                 // Patch WateringCan.drawInMenu to fix water gauge position in ALL contexts.
                 // The gauge formula uses toolbarSlotSize (a user preference, e.g. 200) which
@@ -131,15 +136,20 @@ namespace AndroidConsolizer.Patches
                 int edgePadding = 8;
                 int backgroundPadding = 16;
 
+                // #27: optional gap between the toolbar and the screen edge it docks against,
+                // driven by the vanilla "Toolbar Padding" slider (Game1.toolbarPaddingX, 0-160).
+                // AC's toolbar is centered, so vanilla's horizontal padding is repurposed here.
+                int edgeGap = ResolvePadding();
+
                 // Position at bottom center of screen with padding
                 int toolbarX = (Game1.uiViewport.Width - toolbarWidth) / 2;
-                int toolbarY = Game1.uiViewport.Height - toolbarHeight - backgroundPadding - edgePadding;
+                int toolbarY = Game1.uiViewport.Height - toolbarHeight - backgroundPadding - edgePadding - edgeGap;
 
                 // Check if player is in bottom half - move toolbar to top if so
                 bool isAtTop = player.getLocalPosition(Game1.viewport).Y > (Game1.viewport.Height / 2 + 64);
                 if (isAtTop)
                 {
-                    toolbarY = backgroundPadding + edgePadding + 8; // Extra 8 to align with date box
+                    toolbarY = backgroundPadding + edgePadding + 8 + edgeGap; // Extra 8 to align with date box
                     // Shift left to avoid date/time display in top right, with padding
                     toolbarX = backgroundPadding + edgePadding;
                 }
@@ -243,6 +253,25 @@ namespace AndroidConsolizer.Patches
                 desired = maxFit;
 
             return desired;
+        }
+
+        /// <summary>
+        /// Resolve the toolbar's docked-edge gap from the vanilla "Toolbar Padding" slider
+        /// (Game1.toolbarPaddingX, Android-only — reflected; range 0-160, default 0). AC's toolbar
+        /// is centered, so vanilla's horizontal padding is repurposed as the gap between the toolbar
+        /// and the screen edge it docks against (bottom, or top when the farmer is low on screen).
+        /// </summary>
+        private static int ResolvePadding()
+        {
+            if (_toolbarPaddingXField == null)
+                return 0;
+            try
+            {
+                if (_toolbarPaddingXField.GetValue(null) is int v)
+                    return Math.Max(0, Math.Min(MaxPadding, v));
+            }
+            catch { }
+            return 0;
         }
 
         /// <summary>
