@@ -22,7 +22,9 @@ namespace AndroidConsolizer.Patches
         private const int SlotSpacing = 4;
         private const int MinSlotSize = 32;       // vanilla slider minimum (OptionsPage id 148)
         private const int BackgroundMargin = 32;  // background box extends 16px each side
-        private const int EdgeBreathingRoom = 16; // keep a small gap from the screen edges
+        private const int HudSafeMarginX = 130;   // reserve for the bottom-right energy/health HUD
+                                                  // (~vanilla's 116 right reserve + slack for the
+                                                  //  mine health bar); applied both sides to stay centered
 
         /// <summary>Cached reflection accessor for Android-only Options.toolbarSlotSize field.</summary>
         private static System.Reflection.FieldInfo _toolbarSlotSizeField;
@@ -225,8 +227,13 @@ namespace AndroidConsolizer.Patches
                 catch { }
             }
 
+            // Cap so the CENTERED 12-slot row clears the bottom-right energy/health HUD.
+            // Centered ⇒ background right edge = (uiW + bgWidth)/2; require it left of
+            // (uiW - HudSafeMarginX). Reserve the same margin on both sides to stay centered.
+            // This is the binding case: when the toolbar flips to the top it is left-aligned and
+            // extends less far right, so clearing the energy bar here also clears the top clock.
             int gaps = SlotSpacing * 11;
-            int maxFit = (Game1.uiViewport.Width - gaps - BackgroundMargin - EdgeBreathingRoom) / 12;
+            int maxFit = (Game1.uiViewport.Width - BackgroundMargin - (2 * HudSafeMarginX) - gaps) / 12;
             if (maxFit < MinSlotSize)
                 maxFit = MinSlotSize;
 
