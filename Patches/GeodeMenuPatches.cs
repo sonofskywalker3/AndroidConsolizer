@@ -118,8 +118,11 @@ namespace AndroidConsolizer.Patches
         // native SIGSEGV (pc=0) on geode-menu open comes from any of our
         // geode patches' attachment, or from elsewhere (vanilla / another
         // patch file). Revert to false once the source is identified.
-        // v3.7.51 result: DETACHED = no crash. So an attachment is the cause.
-        private const bool DIAGNOSTIC_SKIP_ALL_GEODE_PATCHES = false;
+        // v3.7.51 result: DETACHED = no crash — BUT that test may not have
+        // exercised nav/A interaction (instructions were "just open"). v3.7.54
+        // re-establishes the baseline with ALL patches off AND the full crash
+        // repro (open + navigate + press A + press X). Back to true for that.
+        private const bool DIAGNOSTIC_SKIP_ALL_GEODE_PATCHES = true;
 
         // [CRASH BISECT v3.7.52 — TEMPORARY] All geode patches re-enabled EXCEPT
         // the GeodeMenu.draw postfix (Draw_Postfix — the never-device-verified
