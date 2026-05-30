@@ -26,6 +26,7 @@ namespace AndroidConsolizer.Patches
                                                   // (~vanilla's 116 right reserve + slack for the
                                                   //  mine health bar); applied both sides to stay centered
         private const int MaxPadding = 160;       // vanilla "Toolbar Padding" slider max (OptionsPage id 134)
+        private const int PaddingGapDivisor = 2;  // gap = slider value / 2 (full 160 → 80px) — softer steps
 
         /// <summary>Cached reflection accessor for Android-only Options.toolbarSlotSize field.</summary>
         private static System.Reflection.FieldInfo _toolbarSlotSizeField;
@@ -260,6 +261,8 @@ namespace AndroidConsolizer.Patches
         /// (Game1.toolbarPaddingX, Android-only — reflected; range 0-160, default 0). AC's toolbar
         /// is centered, so vanilla's horizontal padding is repurposed as the gap between the toolbar
         /// and the screen edge it docks against (bottom, or top when the farmer is low on screen).
+        /// The slider value is halved (PaddingGapDivisor) so the full 0-160 range maps to a gentler
+        /// 0-80px of travel.
         /// </summary>
         private static int ResolvePadding()
         {
@@ -268,7 +271,7 @@ namespace AndroidConsolizer.Patches
             try
             {
                 if (_toolbarPaddingXField.GetValue(null) is int v)
-                    return Math.Max(0, Math.Min(MaxPadding, v));
+                    return Math.Max(0, Math.Min(MaxPadding, v)) / PaddingGapDivisor;
             }
             catch { }
             return 0;
