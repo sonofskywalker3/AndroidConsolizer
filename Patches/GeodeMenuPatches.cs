@@ -100,56 +100,9 @@ namespace AndroidConsolizer.Patches
         private static int _lastLoggedMouseX = -99999;
         private static int _lastLoggedMouseY = -99999;
 
-        // [19d] diagnostic (v3.7.50, TEMPORARY — remove once root cause is
-        // confirmed). When a full-inventory rejection is detected in
-        // TryEmitInventoryFullFeedback we open a ~2.5s observation window
-        // (150 ticks). Within it, Update_Postfix logs alertTimer / heldItem /
-        // descriptionText on change at Info level so the post-failed-crack
-        // state evolution lands in the standard pulled log. The releaseLeftClick
-        // prefix logs whether the Android touch-sim release nulls heldItem
-        // (leading hypothesis for why "Inventory Full" never renders).
-        private static int _failedCrackWindowEnd = -1;
-        private static int _last19dAlert = int.MinValue;
-        private static string _last19dHeld = "?";
-        private static string _last19dDesc = "?";
-
-        // [CRASH BISECT — TEMPORARY scaffolding] Per-patch attach toggles.
-        // Baseline (all false) is confirmed crash-free: v3.7.54 cracked a golden
-        // coconut fine with every geode patch detached. So one of these
-        // attachments causes the native SIGSEGV on the geode menu. Flip groups
-        // true to bisect. Once found + fixed, delete this scaffolding and restore
-        // unconditional patching.
-        //
-        // v3.7.55 result: Group A only (input OFF) = NO crash. So the culprit is
-        // in Group B (input patches). v3.7.56: Group A + ONLY releaseLeftClick (my
-        // v3.7.50 diagnostic addition — the one thing new since the menu last
-        // worked). Crack/press A to trigger the touch-sim release.
-        //   Crash    -> releaseLeftClick patch confirmed; remove it (it was only
-        //               19d diagnostic scaffolding anyway).
-        //   No crash -> bisect the other 4 Group B patches (all old shipped code).
-        private const bool ATTACH_RECEIVE_GAMEPAD   = false; // receiveGamePadButton pre+post  (B)
-        private const bool ATTACH_RECEIVE_LEFTCLICK = false; // receiveLeftClick prefix          (B)
-        private const bool ATTACH_RELEASE_LEFTCLICK = true;  // releaseLeftClick diag prefix     (B, v3.7.50)
-        private const bool ATTACH_STARTGEODECRACK   = false; // startGeodeCrack postfix          (B)
-        private const bool ATTACH_APPLYMOVEMENTKEY  = false; // IClickableMenu.applyMovementKey  (B)
-        private const bool ATTACH_UPDATE            = true;  // update postfix                   (A)
-        private const bool ATTACH_SNAPDEFAULT       = true;  // snapToDefaultClickableComponent  (A)
-        private const bool ATTACH_DRAWINFOPANEL     = true;  // InventoryMenu.drawInfoPanel       (A)
-        private const bool ATTACH_DRAW              = true;  // GeodeMenu.draw postfix            (A)
-
-        private static bool AnyGeodePatchEnabled =>
-            ATTACH_RECEIVE_GAMEPAD || ATTACH_RECEIVE_LEFTCLICK || ATTACH_RELEASE_LEFTCLICK
-            || ATTACH_STARTGEODECRACK || ATTACH_APPLYMOVEMENTKEY || ATTACH_UPDATE
-            || ATTACH_SNAPDEFAULT || ATTACH_DRAWINFOPANEL || ATTACH_DRAW;
-
         public static void Apply(Harmony harmony, IMonitor monitor)
         {
             Monitor = monitor;
-            if (!AnyGeodePatchEnabled)
-            {
-                monitor.Log("[GeodeMenu] CRASH BISECT: all GeodeMenu patches DETACHED — none attached this run.", LogLevel.Warn);
-                return;
-            }
             try
             {
                 _showTooltipField = AccessTools.Field(typeof(GeodeMenu), "_showTooltip");
@@ -178,32 +131,19 @@ namespace AndroidConsolizer.Patches
                     + $"getItemFromClickableComponent={(_getItemFromClickableComponentMethod != null ? "OK" : "NULL")}, "
                     + $"GamePadShowInfoPanel={(_gamePadShowInfoPanelMethod != null ? "OK" : "NULL")}", LogLevel.Trace);
 
-                if (ATTACH_RECEIVE_GAMEPAD)
                 harmony.Patch(
                     original: AccessTools.Method(typeof(GeodeMenu), nameof(GeodeMenu.receiveGamePadButton)),
                     prefix: new HarmonyMethod(typeof(GeodeMenuPatches), nameof(ReceiveGamePadButton_Prefix)),
                     postfix: new HarmonyMethod(typeof(GeodeMenuPatches), nameof(ReceiveGamePadButton_Postfix))
                 );
-                if (ATTACH_RECEIVE_LEFTCLICK)
                 harmony.Patch(
                     original: AccessTools.Method(typeof(GeodeMenu), nameof(GeodeMenu.receiveLeftClick)),
                     prefix: new HarmonyMethod(typeof(GeodeMenuPatches), nameof(ReceiveLeftClick_Prefix))
                 );
-                // [19d] diagnostic (TEMPORARY) — observe whether the Android
-                // touch-sim release nulls heldItem after the A→X redirect,
-                // which would explain the "Inventory Full" text never rendering.
-                // Pure logging prefix; returns true so vanilla runs unchanged.
-                if (ATTACH_RELEASE_LEFTCLICK)
-                harmony.Patch(
-                    original: AccessTools.Method(typeof(GeodeMenu), nameof(GeodeMenu.releaseLeftClick)),
-                    prefix: new HarmonyMethod(typeof(GeodeMenuPatches), nameof(ReleaseLeftClick_Diag_Prefix))
-                );
-                if (ATTACH_STARTGEODECRACK)
                 harmony.Patch(
                     original: AccessTools.Method(typeof(GeodeMenu), nameof(GeodeMenu.startGeodeCrack)),
                     postfix: new HarmonyMethod(typeof(GeodeMenuPatches), nameof(StartGeodeCrack_Postfix))
                 );
-                if (ATTACH_UPDATE)
                 harmony.Patch(
                     original: AccessTools.Method(typeof(GeodeMenu), nameof(GeodeMenu.update)),
                     postfix: new HarmonyMethod(typeof(GeodeMenuPatches), nameof(Update_Postfix))
@@ -217,7 +157,6 @@ namespace AndroidConsolizer.Patches
                 // snapCursorToCurrentSnappedComponent — overwriting any
                 // snap state we set in our postfix. Suppress for GeodeMenu
                 // so our own nav (in the prefix) owns the entire state.
-                if (ATTACH_APPLYMOVEMENTKEY)
                 harmony.Patch(
                     original: AccessTools.Method(typeof(IClickableMenu), nameof(IClickableMenu.applyMovementKey), new System.Type[] { typeof(int) }),
                     prefix: new HarmonyMethod(typeof(GeodeMenuPatches), nameof(ApplyMovementKey_Prefix))
@@ -229,7 +168,6 @@ namespace AndroidConsolizer.Patches
                 // first rendered frame — calling our own snap from OnGeodeMenuOpened
                 // (which fires AFTER the ctor) caused a visible 1-2 frame cursor
                 // blink at slot 0 before re-snapping.
-                if (ATTACH_SNAPDEFAULT)
                 harmony.Patch(
                     original: AccessTools.Method(typeof(GeodeMenu), nameof(GeodeMenu.snapToDefaultClickableComponent)),
                     postfix: new HarmonyMethod(typeof(GeodeMenuPatches), nameof(SnapToDefaultClickableComponent_Postfix))
@@ -243,7 +181,7 @@ namespace AndroidConsolizer.Patches
                 // drawInfoPanel is Android-only; resolve by string so the PC DLL
                 // compile doesn't break. Patch is silently skipped on PC.
                 var drawInfoPanelMethod = AccessTools.Method(typeof(InventoryMenu), "drawInfoPanel");
-                if (ATTACH_DRAWINFOPANEL && drawInfoPanelMethod != null)
+                if (drawInfoPanelMethod != null)
                 {
                     harmony.Patch(
                         original: drawInfoPanelMethod,
@@ -254,14 +192,11 @@ namespace AndroidConsolizer.Patches
                 // matching the regular player-inventory hover experience (rich tooltip
                 // with item icon + name + description, auto-positioned near the cursor
                 // and flipped at screen edges).
-                if (ATTACH_DRAW)
-                {
-                    harmony.Patch(
-                        original: AccessTools.Method(typeof(GeodeMenu), nameof(GeodeMenu.draw), new System.Type[] { typeof(Microsoft.Xna.Framework.Graphics.SpriteBatch) }),
-                        postfix: new HarmonyMethod(typeof(GeodeMenuPatches), nameof(Draw_Postfix))
-                    );
-                }
-                monitor.Log($"[GeodeMenu] CRASH BISECT attached: rcvGamepad={ATTACH_RECEIVE_GAMEPAD} rcvLeft={ATTACH_RECEIVE_LEFTCLICK} relLeft={ATTACH_RELEASE_LEFTCLICK} startCrack={ATTACH_STARTGEODECRACK} update={ATTACH_UPDATE} applyMove={ATTACH_APPLYMOVEMENTKEY} snap={ATTACH_SNAPDEFAULT} drawInfo={ATTACH_DRAWINFOPANEL} draw={ATTACH_DRAW}", LogLevel.Warn);
+                harmony.Patch(
+                    original: AccessTools.Method(typeof(GeodeMenu), nameof(GeodeMenu.draw), new System.Type[] { typeof(Microsoft.Xna.Framework.Graphics.SpriteBatch) }),
+                    postfix: new HarmonyMethod(typeof(GeodeMenuPatches), nameof(Draw_Postfix))
+                );
+                monitor.Log("GeodeMenu patches attached (A→X + touch-sim + tooltip + spatial nav + diagnostic).", LogLevel.Trace);
             }
             catch (Exception ex)
             {
@@ -277,11 +212,6 @@ namespace AndroidConsolizer.Patches
             _lastLoggedCurSel = -99;
             _lastLoggedMouseX = -99999;
             _lastLoggedMouseY = -99999;
-            // [19d] diagnostic reset
-            _failedCrackWindowEnd = -1;
-            _last19dAlert = int.MinValue;
-            _last19dHeld = "?";
-            _last19dDesc = "?";
         }
 
         /// <summary>Called from ModEntry.OnMenuChanged when a GeodeMenu OPENS.
@@ -427,18 +357,6 @@ namespace AndroidConsolizer.Patches
 
                 Game1.playSound("cancel");
                 AddInventorySlotShake(menu.inventory, idx);
-
-                // [19d] diagnostic (TEMPORARY): open a ~2.5s observation window
-                // so Update_Postfix logs how alertTimer / heldItem / descriptionText
-                // evolve after this full-inventory rejection. Vanilla X (which sets
-                // alertTimer=1500 + descriptionText=fullText) runs immediately after
-                // we return, so the window starts one step early — that's intended,
-                // it captures the "before" state too.
-                _failedCrackWindowEnd = Game1.ticks + 150;
-                _last19dAlert = int.MinValue;
-                _last19dHeld = "?";
-                _last19dDesc = "?";
-                try { Monitor.Log($"[19d] full-inventory rejection at tick {Game1.ticks}: opening observation window → {_failedCrackWindowEnd}. heldItem={Describe(menu.heldItem)} alertTimer={menu.alertTimer} desc=\"{menu.descriptionText}\"", LogLevel.Info); } catch { }
             }
             catch (Exception ex)
             {
@@ -676,32 +594,6 @@ namespace AndroidConsolizer.Patches
             return false;
         }
 
-        /// <summary>
-        /// [19d] diagnostic (TEMPORARY): log every GeodeMenu.releaseLeftClick
-        /// with heldItem BEFORE vanilla runs (vanilla unconditionally nulls
-        /// heldItem at GeodeMenu.cs:231). If this fires same-tick as the A→X
-        /// redirect and heldItem is the geode, it confirms the touch-sim
-        /// release is what wipes the inventory-full state. Returns true —
-        /// behaviour is unchanged, this is observation only.
-        /// </summary>
-        private static bool ReleaseLeftClick_Diag_Prefix(GeodeMenu __instance, int x, int y)
-        {
-            try
-            {
-                bool sameTickAsRedirect = (_redirectTick == Game1.ticks);
-                bool inWindow = (_failedCrackWindowEnd >= 0 && Game1.ticks <= _failedCrackWindowEnd);
-                Monitor.Log($"[19d] releaseLeftClick tick={Game1.ticks} at=({x},{y}) heldItem(before)={Describe(__instance.heldItem)} alertTimer={__instance.alertTimer} sameTickAsA→X={sameTickAsRedirect} inWindow={inWindow}", LogLevel.Info);
-            }
-            catch { }
-            return true;
-        }
-
-        private static string Describe(Item item)
-        {
-            if (item == null) return "null";
-            try { return $"{item.QualifiedItemId} x{item.Stack}"; } catch { return "?"; }
-        }
-
         private static void StartGeodeCrack_Postfix(GeodeMenu __instance)
         {
             try { Monitor.Log($"[GeodeMenu] startGeodeCrack fired. animTimer={__instance.geodeAnimationTimer}", LogLevel.Trace); } catch { }
@@ -879,34 +771,6 @@ namespace AndroidConsolizer.Patches
         private static void Update_Postfix(GeodeMenu __instance)
         {
             if (Monitor == null) return;
-
-            // [19d] diagnostic (TEMPORARY): within the post-failed-crack window,
-            // log alertTimer / heldItem / descriptionText on change. This shows
-            // whether alertTimer decrements to 0, whether heldItem survives, and
-            // what descriptionText ends up as once alertTimer expires — the three
-            // facts that determine whether "Inventory Full" should render.
-            if (_failedCrackWindowEnd >= 0 && Game1.ticks <= _failedCrackWindowEnd)
-            {
-                try
-                {
-                    int alert = __instance.alertTimer;
-                    string held = Describe(__instance.heldItem);
-                    string desc = __instance.descriptionText ?? "(null)";
-                    if (alert != _last19dAlert || held != _last19dHeld || desc != _last19dDesc)
-                    {
-                        Monitor.Log($"[19d] tick={Game1.ticks} alertTimer={alert} heldItem={held} descriptionText=\"{desc}\"", LogLevel.Info);
-                        _last19dAlert = alert;
-                        _last19dHeld = held;
-                        _last19dDesc = desc;
-                    }
-                }
-                catch { }
-                if (Game1.ticks == _failedCrackWindowEnd)
-                {
-                    try { Monitor.Log("[19d] observation window closed.", LogLevel.Info); } catch { }
-                }
-            }
-
             try
             {
                 int selIdx = (_selectedItemIndexField != null) ? (int)_selectedItemIndexField.GetValue(__instance) : -99;
