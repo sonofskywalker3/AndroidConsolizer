@@ -6,6 +6,17 @@ Technical reference for all completed work. Implementation notes, root causes, a
 
 ## v3.8.0 Console Parity: Quick Wins (device-verified G Cloud 2026-05-29)
 
+### #19 Geode Menu Hard-Crash — FIXED v3.7.57 (root cause: Android can't patch `releaseLeftClick`)
+- **Symptom:** opening / interacting with Clint's geode menu crashed the entire game (process death). No SMAPI error — the log just stopped mid-frame.
+- **Why no log:** it's a NATIVE crash (SIGSEGV, signal 11, `pc=0` / inside `libmonosgen-2.0.so` — a broken JIT trampoline calling through a null pointer), so it dies before any managed exception can be written. **Pull it from the Android crash buffer: `adb -s <dev> logcat -b crash -d`.**
+- **Root cause (6-build wireless bisection on G Cloud, v3.7.50→v3.7.57):** **attaching ANY Harmony patch to `GeodeMenu.releaseLeftClick` on the Android mono runtime produces a broken trampoline.** When the method is invoked (the touch-sim release after a controller A press) → instant native crash. The method itself is fine — vanilla ran it when cracking a golden coconut with all AC patches detached (v3.7.54). It is *patching that override* that is fatal. Platform-differing-member landmine (the Android override references `inventory.dragItem`, absent from the PC DLL).
+- **The crashing patch** was a `releaseLeftClick` diagnostic prefix added in v3.7.50 for the (now-dropped) #19d "Inventory Full" investigation. The shipped geode feature (v3.7.32–49) never patched it and worked.
+- **Fix (v3.7.57):** reverted `Patches/GeodeMenuPatches.cs` to its exact v3.7.49 state — removes the crashing patch + all diagnostic/bisect scaffolding in one move. Device-confirmed: opens, single-press A cracks, golden coconut OK, stable through real use.
+- **Bisection trail (all temporary builds):** v3.7.51 all geode patches off → no crash · v3.7.55 Group A (open/draw/state) only → no crash · v3.7.56 Group A + only `releaseLeftClick` → CRASH ⇒ confirmed.
+- **#19d dropped:** its only viable fix was suppressing the touch-sim `releaseLeftClick` — i.e. the patch that crashes Android. Buzzer+shake (v3.7.34) already covers the rejection-feedback gap.
+- **LESSON (applies beyond geode):** never Harmony-patch `GeodeMenu.releaseLeftClick` on Android; if release-handling is needed, intercept upstream (`receiveLeftClick` / a state guard). When an Android menu freeze/crash is reported and the SMAPI log just stops with no error, suspect a native crash and pull the crash buffer FIRST. See memory `geodemenu-releaseleftclick-harmony-crash`.
+- **File:** `Patches/GeodeMenuPatches.cs` (reverted to v3.7.49).
+
 ### #71 Consume-on-Grab Rewards (Dwarvish Translation Guide) — v3.7.45
 - **Root cause:** AC treats the museum "Rewards" `ItemGrabMenu` (`LibraryMuseum.cs:337`) as a generic chest. Its grab paths (`ItemGrabMenuPatches.TransferFromChest` / `TransferOneFromChest`) `addItemToInventory` + `InvokeBehaviorOnItemGrab`, bypassing vanilla's CONSUME-ON-GRAB special cases (`ItemGrabMenu.cs:826-867`). So the Dwarvish Translation Guide `(O)326` landed in the bag and `canUnderstandDwarves` never flipped.
 - **Fix:** `TryConsumeRewardOnGrab(menu, item, slotIndex)` at the top of both grab paths. For `(O)326` → set `canUnderstandDwarves` (reflected setter, mail-backed); for `parentSheetIndex 102` → `foundArtifact("(O)102",1)` (Lost Book). Both invoke `behaviorOnItemGrab` (marks collected), play "fireball", remove from the reward menu, do NOT add to bag. Keyed on item identity so normal chest grabs are untouched.
