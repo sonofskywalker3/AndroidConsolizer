@@ -3,7 +3,6 @@ using System.Reflection;
 using HarmonyLib;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
-using Microsoft.Xna.Framework.Input;
 using StardewModdingAPI;
 using StardewValley;
 using StardewValley.Locations;
@@ -67,12 +66,6 @@ namespace AndroidConsolizer.Patches
         private static FieldInfo _rearrangeModeField;
         private static FieldInfo _reOrganizingField;
 
-        // ===== TRANSIENT DIAGNOSTIC STATE (v3.7.60 — remove once root cause confirmed) =====
-        // InventoryMenu.currentlySelectedItem is an Android-only field — reflect for it.
-        private static FieldInfo _invCurrentlySelectedItemField;
-        // Dedup for the per-frame update log (only emit when the observed state changes).
-        private static string _lastLoggedState = "";
-
         public static void Apply(Harmony harmony, IMonitor monitor)
         {
             Monitor = monitor;
@@ -120,92 +113,6 @@ namespace AndroidConsolizer.Patches
             {
                 monitor.Log($"[MuseumMenu] Failed to apply patch: {ex.Message}", LogLevel.Error);
             }
-
-            // ===== TRANSIENT DIAGNOSTIC PATCHES (v3.7.60) =====
-            // Goal: confirm whether D-pad reaches MuseumMenu.receiveKeyPress, whether the
-            // game cursor (Game1.getMouseX/Y — what placeItem/selectItemAt actually read)
-            // moves with snap nav, and whether A reaches receiveLeftClick. Log-only postfixes
-            // on SAFE methods only (NOT releaseLeftClick — Android SIGSEGV landmine).
-            try
-            {
-                _invCurrentlySelectedItemField = AccessTools.Field(typeof(InventoryMenu), "currentlySelectedItem");
-                harmony.Patch(
-                    original: AccessTools.Constructor(typeof(MuseumMenu), new Type[] { typeof(InventoryMenu.highlightThisItem) }),
-                    postfix: new HarmonyMethod(typeof(MuseumMenuPatches), nameof(Diag_Ctor_Postfix))
-                );
-                harmony.Patch(
-                    original: AccessTools.Method(typeof(MuseumMenu), nameof(MuseumMenu.receiveKeyPress)),
-                    postfix: new HarmonyMethod(typeof(MuseumMenuPatches), nameof(Diag_ReceiveKeyPress_Postfix))
-                );
-                harmony.Patch(
-                    original: AccessTools.Method(typeof(MuseumMenu), nameof(MuseumMenu.receiveLeftClick)),
-                    postfix: new HarmonyMethod(typeof(MuseumMenuPatches), nameof(Diag_ReceiveLeftClick_Postfix))
-                );
-                harmony.Patch(
-                    original: AccessTools.Method(typeof(MuseumMenu), nameof(MuseumMenu.update)),
-                    postfix: new HarmonyMethod(typeof(MuseumMenuPatches), nameof(Diag_Update_Postfix))
-                );
-                monitor.Log("[MuseumMenu/diag] instrumentation patches applied (ctor/receiveKeyPress/receiveLeftClick/update).", LogLevel.Trace);
-            }
-            catch (Exception ex)
-            {
-                monitor.Log($"[MuseumMenu/diag] Failed to apply instrumentation: {ex.Message}", LogLevel.Error);
-            }
-        }
-
-        // ===== TRANSIENT DIAGNOSTIC HELPERS (v3.7.60) =====
-
-        /// <summary>Snapshot of the menu state that selection/placement actually depend on.</summary>
-        private static string DiagState(MuseumMenu m)
-        {
-            int snap = m.currentlySnappedComponent?.myID ?? -999;
-            bool held = m.heldItem != null;
-            int sel = -999;
-            try
-            {
-                if (_invCurrentlySelectedItemField != null && m.inventory != null)
-                    sel = (int)_invCurrentlySelectedItemField.GetValue(m.inventory);
-            }
-            catch { }
-            int mx = Game1.getMouseX(false);
-            int my = Game1.getMouseY(false);
-            int tileX = (mx + Game1.viewport.X) / 64;
-            int tileY = (my + Game1.viewport.Y) / 64;
-            int invComps = m.inventory?.inventory?.Count ?? -1;
-            return $"snap={snap} held={held} sel={sel} mouse=({mx},{my}) tile=({tileX},{tileY}) invComps={invComps}";
-        }
-
-        private static void Diag_Ctor_Postfix(MuseumMenu __instance)
-        {
-            if (ModEntry.Config?.EnableMuseumDonationController != true) return;
-            try { Monitor.Log($"[MuseumMenu/diag] ctor done: {DiagState(__instance)} snappyProp={Game1.options.SnappyMenus}", LogLevel.Info); } catch { }
-        }
-
-        private static void Diag_ReceiveKeyPress_Postfix(MuseumMenu __instance, Keys key)
-        {
-            if (ModEntry.Config?.EnableMuseumDonationController != true) return;
-            try { Monitor.Log($"[MuseumMenu/diag] receiveKeyPress key={key}: {DiagState(__instance)}", LogLevel.Info); } catch { }
-        }
-
-        private static void Diag_ReceiveLeftClick_Postfix(MuseumMenu __instance, int x, int y)
-        {
-            if (ModEntry.Config?.EnableMuseumDonationController != true) return;
-            try { Monitor.Log($"[MuseumMenu/diag] receiveLeftClick args=({x},{y}): {DiagState(__instance)}", LogLevel.Info); } catch { }
-        }
-
-        private static void Diag_Update_Postfix(MuseumMenu __instance)
-        {
-            if (ModEntry.Config?.EnableMuseumDonationController != true) return;
-            try
-            {
-                string s = DiagState(__instance);
-                if (s != _lastLoggedState)
-                {
-                    _lastLoggedState = s;
-                    Monitor.Log($"[MuseumMenu/diag] state changed: {s}", LogLevel.Info);
-                }
-            }
-            catch { }
         }
 
         /// <summary>
@@ -213,17 +120,17 @@ namespace AndroidConsolizer.Patches
         /// ctor's `if (Game1.options.SnappyMenus)` snap-setup runs and Game1's
         /// D-pad -> receiveKeyPress dispatch becomes active for the controller.
         /// </summary>
-        private static void OpenDonationMenu_Prefix() => EngageSnappyForMuseum("OpenDonationMenu");
+        private static void OpenDonationMenu_Prefix() => EngageSnappyForMuseum();
 
         /// <summary>
         /// Same engage as donation, for the rearrange (move/swap existing pieces) menu.
-        /// Rearrange's in-menu navigation differs from donation (no donatable inventory phase),
-        /// so the v3.7.60 diagnostics are retained to confirm how the snap/cursor behaves here.
+        /// Rearrange's in-menu navigation differs from donation (no donatable inventory phase):
+        /// the RearrangeCtor_Postfix sets reOrganizing=true to switch on museum-grid nav.
         /// </summary>
-        private static void OpenRearrangeMenu_Prefix() => EngageSnappyForMuseum("OpenRearrangeMenu");
+        private static void OpenRearrangeMenu_Prefix() => EngageSnappyForMuseum();
 
         /// <summary>Save + force snappyMenus true before a museum menu is constructed, and arm restore.</summary>
-        private static void EngageSnappyForMuseum(string source)
+        private static void EngageSnappyForMuseum()
         {
             if (ModEntry.Config?.EnableMuseumDonationController != true) return;
             if (_weForcedSnappy) return; // already forced; restore pending on close
@@ -236,17 +143,6 @@ namespace AndroidConsolizer.Patches
             _savedSnappyMenus = Game1.options.snappyMenus;
             Game1.options.snappyMenus = true;
             _weForcedSnappy = true;
-
-            // TRANSIENT DIAGNOSTIC (remove once both flows are device-confirmed):
-            try
-            {
-                var ms = Game1.input.GetMouseState();
-                Monitor.Log(
-                    $"[MuseumMenu/diag] {source}: field snappyMenus(was)={_savedSnappyMenus}, gamepadControls={Game1.options.gamepadControls}, "
-                    + $"mouseL={ms.LeftButton}, mouseR={ms.RightButton} → getter now FORCED true.",
-                    LogLevel.Info);
-            }
-            catch { }
         }
 
         /// <summary>
@@ -293,7 +189,7 @@ namespace AndroidConsolizer.Patches
         /// only renders when mostRecentlyUsedControlType == GAMEPAD, which is false here
         /// (the controller confirm arrives as a synthesized touch), so the cursor is invisible
         /// even though navigation/selection/placement work. We draw tile 44 (the snappy hand)
-        /// at the live cursor position, which the v3.7.60 diagnostics confirmed tracks the snap.
+        /// at the live cursor position (Game1.getMouseX/Y), which tracks the snap.
         /// </summary>
         private static void Draw_Postfix(MuseumMenu __instance, SpriteBatch b)
         {
@@ -334,9 +230,6 @@ namespace AndroidConsolizer.Patches
             if (!_weForcedSnappy) return;
             Game1.options.snappyMenus = _savedSnappyMenus;
             _weForcedSnappy = false;
-
-            // TRANSIENT DIAGNOSTIC (remove in the follow-up strip-logging patch):
-            try { Monitor.Log($"[MuseumMenu] menu closed: restored SnappyMenus to {_savedSnappyMenus}.", LogLevel.Info); } catch { }
         }
     }
 }
