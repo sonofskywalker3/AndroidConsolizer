@@ -15,9 +15,14 @@ namespace AndroidConsolizer.Patches
     {
         private static IMonitor Monitor;
 
-        // Toolbar slot dimensions (scaled)
-        private const int SlotSize = 64;
+        // Toolbar slot dimensions. SlotSize is now only the fallback when the vanilla
+        // "Toolbar Slot Size" slider value can't be read; the live size comes from
+        // Options.toolbarSlotSize via ResolveSlotSize() so the slider (#27) takes effect.
+        private const int SlotSize = 64;          // fallback default if reflection fails
         private const int SlotSpacing = 4;
+        private const int MinSlotSize = 32;       // vanilla slider minimum (OptionsPage id 148)
+        private const int BackgroundMargin = 32;  // background box extends 16px each side
+        private const int EdgeBreathingRoom = 16; // keep a small gap from the screen edges
 
         /// <summary>Cached reflection accessor for Android-only Options.toolbarSlotSize field.</summary>
         private static System.Reflection.FieldInfo _toolbarSlotSizeField;
@@ -30,6 +35,9 @@ namespace AndroidConsolizer.Patches
 
         /// <summary>Cached reflection for Toolbar._itemSlotSize (Android-only).</summary>
         private static System.Reflection.FieldInfo _toolbar_itemSlotSizeField;
+
+        /// <summary>Cached reflection for Item.drawInToolbar (Android-only) — gates scaled overlay positioning.</summary>
+        private static System.Reflection.FieldInfo _drawInToolbarField;
 
         /// <summary>Apply Harmony patches.</summary>
         public static void Apply(Harmony harmony, IMonitor monitor)
@@ -48,6 +56,7 @@ namespace AndroidConsolizer.Patches
                 _toolbarSlotSizeField = AccessTools.Field(typeof(StardewValley.Options), "toolbarSlotSize");
                 _itemSlotSizeField = AccessTools.Field(typeof(Item), "_itemSlotSize");
                 _toolbar_itemSlotSizeField = AccessTools.Field(typeof(Toolbar), "_itemSlotSize");
+                _drawInToolbarField = AccessTools.Field(typeof(Item), "drawInToolbar");
 
                 // Patch WateringCan.drawInMenu to fix water gauge position in ALL contexts.
                 // The gauge formula uses toolbarSlotSize (a user preference, e.g. 200) which
@@ -107,9 +116,13 @@ namespace AndroidConsolizer.Patches
                 int currentRow = FarmerPatches.CurrentToolbarRow;
                 int rowStart = currentRow * 12;
 
+                // #27: honor the vanilla "Toolbar Slot Size" slider (Options.toolbarSlotSize),
+                // clamped so all 12 slots still fit the screen width.
+                int slotSize = ResolveSlotSize();
+
                 // Calculate toolbar dimensions
-                int toolbarWidth = (SlotSize * 12) + (SlotSpacing * 11);
-                int toolbarHeight = SlotSize;
+                int toolbarWidth = (slotSize * 12) + (SlotSpacing * 11);
+                int toolbarHeight = slotSize;
 
                 // Screen edge padding (matches game's UI spacing)
                 // Note: toolbar background extends 16px beyond content, so we add that
@@ -147,7 +160,7 @@ namespace AndroidConsolizer.Patches
                 for (int i = 0; i < 12; i++)
                 {
                     int itemIndex = rowStart + i;
-                    int slotX = toolbarX + (i * (SlotSize + SlotSpacing));
+                    int slotX = toolbarX + (i * (slotSize + SlotSpacing));
                     int slotY = toolbarY;
                     bool isSelected = player.CurrentToolIndex == itemIndex;
 
@@ -161,8 +174,8 @@ namespace AndroidConsolizer.Patches
                             new Rectangle(0, 256, 60, 60),
                             slotX - borderPadding,
                             slotY - borderPadding,
-                            SlotSize + (borderPadding * 2),
-                            SlotSize + (borderPadding * 2),
+                            slotSize + (borderPadding * 2),
+                            slotSize + (borderPadding * 2),
                             Color.White,
                             1f,
                             false
@@ -172,7 +185,7 @@ namespace AndroidConsolizer.Patches
                     // Draw slot background
                     b.Draw(
                         Game1.menuTexture,
-                        new Rectangle(slotX, slotY, SlotSize, SlotSize),
+                        new Rectangle(slotX, slotY, slotSize, slotSize),
                         new Rectangle(128, 128, 64, 64),
                         Color.White
                     );
@@ -180,17 +193,7 @@ namespace AndroidConsolizer.Patches
                     // Draw item on top
                     if (itemIndex < player.Items.Count && player.Items[itemIndex] != null)
                     {
-                        var item = player.Items[itemIndex];
-                        item.drawInMenu(
-                            b,
-                            new Vector2(slotX, slotY),
-                            isSelected ? 1f : 0.8f,
-                            1f,
-                            0.9f,
-                            StackDrawType.Draw,
-                            Color.White,
-                            true
-                        );
+                        DrawSlotItem(b, player.Items[itemIndex], slotX, slotY, slotSize, isSelected);
                     }
                 }
             }
@@ -201,6 +204,94 @@ namespace AndroidConsolizer.Patches
             }
 
             return false; // Skip original Toolbar.draw
+        }
+
+        /// <summary>
+        /// Resolve the live toolbar slot size from the vanilla "Toolbar Slot Size" slider
+        /// (Options.toolbarSlotSize, Android-only — reflected), clamped to [MinSlotSize, fit].
+        /// AC renders all 12 slots at once (vanilla scrolls), so the raw slider value is capped
+        /// so the full row + background fits Game1.uiViewport.Width on the current device.
+        /// </summary>
+        private static int ResolveSlotSize()
+        {
+            int desired = SlotSize;
+            if (_toolbarSlotSizeField != null)
+            {
+                try
+                {
+                    if (_toolbarSlotSizeField.GetValue(Game1.options) is int v && v > 0)
+                        desired = v;
+                }
+                catch { }
+            }
+
+            int gaps = SlotSpacing * 11;
+            int maxFit = (Game1.uiViewport.Width - gaps - BackgroundMargin - EdgeBreathingRoom) / 12;
+            if (maxFit < MinSlotSize)
+                maxFit = MinSlotSize;
+
+            if (desired < MinSlotSize)
+                desired = MinSlotSize;
+            else if (desired > maxFit)
+                desired = maxFit;
+
+            return desired;
+        }
+
+        /// <summary>
+        /// Draw a single toolbar item scaled to <paramref name="slotSize"/>. drawInMenu centers
+        /// the icon at location+(32,32) and the overlay icons (stack count / quality / gauge) read
+        /// Item.itemSlotSize + drawInToolbar — both assume a 64px slot. We set them to the live
+        /// slot size (mirroring vanilla Toolbar.draw) and offset the location so everything stays
+        /// centered as the slot grows. All Android-only members are reflected (PC DLL compile-safe).
+        /// </summary>
+        private static void DrawSlotItem(SpriteBatch b, Item item, int slotX, int slotY, int slotSize, bool isSelected)
+        {
+            // Preserve AC's current proportions: at 64px this matches the old 1f / 0.8f scales.
+            float iconScale = ((float)slotSize / SlotSize) * (isSelected ? 1f : 0.8f);
+
+            object savedItemSlotSize = null;
+            bool slotSet = false;
+            if (_itemSlotSizeField != null)
+            {
+                try
+                {
+                    savedItemSlotSize = _itemSlotSizeField.GetValue(item);
+                    _itemSlotSizeField.SetValue(item, slotSize);
+                    slotSet = true;
+                }
+                catch { }
+            }
+
+            if (_drawInToolbarField != null)
+            {
+                try { _drawInToolbarField.SetValue(item, true); } catch { }
+            }
+
+            try
+            {
+                item.drawInMenu(
+                    b,
+                    new Vector2(slotX + (slotSize / 2f) - 32f, slotY + (slotSize / 2f) - 32f),
+                    iconScale,
+                    1f,
+                    0.9f,
+                    StackDrawType.Draw,
+                    Color.White,
+                    true
+                );
+            }
+            finally
+            {
+                if (_drawInToolbarField != null)
+                {
+                    try { _drawInToolbarField.SetValue(item, false); } catch { }
+                }
+                if (slotSet)
+                {
+                    try { _itemSlotSizeField.SetValue(item, savedItemSlotSize); } catch { }
+                }
+            }
         }
 
         /// <summary>
