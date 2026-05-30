@@ -62,6 +62,11 @@ namespace AndroidConsolizer.Patches
         // The SnappyMenus value as it was before we forced it true.
         private static bool _savedSnappyMenus;
 
+        // MuseumMenu.rearrangeMode and .reOrganizing are Android-only fields — absent from the
+        // PC DLL the project compiles against, so they MUST be accessed via reflection.
+        private static FieldInfo _rearrangeModeField;
+        private static FieldInfo _reOrganizingField;
+
         // ===== TRANSIENT DIAGNOSTIC STATE (v3.7.60 — remove once root cause confirmed) =====
         // InventoryMenu.currentlySelectedItem is an Android-only field — reflect for it.
         private static FieldInfo _invCurrentlySelectedItemField;
@@ -71,6 +76,8 @@ namespace AndroidConsolizer.Patches
         public static void Apply(Harmony harmony, IMonitor monitor)
         {
             Monitor = monitor;
+            _rearrangeModeField = AccessTools.Field(typeof(MuseumMenu), "rearrangeMode");
+            _reOrganizingField = AccessTools.Field(typeof(MuseumMenu), "reOrganizing");
             try
             {
                 harmony.Patch(
@@ -98,7 +105,16 @@ namespace AndroidConsolizer.Patches
                     original: AccessTools.Method(typeof(MuseumMenu), nameof(MuseumMenu.draw), new Type[] { typeof(SpriteBatch) }),
                     postfix: new HarmonyMethod(typeof(MuseumMenuPatches), nameof(Draw_Postfix))
                 );
-                monitor.Log("[MuseumMenu] patch applied (OpenDonationMenu prefix + SnappyMenus getter override + cursor draw; restore via MenuChanged).", LogLevel.Trace);
+                // Rearrange: enable museum-grid navigation. In rearrange mode there is no
+                // donatable-inventory phase, but vanilla's receiveKeyPress only grid-navigates
+                // when heldItem != null || reOrganizing — and reOrganizing is never set true.
+                // Set it in a ctor postfix so the D-pad navigates the placed pieces instead of
+                // the hidden inventory slots.
+                harmony.Patch(
+                    original: AccessTools.Constructor(typeof(MuseumMenu), new Type[] { typeof(InventoryMenu.highlightThisItem) }),
+                    postfix: new HarmonyMethod(typeof(MuseumMenuPatches), nameof(RearrangeCtor_Postfix))
+                );
+                monitor.Log("[MuseumMenu] patch applied (OpenDonationMenu/OpenRearrangeMenu prefix + SnappyMenus getter + cursor draw + rearrange grid-nav; restore via MenuChanged).", LogLevel.Trace);
             }
             catch (Exception ex)
             {
@@ -243,6 +259,33 @@ namespace AndroidConsolizer.Patches
         {
             if (_weForcedSnappy)
                 __result = true;
+        }
+
+        /// <summary>
+        /// For a rearrange-mode MuseumMenu, set reOrganizing=true so receiveKeyPress takes the
+        /// museum-grid navigation branch (findMuseumPieceLocationInDirection over placed pieces)
+        /// instead of snapping through the hidden inventory slots. reOrganizing is read ONLY by
+        /// receiveKeyPress's nav gate (nothing else), so this is a surgical change. The first
+        /// directional press then jumps the cursor from the inventory onto a free grid tile
+        /// (vanilla getFreeDonationSpot path); subsequent presses walk the pieces, A picks
+        /// up / swaps.
+        /// </summary>
+        private static void RearrangeCtor_Postfix(MuseumMenu __instance)
+        {
+            if (ModEntry.Config?.EnableMuseumDonationController != true) return;
+            if (!_weForcedSnappy) return; // our museum menu only
+            if (_rearrangeModeField == null || _reOrganizingField == null) return;
+            try
+            {
+                bool rearrange = (bool)_rearrangeModeField.GetValue(__instance);
+                if (!rearrange) return; // donation menu is unaffected
+                _reOrganizingField.SetValue(__instance, true);
+                Monitor.Log("[MuseumMenu] rearrange: set reOrganizing=true to enable museum-grid navigation.", LogLevel.Info);
+            }
+            catch (Exception ex)
+            {
+                try { Monitor.Log($"[MuseumMenu] rearrange ctor postfix failed: {ex.Message}", LogLevel.Warn); } catch { }
+            }
         }
 
         /// <summary>
