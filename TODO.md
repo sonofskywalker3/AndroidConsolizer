@@ -120,17 +120,17 @@ Vanilla GeodeMenu opens with `_selectedItemIndex = -1` — the cursor sits at sl
 - **Relation to #18:** both surfaced in the museum but are mechanically distinct — #18 is the donation *placement* menu (snap), #71 is the *reward collection* grab. Separate patches. (Note: the user had to use touch to donate because of #18, then grabbed the reward with the controller → hit #71.)
 - **Milestone:** v3.8.0 — localized to `ItemGrabMenuPatches`, no new system.
 
+### 18. Museum Donation + Rearrange Menu (pulled into v3.8.0)
+- **✅ DONE — device-verified on G Cloud 2026-05-30 (donation v3.7.61, rearrange v3.7.63; cleaned up through v3.7.66).** User confirmed controller donation works (visible cursor, D-pad selects, A donates) and rearrange is reachable and movable. See `DONE.md` "#18 Museum Donation + Rearrange Controller Support". Original notes below.
+- **Real root cause (NOT what the spec premised):** the snap chain was NOT gated off on G Cloud — `snappyMenus` field + `SnappyMenus` property were already true and the mechanics all worked. The blocker was **no visible cursor** (`drawMouse` suppressed because Android delivers the controller confirm as a synthesized touch → control type reads TOUCH). Fix = draw the snap cursor ourselves in a `MuseumMenu.draw` postfix (v3.7.61). Rearrange additionally needed `reOrganizing=true` (ctor postfix, reflected — Android-only field) so `receiveKeyPress` grid-navigates the placed pieces instead of the hidden inventory (v3.7.63). The SnappyMenus force is kept as cross-device insurance (no-op on G Cloud). A right-stick free-pan (v3.7.64) was tried and **reverted** (v3.7.65) — it broke the menu; zoom-before-donating covers the cramped-view case. Diagnostics stripped v3.7.66. **Don't relitigate the SnappyMenus theory** — see memory `museum-donation-controller-rootcause`.
+- **Toggle:** `EnableMuseumDonationController` (default true). **File:** `Patches/MuseumMenuPatches.cs`.
+- _(Original approach notes, kept for history):_ Controller-only placement was inaccessible; touch was required to select/place. The spec proposed a snap-based selection overlay with a virtual tile-space cursor — in practice the vanilla snap chain already handled selection/placement once the cursor was made visible, so no custom selection model was needed.
+
 ---
 
 ## v3.9.0 — Console Parity: Big Systems
 
 Three player-facing real-time gameplay systems. Each likely needs multiple patches with device testing. Bundling them into one focused arc keeps testing context warm.
-
-### 18. Museum Donation Menu
-- Controller-only placement inaccessible. Confirmed on G Cloud. Touch required to select/place items.
-- **Approach:** Snap-based item selection overlay over the museum's free-placement grid. Confirmed possible without #12 (Switch handles museum donations with snap nav, no free cursor required).
-- **Implementation challenge:** The museum grid doesn't map cleanly to discrete components. Will need a custom selection model — likely tracking a virtual cursor in tile-space and rendering placement preview at the snapped tile.
-- **Public report (Nexus comment, 2026-05-28):** *"When I wanted to donate items at the museum, I couldn't use my controller to donate."* Confirms the report independently — there is now a public user complaint, same as #27. Same user also hit #71 (see below) in the same session.
 
 ### 25. Tool Charging Broken While Moving
 - Holding tool button while moving rapid-fires single uses instead of charging. Player stops moving and tool keeps firing.
