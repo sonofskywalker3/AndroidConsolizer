@@ -1,6 +1,8 @@
 using System;
 using System.Reflection;
 using HarmonyLib;
+using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 using StardewModdingAPI;
 using StardewValley;
@@ -12,47 +14,42 @@ namespace AndroidConsolizer.Patches
     /// <summary>
     /// #18 Museum donation controller support.
     ///
-    /// Root cause (decompile-verified): the full console snap chain in the Android
-    /// MuseumMenu — ctor cursor snap, receiveKeyPress grid navigation via
-    /// LibraryMuseum.findMuseumPieceLocationInDirection, releaseLeftClick ->
-    /// inventory.selectItemAt selection, and placeItem placement — is all gated on
-    /// Game1.options.SnappyMenus, which is FALSE on Android. Game1's
-    /// D-pad/left-stick -> receiveKeyPress dispatch is ALSO SnappyMenus-gated, so with
-    /// a controller the D-pad does nothing and A fires a click at a stale, un-moved
-    /// cursor. Result: donation requires touch.
+    /// Root cause (device-verified, v3.7.58→v3.7.60 on G Cloud — earlier theories were
+    /// wrong and are recorded here so we don't relitigate them):
+    ///   • The console snap chain (ctor snap, receiveKeyPress grid nav via
+    ///     LibraryMuseum.findMuseumPieceLocationInDirection, releaseLeftClick->selectItemAt,
+    ///     placeItem) is gated on Game1.options.SnappyMenus. We first assumed the field was
+    ///     false on Android — but the v3.7.58 log showed snappyMenus FIELD was already True
+    ///     on G Cloud, and v3.7.59 showed the SnappyMenus PROPERTY was already true too
+    ///     (field=True, gamepadControls=True, mouse buttons Released). So gating was NOT the
+    ///     blocker on this device.
+    ///   • The v3.7.60 instrumentation proved the mechanics ALL WORK: D-pad walks the snap
+    ///     (component IDs 0→12→13…), the game cursor (Game1.getMouseX/Y, which selectItemAt
+    ///     and placeItem actually read) tracks it, selection fires (sel -1→15), and
+    ///     placement fires. The ONLY thing missing is a VISIBLE cursor.
+    ///   • IClickableMenu.drawMouse only renders when
+    ///     `mostRecentlyUsedControlType == ControlType.GAMEPAD`. On Android the controller's
+    ///     confirm is delivered as a synthesized touch, so the most-recent control type reads
+    ///     TOUCH and the built-in cursor is suppressed — the player flies blind. Same class
+    ///     of problem as the GeodeMenu / JunimoNote donation page.
     ///
-    /// IMPORTANT (device-verified v3.7.58): the underlying `snappyMenus` FIELD is
-    /// already true on G Cloud, yet donation still required touch. The menu gates on
-    /// the `SnappyMenus` PROPERTY, whose getter is
-    ///   `snappyMenus && gamepadControls && mouseLeft != Pressed && mouseRight != Pressed`.
-    /// On Android the "Donate" dialogue is confirmed with an A-press that synthesizes a
-    /// touch leftClick, so at the instant the MuseumMenu ctor evaluates the property the
-    /// left button reads Pressed → property false → the ctor SKIPS its one-time snap
-    /// initialization, leaving the menu with no snap state for its whole lifetime.
-    /// Writing the field (which was already true) therefore changes nothing.
+    /// Fix (two parts, both scoped to the DONATION menu only — OpenRearrangeMenu untouched):
+    ///   1. Engage snappy nav: force snappyMenus true (field + a postfix on the SnappyMenus
+    ///      property getter), set in the OpenDonationMenu prefix BEFORE construction so the
+    ///      ctor's snap init runs. This is belt-and-suspenders for devices where the field is
+    ///      genuinely false; on G Cloud it is a confirmed no-op but harmless. Restored on
+    ///      close via ModEntry.OnMenuChanged (the getter override auto-reverts when the flag
+    ///      clears).
+    ///   2. Draw the cursor ourselves: a MuseumMenu.draw postfix renders the snappy cursor
+    ///      (tile 44) at Game1.getMouseX/Y, bypassing drawMouse's control-type gate, so the
+    ///      player can see what is selected / where the piece will land.
     ///
-    /// Fix: force the SnappyMenus PROPERTY true for the lifetime of the DONATION menu
-    /// (Harmony postfix on Options.get_SnappyMenus, gated by our donation flag). The flag
-    /// is set in the OpenDonationMenu prefix BEFORE the menu is constructed, so the ctor's
-    /// property read returns true and snap init runs; every in-menu receiveKeyPress check
-    /// passes too. We also keep forcing the field true (belt-and-suspenders for devices
-    /// where the field itself is false, e.g. the Game1 D-pad->receiveKeyPress dispatch
-    /// which reads the lowercase field). OpenRearrangeMenu is intentionally NOT patched.
-    /// Restore is driven from ModEntry.OnMenuChanged when OldMenu is MuseumMenu (the
-    /// getter override auto-reverts when the flag clears). This patch writes zero
-    /// navigation logic — the game's own console code does it once snappy is engaged.
-    ///
-    /// We patch a single, plain managed method (OpenDonationMenu) and restore via the
-    /// SMAPI MenuChanged event — deliberately NOT patching any input override
-    /// (receiveKeyPress / releaseLeftClick) to stay clear of the Android mono-runtime
-    /// SIGSEGV landmine documented for GeodeMenu.releaseLeftClick.
-    ///
-    /// Restore is solely MenuChanged-driven. A donation menu can only be torn down by
-    /// a menu transition (which raises MenuChanged) — you cannot return to title with
-    /// it open without first closing it — so the flag is reliably restored in normal
-    /// play. The only theoretical stuck-true window is a hard teardown that nulls
-    /// activeClickableMenu without raising MenuChanged (e.g. a crash), which ends the
-    /// session anyway.
+    /// We patch only plain/safe methods (OpenDonationMenu, the Options getter, MuseumMenu.draw)
+    /// — deliberately NOT any input override (receiveKeyPress / releaseLeftClick) to stay clear
+    /// of the Android mono-runtime SIGSEGV landmine documented for GeodeMenu.releaseLeftClick.
+    /// Restore is solely MenuChanged-driven; the only theoretical stuck-true window is a hard
+    /// teardown that nulls activeClickableMenu without raising MenuChanged (e.g. a crash),
+    /// which ends the session anyway.
     /// </summary>
     internal static class MuseumMenuPatches
     {
@@ -88,7 +85,14 @@ namespace AndroidConsolizer.Patches
                     original: AccessTools.PropertyGetter(typeof(Options), nameof(Options.SnappyMenus)),
                     postfix: new HarmonyMethod(typeof(MuseumMenuPatches), nameof(SnappyMenusGetter_Postfix))
                 );
-                monitor.Log("[MuseumMenu] patch applied (OpenDonationMenu prefix + SnappyMenus getter override; restore via MenuChanged).", LogLevel.Trace);
+                // Draw the snap cursor ourselves — Android's drawMouse suppresses it here
+                // (control type reads TOUCH because the controller confirm is a synthesized
+                // touch), so the player can't see what is selected / targeted.
+                harmony.Patch(
+                    original: AccessTools.Method(typeof(MuseumMenu), nameof(MuseumMenu.draw), new Type[] { typeof(SpriteBatch) }),
+                    postfix: new HarmonyMethod(typeof(MuseumMenuPatches), nameof(Draw_Postfix))
+                );
+                monitor.Log("[MuseumMenu] patch applied (OpenDonationMenu prefix + SnappyMenus getter override + cursor draw; restore via MenuChanged).", LogLevel.Trace);
             }
             catch (Exception ex)
             {
@@ -225,6 +229,42 @@ namespace AndroidConsolizer.Patches
         {
             if (_weForcedSnappy)
                 __result = true;
+        }
+
+        /// <summary>
+        /// Draw the snap cursor for the donation menu. Android's IClickableMenu.drawMouse
+        /// only renders when mostRecentlyUsedControlType == GAMEPAD, which is false here
+        /// (the controller confirm arrives as a synthesized touch), so the cursor is invisible
+        /// even though navigation/selection/placement work. We draw tile 44 (the snappy hand)
+        /// at the live cursor position, which the v3.7.60 diagnostics confirmed tracks the snap.
+        /// </summary>
+        private static void Draw_Postfix(MuseumMenu __instance, SpriteBatch b)
+        {
+            if (!_weForcedSnappy) return; // only our donation menu (no-op for rearrange)
+            if (ModEntry.Config?.EnableMuseumDonationController != true) return;
+            try
+            {
+                // Mirror the menu's own content-draw gate: skip during the fade-to-black
+                // transitions and the exiting state so we don't paint a cursor on black.
+                if ((__instance.fadeTimer > 0 && __instance.fadeIntoBlack) || __instance.state == 3)
+                    return;
+
+                b.Draw(
+                    Game1.mouseCursors,
+                    new Vector2(Game1.getMouseX(), Game1.getMouseY()),
+                    Game1.getSourceRectForStandardTileSheet(Game1.mouseCursors, 44, 16, 16),
+                    Color.White,
+                    0f,
+                    Vector2.Zero,
+                    4f + Game1.dialogueButtonScale / 150f,
+                    SpriteEffects.None,
+                    1f
+                );
+            }
+            catch (Exception ex)
+            {
+                try { Monitor.Log($"[MuseumMenu] cursor draw failed: {ex.Message}", LogLevel.Warn); } catch { }
+            }
         }
 
         /// <summary>
