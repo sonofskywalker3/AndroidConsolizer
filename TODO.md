@@ -8,7 +8,9 @@ Shipped: **v3.6.0** (Bug Fix Release). Roadmap structure was re-evaluated post-3
 
 ---
 
-## v3.8.0 — Console Parity: Quick Wins
+## v3.8.0 — Console Parity: Quick Wins — ✅ SHIPPED 2026-05-31 (GitHub release v3.8.0 + Nexus)
+
+**All items complete — see `DONE.md`.** ✅ #22b, #17, #35, #39, #46, #19, #18, #27 (toolbar size slider, Nexus #1050718), and #47 (resolved not-a-bug). **The next milestone is [v3.9.0 — Console Parity: Big Systems](#v390--console-parity-big-systems) below (#25 tool charging while moving, #25b slingshot aim).** Start the next change at v3.8.1 (or v3.9.0 work). The items below are kept for their historical implementation notes.
 
 Small to medium parity fixes that can each be solved with localized patches. No multi-patch system arc. Bumps the mod from "most parity items done" to "every menu has correct defaults and visible cursors."
 
