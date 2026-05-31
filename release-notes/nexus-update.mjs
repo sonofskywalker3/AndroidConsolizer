@@ -23,12 +23,12 @@ const USER_DATA = process.env.NEXUS_PW_PROFILE;
 const CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const EDIT_URL = 'https://www.nexusmods.com/games/stardewvalley/mods/41869/edit';
 const HOME_URL = 'https://www.nexusmods.com/';
-const VERSION = '3.7.0';
-const MARKER = "What's New in v3.7";
+const VERSION = '3.8.0';
+const MARKER = "What's New in v3.8";
 const LOGIN_WAIT_MS = 6 * 60 * 1000;
 
 if (!USER_DATA) { console.error('[FATAL] NEXUS_PW_PROFILE not set'); process.exit(3); }
-const description = readFileSync(HERE('./nexus-3.7.0-description.bbcode'), 'utf8');
+const description = readFileSync(HERE('./nexus-3.8.0-description.bbcode'), 'utf8');
 console.log(`[init] desc=${description.length} chars  profile=${USER_DATA}`);
 
 const ctx = await chromium.launchPersistentContext(USER_DATA, {
@@ -112,7 +112,7 @@ try {
     ta.dispatchEvent(new Event('change', { bubbles: true }));
     const got = inst.val();
     log.push(`after val(): instLen=${(got || '').length} taLen=${(ta.value || '').length}`);
-    return { ok: (got || '').includes('v3.7') || (ta.value || '').includes('v3.7'), method: 'api', log };
+    return { ok: (got || '').includes('v3.8') || (ta.value || '').includes('v3.8'), method: 'api', log };
   }, description);
   console.log('[setdesc]', JSON.stringify(setResult));
 
