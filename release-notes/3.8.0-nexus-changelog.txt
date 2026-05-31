@@ -1,0 +1,17 @@
+Console Parity: Quick Wins — a big batch of fixes for the menus that still felt touch-only on a controller. They now behave like the Switch version. Each group is individually toggleable via GMCM. Rolls up the 3.7.1–3.7.75 patch series.
+
+Added / Fixed:
+- Resizable toolbar (#27) — the Options "Toolbar Slot Size" slider now actually resizes the 12-slot toolbar (icons and stack/quality numbers scale with it), capped so the full row clears the energy bar. "Toolbar Padding" lifts the toolbar off the screen edge. Fixes the public "Can't resize the toolbar" report.
+- Museum donations & rearranging with a controller (#18) — visible cursor, D-pad selection, A to donate, and full grid navigation while rearranging.
+- Geode breaking console parity (#19) — single A-press to crack, the geode you'll break is auto-selected with its tooltip shown, and spatial navigation moves between geodes like the Switch.
+- Load Game & title screen cursors (#35, #17) — proper cursor and snap navigation, including scrolling and the delete-confirmation dialog.
+- Adventurer's Guild monster eradication list + multi-page mail (#39) — both navigable on a controller.
+- Community Center bundle donation greys out ineligible items (#46).
+- Dwarvish Translation Guide reward is learned instead of dumped in your bag (#71).
+- Single-tile placement ghost for craftables like sprinklers and machines (#68).
+- Hold A to craft continuously (#69).
+- Dialogue answer boxes start on the first option (#22b).
+- Trigger column-skip refinement on row switch (#54b).
+
+Closed by investigation, no code change:
+- The Community Center "missed rewards" container (#47) works correctly on Android — it's the small vanilla giftbox sprite, easy to overlook, not a bug.
