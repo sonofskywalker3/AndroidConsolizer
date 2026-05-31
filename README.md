@@ -4,17 +4,23 @@ A SMAPI mod that makes Android Stardew Valley's controller support work like the
 
 If you play on a handheld (Odin, Ayaneo, Retroid, etc.) or dock your phone/tablet to a TV, this mod makes the game actually playable without a touchscreen.
 
-## Current Version: 3.7.0 — Bug Fix Release 2
+## Current Version: 3.8.0 — Console Parity: Quick Wins
 
-## What's New in v3.7.0
+## What's New in v3.8.0
 
-A focused follow-up to v3.6. Both fixes individually toggleable via GMCM.
+A big batch of console-parity fixes — the menus that still felt touch-only on a controller now behave like the Switch version. Each group is individually toggleable via GMCM.
 
-**Picked-up items land in the active toolbar row** — Furniture, forage, drops, gifts, and shop purchases now go into the toolbar row you're currently viewing, instead of always dropping into row 0 where you can't see them. Picked-up furniture (your held tool until you place it) moves the selection to follow; ordinary pickups never disturb your selected tool. New toggle, on by default.
+**Resizable toolbar** — the Options → "Toolbar Slot Size" slider finally works. AC's 12-slot toolbar now scales to the slider (icons, highlights, and stack/quality numbers scale with it), capped so the full row always clears the energy bar. The "Toolbar Padding" slider lifts the toolbar off the screen edge. (Fixes the public "can't resize the toolbar" report.)
 
-**Triggers no longer skip toolbar slots** — On Gamesir and Logitech G Cloud controllers, a single trigger pull occasionally jumped two toolbar slots instead of one. Hall-effect triggers briefly read zero mid-pull and some digital triggers glitch for a single frame; trigger handling is now a two-threshold state machine with a release-confirmation window that rides through those dropouts. Verified on both analog and digital triggers.
+**Museum donations & rearranging with a controller** — donate artifacts and rearrange the museum layout without the touchscreen: a visible cursor, D-pad selection, A to donate, and full grid navigation when rearranging.
 
-**Plus:** reduced diagnostic log noise — leftover debug lines from the v3.5 investigations are now quiet during normal play.
+**Geode breaking feels like console** — single A-press to crack, the geode you'll break is auto-selected with its tooltip shown, and spatial navigation moves between geodes the way the Switch does.
+
+**Load Game & title screen cursors** — the Load Game and title screens now show a proper cursor and snap-navigate (slot selection, scrolling, and the delete-confirmation dialog all reachable on a controller).
+
+**Adventurer's Guild & multi-page mail** — the monster eradication goals list and multi-page letters are now fully navigable.
+
+**Plus:** Community Center bundle donation greys out ineligible items, the Dwarvish Translation Guide reward is learned instead of dumped in your bag, single-tile placement ghost for craftables (sprinklers/machines), hold-A to craft continuously, and dialogue answer boxes start on the first option. The Community Center "missed rewards" bag was investigated and confirmed working (it's the small vanilla giftbox — easy to miss).
 
 ## Controller Layout Support
 
@@ -35,6 +41,7 @@ Two control styles:
 - LT/RT moves left/right within the current row
 - Visual toolbar matches console layout
 - Picked-up items land in the row you're currently viewing
+- Resizable via the Options "Toolbar Slot Size" slider (capped to fit the screen); "Toolbar Padding" lifts it off the edge
 
 ### Shops
 - A button purchases on buy tab, sells entire stack on sell tab
@@ -321,6 +328,19 @@ Android Stardew Valley has broken controller support that makes it nearly unplay
 MIT License - Feel free to modify and redistribute.
 
 ## Changelog
+
+### 3.8.0 — Console Parity: Quick Wins
+- **Resizable toolbar (#27)** — AC's custom toolbar draw now reads the vanilla `Options.toolbarSlotSize` slider (id 148) instead of a hardcoded 64px, scaling the 12 slots, icons, and stack/quality/gauge overlays. Size is capped so the centered row clears the bottom-right energy/health HUD. The "Toolbar Padding" slider (id 134), previously dead under the centered toolbar, is repurposed as a docked-edge gap. Fixes the public "Can't resize the toolbar" report.
+- **Museum donation + rearrange via controller (#18)** — visible cursor (Android suppressed `drawMouse` because it reads the control type as touch), D-pad selection, A to donate, and grid navigation while rearranging (`reOrganizing` set so `receiveKeyPress` walks the museum grid). `EnableMuseumDonationController` toggle.
+- **Geode menu console parity (#19)** — single-press A cracks (A→X redirect down the vanilla path), the selected geode auto-selects with its tooltip shown, and geode-only spatial navigation replaces the linear scan. `EnableConsoleGeodeMenu` toggle. (Landmine recorded: Harmony-patching `GeodeMenu.releaseLeftClick` hard-crashes the Android runtime — never patch it.)
+- **Load Game & title screen cursors (#35, #17)** — cursor draw + snap navigation on the Load Game menu (entry snap, scrolling, delete-confirmation dialog) and the title screen, matching console's snap-as-indicator behaviour.
+- **Adventurer's Guild kill list + multi-page mail (#39)** — monster eradication goals and multi-page `LetterViewerMenu` letters are navigable on a controller.
+- **Bundle donation grey-out (#46)** — ineligible items grey out on the Community Center donation page, mirroring the sell-tab pattern.
+- **Dwarvish Translation Guide reward (#71)** — the museum reward book is consumed into the skill (`canUnderstandDwarves`) instead of being dumped in the bag.
+- **Single-tile craftable placement (#68)** + **hold-A to craft (#69)** + **dialogue answer boxes default to the first option (#22b)**.
+- **Trigger column-skip refinement (#54b)** — re-arms slot enforcement on LB/RB row switch so the first trigger press after a row change lands on the right slot.
+- **Investigated, no change:** the Community Center "missed rewards" container (#47) works correctly on Android — it's the small vanilla giftbox sprite that's easy to overlook, not a bug.
+- Internally rolls up the v3.7.1–v3.7.75 patch series.
 
 ### 3.7.0 — Bug Fix Release 2
 - **Picked-up items land in the active toolbar row** — picking up furniture, forage, drops, gifts, or shop purchases now places the item into the toolbar row you're currently viewing, instead of always defaulting to row 0. Furniture (your held tool until placed) also moves the selection to follow; non-tool pickups never disturb your selected tool. New `EnablePickupToActiveRow` GMCM toggle (default on).
