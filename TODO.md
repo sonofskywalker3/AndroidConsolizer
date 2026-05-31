@@ -12,7 +12,8 @@ Shipped: **v3.6.0** (Bug Fix Release). Roadmap structure was re-evaluated post-3
 
 Small to medium parity fixes that can each be solved with localized patches. No multi-patch system arc. Bumps the mod from "most parity items done" to "every menu has correct defaults and visible cursors."
 
-### 47. Missed Rewards Chest Not Appearing
+### 47. Missed Rewards Chest Not Appearing — ✅ NOT A BUG (resolved 2026-05-31, device-verified G Cloud)
+- **✅ RESOLVED — works as designed.** Diagnostic (v3.7.72/73) + device test proved the CC missed-rewards system works correctly on Android: `checkForMissedRewards` flags it (`cond{b0->area0(complete=True)}`), `doShowMissedRewardsChest` places the (22,10) tile (`index=5 sheet=indoors2`), the reward is grabbable, and it clears after grab. The container is the small **vanilla bag/giftbox sprite** — easy to overlook (the user had never noticed it in any playthrough), which is what the "chest never appears" report actually was. Also note missed rewards only show once the **whole area** is complete, not when a single bundle is pending — the original report's pending `[23,25]` were Vault bundles in a likely-incomplete area. No code change. Joins #48/#65 as not-a-bug. See `DONE.md`. Original investigation notes below.
 - After completing a CC room with unclaimed bundle rewards, the "missed rewards" chest should appear at tile (22, 10) in the Community Center. On Android, the chest never appears — even when reward stacks are left completely untouched.
 - **Vanilla system:** `CommunityCenter.checkForMissedRewards()` iterates `bundleRewards`, checks `bundleRewards[key] == true && areasComplete[area] == true`, populates `missedRewardsChest` items. Called from `doRestoreAreaCutscene` (line 875), `resetSharedState` (line 562), and `performAction` on "MissedRewards" tile (line 357). Chest tile modification via `showMissedRewardsChestEvent`.
 - **Confirmed broken:** User left 2 of 4 reward stacks completely untouched, room completed, no chest appeared. `BundleRewards` still showed pending indices `[23, 25]` in logs after room completion.
@@ -20,7 +21,8 @@ Small to medium parity fixes that can each be solved with localized patches. No 
 - **Possible fixes:** Hook `markAreaAsComplete` or `doRestoreAreaCutscene` to force-check for missed rewards. If the chest exists but is invisible, may need tile/sprite fix.
 - **File:** Likely new `Patches/CommunityCenterPatches.cs`.
 
-### 27. Toolbar Size Slider (Options Menu)
+### 27. Toolbar Size Slider (Options Menu) — ✅ DONE (v3.7.68→v3.7.71, device-verified G Cloud 2026-05-30/31)
+- **✅ DONE.** Root cause: `ToolbarPatches.Toolbar_Draw_Prefix` fully replaced `Toolbar.draw` with a hardcoded 64px slot and ignored `Options.toolbarSlotSize`, so the working vanilla slider (id 148) had no effect. Fix wires the slider into AC's draw: `ResolveSlotSize()` reads `toolbarSlotSize` (reflected) and scales the 12 slots + icons + overlays, **capped so the centered row clears the right-side energy/health HUD** (v3.7.69, `HudSafeMarginX`). The "Toolbar Padding" slider (id 134) was also dead under AC's centered toolbar — repurposed as a docked-edge gap (v3.7.70), softened to half-travel per user feedback (v3.7.71). Public Nexus bug #1050718 fixed. See `DONE.md`. Original notes below.
 - Console-style 12-slot toolbar has overlap/sizing issues on small screens.
 - Hijack vanilla "Toolbar Size" slider or inject our own.
 - **Investigation:** Does vanilla slider exist on Android? What field does it control? How does our toolbar determine slot size?
