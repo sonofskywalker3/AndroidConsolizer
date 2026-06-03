@@ -47,6 +47,48 @@ namespace AndroidConsolizer.Patches
         private static bool _cachedRawStartPressed;
         private static int _cachedTick = -1;
 
+        // 3.8.3 button-map diagnostic — previous raw edge states for face/shoulder/trigger
+        // buttons, so LogButtonMapDiag fires once per physical press, not every tick.
+        private static bool _bmPrevA, _bmPrevB, _bmPrevX, _bmPrevY, _bmPrevLS, _bmPrevRS, _bmPrevLT, _bmPrevRT;
+
+        /// <summary>3.8.3 diagnostic: on each physical face/shoulder/trigger press, log what
+        /// the controller actually sent (RAW, pre-swap) vs what the game ends up seeing (GAME,
+        /// post-swap), with the active layout/style and swap decisions. Edge-triggered, always
+        /// on for this build. Reveals exactly how a real Switch Pro reports its buttons — the
+        /// thing the layout/style remap assumes but was never measured on real hardware.</summary>
+        private static void LogButtonMapDiag(GamePadState raw, bool swapAB, bool swapXY, bool inMenu)
+        {
+            bool a = raw.Buttons.A == ButtonState.Pressed;
+            bool b = raw.Buttons.B == ButtonState.Pressed;
+            bool x = raw.Buttons.X == ButtonState.Pressed;
+            bool y = raw.Buttons.Y == ButtonState.Pressed;
+            bool ls = raw.Buttons.LeftShoulder == ButtonState.Pressed;
+            bool rs = raw.Buttons.RightShoulder == ButtonState.Pressed;
+            bool lt = RawLeftTriggerButton;
+            bool rt = RawRightTriggerButton;
+
+            bool edge = (a && !_bmPrevA) || (b && !_bmPrevB) || (x && !_bmPrevX) || (y && !_bmPrevY)
+                      || (ls && !_bmPrevLS) || (rs && !_bmPrevRS) || (lt && !_bmPrevLT) || (rt && !_bmPrevRT);
+
+            _bmPrevA = a; _bmPrevB = b; _bmPrevX = x; _bmPrevY = y;
+            _bmPrevLS = ls; _bmPrevRS = rs; _bmPrevLT = lt; _bmPrevRT = rt;
+
+            if (!edge || Monitor == null) return;
+
+            bool finalA = swapAB ? b : a;
+            bool finalB = swapAB ? a : b;
+            bool finalX = swapXY ? y : x;
+            bool finalY = swapXY ? x : y;
+
+            Monitor.Log(
+                $"[BtnMap] layout={ModEntry.Config?.ControllerLayout} style={ModEntry.Config?.ControlStyle}"
+                + $" remap={ModEntry.Config?.EnableButtonRemapping} | swapAB={swapAB} swapXY={swapXY} inMenu={inMenu}"
+                + $" | RAW A={a} B={b} X={x} Y={y} LS={ls} RS={rs}"
+                + $" LT(a={RawLeftTrigger:F2},d={lt}) RT(a={RawRightTrigger:F2},d={rt})"
+                + $" | GAME A={finalA} B={finalB} X={finalX} Y={finalY}",
+                LogLevel.Info);
+        }
+
         /// <summary>Suppress logical A in GetState output until the physical button is released.
         /// Set by ItemGrabMenuPatches when A on Close X closes a chest.</summary>
         internal static bool SuppressAUntilRelease;
@@ -403,6 +445,10 @@ namespace AndroidConsolizer.Patches
                     else
                         swapXY = inMenu;   // Xbox/PS: swap in menus only (gameplay uses raw X/Y)
                 }
+
+                // 3.8.3 diagnostic: capture raw->game button mapping on each physical press,
+                // BEFORE the early-out below (so it logs even when no swap happens).
+                LogButtonMapDiag(__result, swapAB, swapXY, Game1.activeClickableMenu != null);
 
                 // Nothing to do if no swapping needed
                 if (!swapXY && !swapAB)
