@@ -88,6 +88,39 @@ namespace AndroidConsolizer
         /// ours, producing the +2 "double slot skip". -1 = not yet captured.</summary>
         private int _preUpdateToolIndex = -1;
 
+        /// <summary>3.8.2 Switch Pro toolbar diagnostic: last row-desync state logged, so the
+        /// per-tick desync detector emits one line per transition instead of spamming every
+        /// tick. -2 = nothing logged yet.</summary>
+        private int _lastDiagDesyncRow = -2;
+
+        /// <summary>Toolbar buttons the Switch Pro diagnostic watches (row/item switching).</summary>
+        private static readonly SButton[] DiagToolbarButtons =
+        {
+            SButton.LeftShoulder, SButton.RightShoulder,
+            SButton.LeftTrigger, SButton.RightTrigger,
+            SButton.DPadUp, SButton.DPadDown, SButton.DPadLeft, SButton.DPadRight,
+        };
+
+        /// <summary>3.8.2 diagnostic: emit one INFO line capturing the full toolbar-nav state.
+        /// Edge-triggered (button events + row desync only), so it stays low-noise even on by
+        /// default. Captures the reporter's mode, what the controller reports for ZL/ZR (analog
+        /// axis vs digital button), and the row/index/trigger-flag state — enough to tell H1
+        /// (stale currentToolbarRow desync) from H2 (stuck trigger-pressed flag).</summary>
+        private void LogToolbarDiag(string evt)
+        {
+            var player = Game1.player;
+            int idx = player?.CurrentToolIndex ?? -1;
+            int idxRow = idx >= 0 ? idx / 12 : -1;
+            this.Monitor.Log(
+                $"[SPDiag] {evt} | bumperMode={Config.UseBumpersInsteadOfTriggers}"
+                + $" | LT(a={Patches.GameplayButtonPatches.RawLeftTrigger:F2},d={Patches.GameplayButtonPatches.RawLeftTriggerButton})"
+                + $" RT(a={Patches.GameplayButtonPatches.RawRightTrigger:F2},d={Patches.GameplayButtonPatches.RawRightTriggerButton})"
+                + $" | row={currentToolbarRow} idx={idx} idxRow={idxRow}"
+                + $" | trigTgt={_triggerSlotTarget}"
+                + $" | LtP={_leftTriggerPressed}(s{_leftTriggerReleaseStreak}) RtP={_rightTriggerPressed}(s{_rightTriggerReleaseStreak})",
+                LogLevel.Info);
+        }
+
 
         /// <summary>Tick when Start was first pressed during a skippable event (for double-press skip).</summary>
         private int cutsceneSkipFirstPressTick = -1;
@@ -432,6 +465,26 @@ namespace AndroidConsolizer
             int expectedRowStart = currentToolbarRow * 12;
             int expectedRowEnd = expectedRowStart + 11;
 
+            // 3.8.2 diagnostic — detect a stale currentToolbarRow (H1): if the game's own
+            // CurrentToolIndex sits in a different row than the mod thinks we're on, something
+            // OUTSIDE the mod (e.g. native ZL/ZR trigger handling, which is unsuppressed in
+            // bumper mode) moved the row without updating currentToolbarRow. Log once per
+            // transition, BEFORE the row-lock below yanks the index back. Captured here means
+            // the row-lock is fighting the game every tick.
+            int idxRowNow = player.CurrentToolIndex / 12;
+            if (idxRowNow != currentToolbarRow)
+            {
+                if (_lastDiagDesyncRow != idxRowNow)
+                {
+                    LogToolbarDiag($"DESYNC idxRow={idxRowNow}!=row={currentToolbarRow}");
+                    _lastDiagDesyncRow = idxRowNow;
+                }
+            }
+            else
+            {
+                _lastDiagDesyncRow = -2; // back in sync — re-arm for the next transition
+            }
+
             // Handle triggers directly via GamePadState
             HandleTriggersDirectly(player, expectedRowStart);
 
@@ -566,6 +619,18 @@ namespace AndroidConsolizer
             if (Config.VerboseLogging && e.Pressed.Any())
             {
                 this.Monitor.Log($"Buttons pressed: {string.Join(", ", e.Pressed)}", LogLevel.Debug);
+            }
+
+            // 3.8.2 Switch Pro toolbar diagnostic — edge-triggered, always on for this build.
+            // Fire on press OR release of any row/item-switch button while in gameplay, so the
+            // log shows exactly what ZL/ZR and L/R report and the state around a row switch.
+            if (Config.EnableConsoleToolbar && Game1.activeClickableMenu == null && Context.IsPlayerFree)
+            {
+                foreach (var btn in DiagToolbarButtons)
+                {
+                    if (e.Pressed.Contains(btn)) LogToolbarDiag("PRESS  " + btn);
+                    if (e.Released.Contains(btn)) LogToolbarDiag("RELEASE " + btn);
+                }
             }
 
             // Clear trigger slot enforcement when bumpers or D-pad are used for navigation,
