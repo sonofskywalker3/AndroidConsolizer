@@ -1,0 +1,9 @@
+Switch Pro Controller & Recipe Fixes — two controller-compatibility fixes since v3.8.0.
+
+Fixed:
+- Nintendo Switch Pro controllers now switch toolbar items correctly (bug report #1087126). On many Android devices the Pro controller's ZL/ZR triggers are digital-only (no analog pressure), which the mod's toolbar navigation wasn't reading — so after changing toolbar rows, the triggers stopped switching items until you nudged the D-pad. The mod now recognizes digital triggers and drives item-switching itself, so it keeps working across row changes. Also hardens analog triggers against hall-effect mid-pull dropouts. Device-verified on a Samsung S26 + Switch Pro. Thanks to kabusann2008.
+- Buying recipes with a controller now actually teaches them (v3.8.1). With console shops enabled, purchasing a cooking or crafting recipe from a shop (Pierre, Robin, etc.) with a gamepad deducted your money but never added the recipe. The mod now performs the recipe-learning step itself, exactly like the vanilla buy flow. Thanks to Rizkyrahmadhani12.
+
+Note for Switch Pro users: when a Pro controller is paired to a non-Nintendo Android device, the system usually reports its buttons in Xbox positions (the button labeled A sits where Xbox's B is). If your face buttons feel swapped, set Controller Layout = Xbox and keep Control Style = Switch. A proper auto-detecting fix is planned for a future update.
+
+(v3.8.2-v3.8.3 were internal Switch Pro investigation diagnostic builds, now gated behind Verbose Logging.)
