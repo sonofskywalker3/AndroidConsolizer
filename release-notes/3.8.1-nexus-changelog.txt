@@ -1,0 +1,4 @@
+Recipe Purchase Fix — buying recipes with a controller now actually teaches them.
+
+Fixed:
+- Recipes are learned when bought with a controller (bug report #1087126) — with console shops enabled, buying a cooking or crafting recipe from a shop (Pierre, Robin, etc.) with a gamepad deducted your money but never added the recipe. Buying via touchscreen worked fine. The controller purchase path called the game's actionWhenPurchased directly, which doesn't learn the recipe on its own; the mod now performs the recipe-learning step itself, exactly like the vanilla buy flow. Verified on-device. Pre-existing bug, not a 3.8.0 regression. Thanks to Rizkyrahmadhani12 for the report.
