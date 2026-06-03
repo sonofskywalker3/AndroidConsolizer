@@ -392,6 +392,19 @@ namespace AndroidConsolizer.Patches
 
                 if (handled)
                 {
+                    // Recipes need an explicit LearnRecipe() — Object.actionWhenPurchased
+                    // only returns isRecipe.Value (true), it does NOT learn the recipe.
+                    // Vanilla ShopMenu.purchaseItem learns it via a SEPARATE LearnRecipe()
+                    // call AFTER actionWhenPurchased returns true (Android ShopMenu.cs:1658-
+                    // 1662). We bypass purchaseItem, so without this the player pays gold but
+                    // the cooking/crafting recipe is never added — exactly the v3.8.0 bug
+                    // report (Rizkyrahmadhani12). Mirror vanilla: learn + play "newRecipe".
+                    if (selectedItem is Item recipeItem && recipeItem.IsRecipe)
+                    {
+                        recipeItem.LearnRecipe();
+                        Game1.playSound("newRecipe");
+                        Monitor.Log($"Learned recipe: {recipeItem.DisplayName}", LogLevel.Info);
+                    }
                     if (ModEntry.Config.VerboseLogging)
                         Monitor.Log($"actionWhenPurchased handled {selectedItem.DisplayName} (shopId={shopId})", LogLevel.Debug);
                 }
