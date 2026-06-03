@@ -108,6 +108,7 @@ namespace AndroidConsolizer
         /// (stale currentToolbarRow desync) from H2 (stuck trigger-pressed flag).</summary>
         private void LogToolbarDiag(string evt)
         {
+            if (!Config.VerboseLogging) return;
             var player = Game1.player;
             int idx = player?.CurrentToolIndex ?? -1;
             int idxRow = idx >= 0 ? idx / 12 : -1;
@@ -471,18 +472,21 @@ namespace AndroidConsolizer
             // bumper mode) moved the row without updating currentToolbarRow. Log once per
             // transition, BEFORE the row-lock below yanks the index back. Captured here means
             // the row-lock is fighting the game every tick.
-            int idxRowNow = player.CurrentToolIndex / 12;
-            if (idxRowNow != currentToolbarRow)
+            if (Config.VerboseLogging)
             {
-                if (_lastDiagDesyncRow != idxRowNow)
+                int idxRowNow = player.CurrentToolIndex / 12;
+                if (idxRowNow != currentToolbarRow)
                 {
-                    LogToolbarDiag($"DESYNC idxRow={idxRowNow}!=row={currentToolbarRow}");
-                    _lastDiagDesyncRow = idxRowNow;
+                    if (_lastDiagDesyncRow != idxRowNow)
+                    {
+                        LogToolbarDiag($"DESYNC idxRow={idxRowNow}!=row={currentToolbarRow}");
+                        _lastDiagDesyncRow = idxRowNow;
+                    }
                 }
-            }
-            else
-            {
-                _lastDiagDesyncRow = -2; // back in sync — re-arm for the next transition
+                else
+                {
+                    _lastDiagDesyncRow = -2; // back in sync — re-arm for the next transition
+                }
             }
 
             // Handle triggers directly via GamePadState
@@ -624,7 +628,8 @@ namespace AndroidConsolizer
             // 3.8.2 Switch Pro toolbar diagnostic — edge-triggered, always on for this build.
             // Fire on press OR release of any row/item-switch button while in gameplay, so the
             // log shows exactly what ZL/ZR and L/R report and the state around a row switch.
-            if (Config.EnableConsoleToolbar && Game1.activeClickableMenu == null && Context.IsPlayerFree)
+            if (Config.VerboseLogging && Config.EnableConsoleToolbar
+                && Game1.activeClickableMenu == null && Context.IsPlayerFree)
             {
                 foreach (var btn in DiagToolbarButtons)
                 {
