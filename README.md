@@ -4,23 +4,11 @@ A SMAPI mod that makes Android Stardew Valley's controller support work like the
 
 If you play on a handheld (Odin, Ayaneo, Retroid, etc.) or dock your phone/tablet to a TV, this mod makes the game actually playable without a touchscreen.
 
-## Current Version: 3.8.0 — Console Parity: Quick Wins
+## Current Version: 3.8.1 — Recipe Purchase Fix
 
-## What's New in v3.8.0
+## What's New in v3.8.1
 
-A big batch of console-parity fixes — the menus that still felt touch-only on a controller now behave like the Switch version. Each group is individually toggleable via GMCM.
-
-**Resizable toolbar** — the Options → "Toolbar Slot Size" slider finally works. AC's 12-slot toolbar now scales to the slider (icons, highlights, and stack/quality numbers scale with it), capped so the full row always clears the energy bar. The "Toolbar Padding" slider lifts the toolbar off the screen edge. (Fixes the public "can't resize the toolbar" report.)
-
-**Museum donations & rearranging with a controller** — donate artifacts and rearrange the museum layout without the touchscreen: a visible cursor, D-pad selection, A to donate, and full grid navigation when rearranging.
-
-**Geode breaking feels like console** — single A-press to crack, the geode you'll break is auto-selected with its tooltip shown, and spatial navigation moves between geodes the way the Switch does.
-
-**Load Game & title screen cursors** — the Load Game and title screens now show a proper cursor and snap-navigate (slot selection, scrolling, and the delete-confirmation dialog all reachable on a controller).
-
-**Adventurer's Guild & multi-page mail** — the monster eradication goals list and multi-page letters are now fully navigable.
-
-**Plus:** Community Center bundle donation greys out ineligible items, the Dwarvish Translation Guide reward is learned instead of dumped in your bag, single-tile placement ghost for craftables (sprinklers/machines), hold-A to craft continuously, and dialogue answer boxes start on the first option. The Community Center "missed rewards" bag was investigated and confirmed working (it's the small vanilla giftbox — easy to miss).
+**Buying recipes with a controller now actually teaches them.** Previously, with console shops enabled, purchasing a cooking or crafting recipe from a shop (Pierre, Robin, etc.) using a gamepad deducted your money but never added the recipe — it was lost. The controller purchase path called the game's `actionWhenPurchased` directly, which (unlike the touchscreen path) doesn't learn the recipe on its own; the mod now performs the recipe-learning step itself, exactly like the vanilla buy flow. Thanks to Rizkyrahmadhani12 for the report.
 
 ## Controller Layout Support
 
@@ -328,6 +316,9 @@ Android Stardew Valley has broken controller support that makes it nearly unplay
 MIT License - Feel free to modify and redistribute.
 
 ## Changelog
+
+### 3.8.1 — Recipe Purchase Fix
+- **Recipes are learned when bought with a controller (Nexus bug #1087126)** — with `EnableConsoleShops` on, buying a cooking/crafting recipe via gamepad charged the player but never taught the recipe. Our purchase path calls `Object.actionWhenPurchased` directly, which only returns `isRecipe.Value` and does not learn the recipe — vanilla `ShopMenu.purchaseItem` learns it via a separate `Item.LearnRecipe()` call afterward. The mod now mirrors that step (learn + `newRecipe` sound) in the handled branch. Verified on G Cloud (Dehydrator + Birch Syrup recipes learned cleanly). Pre-existing bug, not a 3.8.0 regression.
 
 ### 3.8.0 — Console Parity: Quick Wins
 - **Resizable toolbar (#27)** — AC's custom toolbar draw now reads the vanilla `Options.toolbarSlotSize` slider (id 148) instead of a hardcoded 64px, scaling the 12 slots, icons, and stack/quality/gauge overlays. Size is capped so the centered row clears the bottom-right energy/health HUD. The "Toolbar Padding" slider (id 134), previously dead under the centered toolbar, is repurposed as a docked-edge gap. Fixes the public "Can't resize the toolbar" report.
