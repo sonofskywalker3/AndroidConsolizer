@@ -23,12 +23,12 @@ const USER_DATA = process.env.NEXUS_PW_PROFILE;
 const CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const EDIT_URL = 'https://www.nexusmods.com/games/stardewvalley/mods/41869/edit';
 const HOME_URL = 'https://www.nexusmods.com/';
-const VERSION = '3.8.0';
+const VERSION = '3.8.4';
 const MARKER = "What's New in v3.8";
 const LOGIN_WAIT_MS = 6 * 60 * 1000;
 
 if (!USER_DATA) { console.error('[FATAL] NEXUS_PW_PROFILE not set'); process.exit(3); }
-const description = readFileSync(HERE('./nexus-3.8.0-description.bbcode'), 'utf8');
+const description = readFileSync(HERE('./nexus-3.8.4-description.bbcode'), 'utf8');
 console.log(`[init] desc=${description.length} chars  profile=${USER_DATA}`);
 
 const ctx = await chromium.launchPersistentContext(USER_DATA, {
