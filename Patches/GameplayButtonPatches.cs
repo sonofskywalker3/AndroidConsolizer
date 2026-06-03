@@ -29,6 +29,14 @@ namespace AndroidConsolizer.Patches
         internal static float RawLeftTrigger;
         internal static float RawRightTrigger;
 
+        /// <summary>Raw DIGITAL trigger button flags cached from GetState before suppression.
+        /// Diagnostic only (3.8.2 Switch Pro investigation): some controllers report ZL/ZR
+        /// as digital Buttons.LeftTrigger/RightTrigger with the analog axis pinned at 0/1,
+        /// rather than a smooth analog pull. Captured here so the toolbar diagnostics can
+        /// show whether this device feeds the analog axis our state machine depends on.</summary>
+        internal static bool RawLeftTriggerButton;
+        internal static bool RawRightTriggerButton;
+
         /// <summary>Cached swapped GamePadState to ensure all GetState() calls within the same tick return identical results.</summary>
         private static GamePadState? _cachedState;
         private static float _cachedRawRightStickY;
@@ -283,6 +291,12 @@ namespace AndroidConsolizer.Patches
                 // Cache raw trigger values before suppression, so HandleTriggersDirectly can use them
                 RawLeftTrigger = __result.Triggers.Left;
                 RawRightTrigger = __result.Triggers.Right;
+
+                // Diagnostic (3.8.2): also cache the digital trigger button flags before any
+                // suppression rebuilds the Buttons field, so toolbar diagnostics can compare
+                // analog axis vs digital flag for Switch Pro-style controllers.
+                RawLeftTriggerButton = __result.IsButtonDown(Buttons.LeftTrigger);
+                RawRightTriggerButton = __result.IsButtonDown(Buttons.RightTrigger);
 
                 // Zero out right thumbstick when ShopMenu is on buy tab.
                 // This prevents vanilla (and Game1's scroll-wheel conversion) from scrolling
