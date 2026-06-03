@@ -190,6 +190,22 @@ Three player-facing real-time gameplay systems. Each likely needs multiple patch
 
 ---
 
+## Future — Custom Keymapper (Device-Agnostic Remapping)
+
+**Version: TBD (candidate for a 4.x). Own brainstorming session required.** Born from the Nexus Switch Pro thread (toolbar bug #1087126 + "buttons backwards" follow-up, 2026-06-03).
+
+### 72. Custom Keymapper — learn-by-press button remapping
+- **Why a model table won't work:** keysend is `controller × Android device`, NOT controller alone. A real Nintendo Switch Pro Controller sent **Xbox-positional** codes (right button → raw `B`) on a Samsung S26, but the same physical controller almost certainly reports differently on other phones (Nexus reporter kabusann2008 on a Pixel 9a hit the toolbar bug but never reported backwards buttons). So a "Controller" dropdown that maps *model → keysend* reintroduces the exact device-specific quirk it's trying to remove. We explicitly rejected the controller-database approach for this reason.
+- **The chosen direction:** a **calibration / learn-by-press** flow. "Press the button that should confirm… now cancel… now the tool button…" — the mod records the actual raw codes for THIS device and builds the correct map, with zero assumptions about hardware we don't own. Self-healing across any controller/device combo. Persist the learned profile per device (keyed on `InputDevice.Descriptor` or vendor/product) in config.
+- **Building blocks already proven (3.8.3 diagnostics):**
+  - Controller identity IS readable at runtime via reflection: `GamePad.GamePads[i]` (`static AndroidGamePad[4]`) → `._device` (Android `InputDevice`) → `.VendorId` / `.ProductId` / `.Name` / `.Descriptor`. Nintendo vendor ID = `1406` (0x057E), Pro Controller product = `0x2009`. Decompile: `MonoGame.Framework/.../AndroidGamePad.cs` + `GamePad.cs`. Reflection-only (PC-safe with fallback) per the Android-vs-PC pattern.
+  - Raw→game button mapping is already captured by the `[BtnMap]` diagnostic in `GameplayButtonPatches.GetState_Postfix` (3.8.3) — reuse its edge-detection to drive the calibration capture.
+- **Related sub-issue to fold in — digital-only triggers:** the Switch Pro's ZL/ZR are *true digital buttons* (analog axis flatlined at `0.00`, only `Buttons.LeftTrigger/RightTrigger` flips). This is controller-intrinsic (not device-dependent), and it breaks toolbar item-switching after a row swap because (a) our suppression + `HandleTriggersDirectly` are gated on the analog axis, so the mod's handler no-ops and the game's `pressSwitchToolButton` leaks through, and (b) the bumper row-swap arms `_triggerSlotTarget` and the digital trigger emits no SMAPI event to clear it, so the lock pins `CurrentToolIndex` (only a bumper / D-pad-L/R clears it — confirmed on device). **This trigger fix is device-agnostic and could ship independently/sooner** than the full keymapper: fold the digital flag into `RawLeftTrigger/RawRightTrigger` so the mod's handler runs (switching items + keeping the lock fresh) and strip the digital button so the game stops fighting. See 3.8.2 `[SPDiag]` analysis in the 2026-06-03 logs.
+- **Current workaround (no code):** a Switch Pro on the S26 should be set to **layout = Xbox + style = Switch** (the Pro reports Xbox-positional there). User accepted this for now.
+- **Cleanup owed before any release:** 3.8.2/3.8.3 added always-on INFO diagnostics (`[SPDiag]`, `[BtnMap]`, `[ToolIdx]`). These are local-only (not on Nexus) but must be gated behind Verbose Logging or removed before shipping anything past 3.8.1.
+
+---
+
 ## Post-4.0 — Advanced Features
 
 Genuinely Android-better territory, not parity. No version commitment yet — these get scheduled when the time comes. Each likely needs its own brainstorming session.
