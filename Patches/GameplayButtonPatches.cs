@@ -330,15 +330,21 @@ namespace AndroidConsolizer.Patches
                 RawLeftStickX = __result.ThumbSticks.Left.X;
                 RawLeftStickY = __result.ThumbSticks.Left.Y;
 
-                // Cache raw trigger values before suppression, so HandleTriggersDirectly can use them
-                RawLeftTrigger = __result.Triggers.Left;
-                RawRightTrigger = __result.Triggers.Right;
-
-                // Diagnostic (3.8.2): also cache the digital trigger button flags before any
-                // suppression rebuilds the Buttons field, so toolbar diagnostics can compare
-                // analog axis vs digital flag for Switch Pro-style controllers.
+                // Cache the digital trigger button flags before any suppression rebuilds the
+                // Buttons field. Some controllers (Nintendo Switch Pro ZL/ZR) are TRUE digital
+                // triggers: the analog axis stays pinned at 0 and only this flag flips.
                 RawLeftTriggerButton = __result.IsButtonDown(Buttons.LeftTrigger);
                 RawRightTriggerButton = __result.IsButtonDown(Buttons.RightTrigger);
+
+                // Cache the EFFECTIVE raw trigger values for HandleTriggersDirectly. Fold the
+                // digital flag in as a full pull (1.0) so digital-only triggers drive the mod's
+                // own slot-navigation state machine (which reads these). Without this fold, a
+                // Switch Pro reads 0.0 here, HandleTriggersDirectly no-ops, the game's native
+                // pressSwitchToolButton handles the digital trigger instead, and item-switching
+                // breaks after a row swap (the bumper-armed _triggerSlotTarget lock never clears
+                // because the trigger emits no SMAPI event). See TODO #72.
+                RawLeftTrigger = Math.Max(__result.Triggers.Left, RawLeftTriggerButton ? 1f : 0f);
+                RawRightTrigger = Math.Max(__result.Triggers.Right, RawRightTriggerButton ? 1f : 0f);
 
                 // Zero out right thumbstick when ShopMenu is on buy tab.
                 // This prevents vanilla (and Game1's scroll-wheel conversion) from scrolling
@@ -403,7 +409,11 @@ namespace AndroidConsolizer.Patches
                 // Must zero BOTH analog values AND digital trigger buttons (Buttons.LeftTrigger/
                 // RightTrigger) since the GamePadState constructor preserves buttons as-is.
                 // Our HandleTriggersDirectly() reads RawLeftTrigger/RawRightTrigger instead.
-                if (ShouldSuppressTriggers() && (__result.Triggers.Left > 0f || __result.Triggers.Right > 0f))
+                // The digital-flag terms catch Switch Pro-style triggers (analog axis flatlined
+                // at 0): without them the rebuild below never runs for a digital trigger, the
+                // flag leaks to the game's pressSwitchToolButton, and item-switching breaks.
+                if (ShouldSuppressTriggers() && (__result.Triggers.Left > 0f || __result.Triggers.Right > 0f
+                    || RawLeftTriggerButton || RawRightTriggerButton))
                 {
                     var btns = __result.Buttons;
                     var cleanButtons = new GamePadButtons(
@@ -446,9 +456,11 @@ namespace AndroidConsolizer.Patches
                         swapXY = inMenu;   // Xbox/PS: swap in menus only (gameplay uses raw X/Y)
                 }
 
-                // 3.8.3 diagnostic: capture raw->game button mapping on each physical press,
-                // BEFORE the early-out below (so it logs even when no swap happens).
-                LogButtonMapDiag(__result, swapAB, swapXY, Game1.activeClickableMenu != null);
+                // 3.8.3 diagnostic (gated behind Verbose Logging): capture raw->game button
+                // mapping on each physical press, BEFORE the early-out below so it logs even
+                // when no swap happens. Kept for the future Custom Keymapper work (TODO #72).
+                if (ModEntry.Config?.VerboseLogging == true)
+                    LogButtonMapDiag(__result, swapAB, swapXY, Game1.activeClickableMenu != null);
 
                 // Nothing to do if no swapping needed
                 if (!swapXY && !swapAB)
