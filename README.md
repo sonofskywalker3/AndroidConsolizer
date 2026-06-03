@@ -4,11 +4,15 @@ A SMAPI mod that makes Android Stardew Valley's controller support work like the
 
 If you play on a handheld (Odin, Ayaneo, Retroid, etc.) or dock your phone/tablet to a TV, this mod makes the game actually playable without a touchscreen.
 
-## Current Version: 3.8.1 — Recipe Purchase Fix
+## Current Version: 3.8.4 — Switch Pro Controller & Recipe Fixes
 
-## What's New in v3.8.1
+## What's New in v3.8.4
 
-**Buying recipes with a controller now actually teaches them.** Previously, with console shops enabled, purchasing a cooking or crafting recipe from a shop (Pierre, Robin, etc.) using a gamepad deducted your money but never added the recipe — it was lost. The controller purchase path called the game's `actionWhenPurchased` directly, which (unlike the touchscreen path) doesn't learn the recipe on its own; the mod now performs the recipe-learning step itself, exactly like the vanilla buy flow. Thanks to Rizkyrahmadhani12 for the report.
+**Nintendo Switch Pro controllers now switch toolbar items correctly.** On some Android devices the Pro controller's ZL/ZR triggers are *digital-only* (no analog pressure), which the mod's toolbar navigation wasn't reading — so after you changed toolbar rows, the triggers stopped switching items until you nudged the D-pad. The mod now recognizes digital triggers and drives item-switching itself, so it keeps working across row changes. Thanks to kabusann2008 for the report.
+
+> **Note for Switch Pro users:** when a Pro controller is paired to a non-Nintendo Android device, the system usually reports its buttons in *Xbox positions* (the button labeled A sits where Xbox's B is, etc.). If your face buttons feel swapped, set **Controller Layout = Xbox** (keep **Control Style = Switch**) in the config. A proper auto-detecting fix is planned for a future update.
+
+**Buying recipes with a controller now actually teaches them (v3.8.1).** With console shops enabled, purchasing a cooking or crafting recipe from a shop (Pierre, Robin, etc.) using a gamepad deducted your money but never added the recipe. The controller purchase path called the game's `actionWhenPurchased` directly, which (unlike the touchscreen path) doesn't learn the recipe on its own; the mod now performs the recipe-learning step itself, exactly like the vanilla buy flow. Thanks to Rizkyrahmadhani12 for the report.
 
 ## Controller Layout Support
 
@@ -316,6 +320,10 @@ Android Stardew Valley has broken controller support that makes it nearly unplay
 MIT License - Feel free to modify and redistribute.
 
 ## Changelog
+
+### 3.8.4 — Switch Pro Controller Trigger Fix
+- **Digital-only triggers now drive toolbar item-switching (Nexus bug #1087126)** — Nintendo Switch Pro ZL/ZR report as pure digital buttons on many Android devices (analog axis pinned at 0). The mod's trigger pipeline was gated entirely on the analog value, so its own slot-navigation never ran; the game's native `pressSwitchToolButton` handled the trigger instead, and a bumper-armed slot lock then froze item-switching after a row change until a D-pad press. The effective trigger value now folds in the digital flag, so the mod handles digital triggers itself (item-switching survives row swaps) and the native handler is suppressed. Also hardens analog triggers against hall-effect mid-pull dropouts. Device-verified (S26 + Switch Pro). Thanks to kabusann2008.
+- Internally rolls up the v3.8.2–v3.8.3 Switch Pro investigation diagnostic builds (now gated behind Verbose Logging).
 
 ### 3.8.1 — Recipe Purchase Fix
 - **Recipes are learned when bought with a controller (Nexus bug #1087126)** — with `EnableConsoleShops` on, buying a cooking/crafting recipe via gamepad charged the player but never taught the recipe. Our purchase path calls `Object.actionWhenPurchased` directly, which only returns `isRecipe.Value` and does not learn the recipe — vanilla `ShopMenu.purchaseItem` learns it via a separate `Item.LearnRecipe()` call afterward. The mod now mirrors that step (learn + `newRecipe` sound) in the handled branch. Verified on G Cloud (Dehydrator + Birch Syrup recipes learned cleanly). Pre-existing bug, not a 3.8.0 regression.
