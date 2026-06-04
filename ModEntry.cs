@@ -1339,6 +1339,14 @@ namespace AndroidConsolizer
 
             configMenu.AddBoolOption(
                 mod: this.ModManifest,
+                name: () => "Charge Tools While Moving",
+                tooltip: () => "Hold an upgraded (Copper+) Hoe or Watering Can while walking to charge its area effect (like console), instead of rapid single uses. Release fires the charged area; a quick tap is still one use. Basic tools, Pickaxe and Axe are unaffected.",
+                getValue: () => Config.EnableMoveWhileCharging,
+                setValue: value => Config.EnableMoveWhileCharging = value
+            );
+
+            configMenu.AddBoolOption(
+                mod: this.ModManifest,
                 name: () => "Free Cursor on Settings",
                 tooltip: () => "Use the vanilla free-roaming cursor instead of snap navigation on the Options page and Mod Config page. Requires Console Menus to be enabled.",
                 getValue: () => Config.FreeCursorOnSettings,
