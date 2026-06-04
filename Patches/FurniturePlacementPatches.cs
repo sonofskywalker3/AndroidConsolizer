@@ -25,7 +25,8 @@ namespace AndroidConsolizer.Patches
     /// #68: the same treatment is applied to placeable CRAFTABLES (machines, kegs,
     /// sprinklers, etc. — plain Object / BigCraftable, 1x1 footprint) via a parallel
     /// branch, gated on the sibling toggle <c>EnableConsoleCraftablePlacement</c>.
-    /// Bombs and crab pots are excluded (vanilla renders those specially).
+    /// Bombs, crab pots, and crop seeds are excluded (#73 — seeds plant into HoeDirt
+    /// and shouldn't ghost; vanilla renders bombs/crab pots specially).
     /// </summary>
     internal static class FurniturePlacementPatches
     {
@@ -171,6 +172,13 @@ namespace AndroidConsolizer.Patches
         /// Items whose placement preview vanilla handles specially — let the engine draw them
         /// rather than forcing our single-tile ghost. Bombs (286/287/288) are thrown, not
         /// tile-placed; crab pots (685) get a water-specific preview.
+        ///
+        /// #73: crop seeds (Category -74) report <c>isPlaceable() == true</c> on Android
+        /// (edibility &lt; 0 path), so they fell into the #68 craftable branch and drew a
+        /// seed-packet ghost in front of the player while planting. Seeds aren't "placed" like
+        /// a machine — they plant into <c>HoeDirt</c> — so there should be no ghost at all.
+        /// Saplings are a separate category (handled by the engine's own sapling path), so
+        /// keying on <c>SeedsCategory</c> leaves tree placement untouched.
         /// </summary>
         private static bool IsSpecialPlacementObject(SObject obj)
         {
@@ -178,6 +186,8 @@ namespace AndroidConsolizer.Patches
                 && (obj.ParentSheetIndex == 286 || obj.ParentSheetIndex == 287 || obj.ParentSheetIndex == 288))
                 return true;
             if (obj.ParentSheetIndex == 685)
+                return true;
+            if (obj.Category == SObject.SeedsCategory)
                 return true;
             return false;
         }

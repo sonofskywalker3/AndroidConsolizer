@@ -130,6 +130,14 @@ Vanilla GeodeMenu opens with `_selectedItemIndex = -1` — the cursor sits at sl
 - **Toggle:** `EnableMuseumDonationController` (default true). **File:** `Patches/MuseumMenuPatches.cs`.
 - _(Original approach notes, kept for history):_ Controller-only placement was inaccessible; touch was required to select/place. The spec proposed a snap-based selection overlay with a virtual tile-space cursor — in practice the vanilla snap chain already handled selection/placement once the cursor was made visible, so no custom selection model was needed.
 
+### 73. Seeds Should Be Exempt From Placement Ghosting
+- **✅ FIX IMPLEMENTED — v3.8.5 (2026-06-04), awaiting device verification.** Added `obj.Category == SObject.SeedsCategory` (-74) to `IsSpecialPlacementObject` in `Patches/FurniturePlacementPatches.cs`, so crop seeds fall back to vanilla (no ghost) instead of the #68 craftable branch. Confirmed via decompiled `Object.isPlaceable()` (line 6118) that seeds report placeable through the `Category == -74 && edibility < 0` path; saplings use a separate category so tree placement is untouched. **Verify next planting session:** hold seeds → no seed-packet ghost in front of the player, planting still works; regression-check a furnace/sprinkler still ghosts and furniture placement is unchanged. **Note (not done):** fertilizer (Category -19) hits the same `isPlaceable` path and likely also ghosts — separate fix if reported.
+- **Reported 2026-06-04 (user, in-game):** planting seeds shows the seed packet ghosted in front of the player — "weird planting last night seeing the seed packet ghosted in front of me." Seeds should plant directly with no placement ghost.
+- **Root-cause hypothesis:** regression from **#68** (the v3.7.46 craftable-placement ghost). That patch extended the single-tile ghost + translucent sprite from `Furniture` to *any* placeable `Object`/`BigCraftable`. **Seeds are plain `StardewValley.Object`**, so they now fall into the craftable branch and get a ghost. Seeds aren't "placed" like a machine — they plant into `HoeDirt` — so the ghost is wrong for them, the same way bombs (286/287/288) and crab pots (685) were already excluded.
+- **Fix approach:** add seeds to the exclusion list in the craftable branch of `Patches/FurniturePlacementPatches.cs` (the same gate that already excludes bombs + crab pots). Detect via seed category (`Object.Category == StardewValley.Object.SeedsCategory` / `-74`) rather than an ID list. Furniture + machine/sprinkler ghosts must stay untouched — verify a furnace/sprinkler still ghosts and a seed packet no longer does.
+- **Files:** `Patches/FurniturePlacementPatches.cs` (extend the bomb/crab-pot exclusion).
+- **Size:** small localized patch, same family as #68. Next 0.0.1.
+
 ---
 
 ## v3.9.0 — Console Parity: Big Systems
