@@ -25,6 +25,20 @@ namespace AndroidConsolizer.Patches
         private static FieldInfo CurrentlySelectedItemField;
         private static FieldInfo ItemsPerPageField;
 
+        // #75: the real buy-list scroll lives in the MobileScrollbox `scrollArea` (a pixel offset),
+        // NOT currentItemIndex (which stays 0 on Android — a PC-paging vestige). Reflected so we can
+        // capture and re-apply the scroll across a purchase rebuild.
+        private static FieldInfo _scrollAreaField;
+        private static MethodInfo _updateItemButtonsMethod;
+        private static FieldInfo _itemButtonHeightField;
+
+        // MobileScrollbox is absent from the PC DLL — resolve its members off the runtime object type
+        // and cache on first use (same pattern as OptionsPagePatches).
+        private static MethodInfo _msGetYOffset;
+        private static MethodInfo _msSetYOffset;
+        private static MethodInfo _msSetMaxYOffset;
+        private static bool _msMethodsResolved;
+
 
         /// <summary>Check if the active menu is a ShopMenu on the buy tab (right stick should be suppressed).</summary>
         internal static bool ShouldSuppressRightStick()
@@ -108,8 +122,14 @@ namespace AndroidConsolizer.Patches
             // workarounds documented in CLAUDE.md.
             CurrentlySelectedItemField = AccessTools.Field(typeof(ShopMenu), "currentlySelectedItem");
             // #75: itemsPerPage is an Android-differing member (see CLAUDE.md / memory) — reflect it
-            // to clamp the restored scroll position after rebuildSaleButtons resets currentItemIndex.
+            // to recompute the scroll bounds after a purchase rebuild.
             ItemsPerPageField = AccessTools.Field(typeof(ShopMenu), "itemsPerPage");
+            // #75: the real buy-list scroll lives in the MobileScrollbox scrollArea (pixel offset),
+            // not currentItemIndex. Reflect scrollArea + updateItemButtons + itemButtonHeight to
+            // capture and re-apply the scroll across the purchase rebuild.
+            _scrollAreaField = AccessTools.Field(typeof(ShopMenu), "scrollArea");
+            _updateItemButtonsMethod = AccessTools.Method(typeof(ShopMenu), "updateItemButtons");
+            _itemButtonHeightField = AccessTools.Field(typeof(ShopMenu), "itemButtonHeight");
 
             try
             {
@@ -579,27 +599,18 @@ namespace AndroidConsolizer.Patches
                     ? (int)CurrentlySelectedItemField.GetValue(shop)
                     : -1;
 
-                // #75: rebuildSaleButtons() resets currentItemIndex = 0 (decompile ShopMenu.cs:2721),
-                // and neither it nor setCurrentItem restores the scroll. So after a purchase the buy
-                // list jumps to the top while the selection follows the bought item — which then sits
-                // off-screen if it was below the fold. Capture the scroll here and restore it after the
-                // rebuild so the viewport stays put across a purchase.
-                int prevScroll = shop.currentItemIndex;
+                // #75: the Android buy list scrolls via the MobileScrollbox `scrollArea` (a pixel
+                // offset), NOT currentItemIndex — that field stays 0 (a PC-paging vestige), which is
+                // why the v3.8.21 currentItemIndex restore did nothing. rebuildSaleButtons recreates
+                // forSaleButtons at UNSCROLLED Y positions (decompile ShopMenu.cs:2580) and update()
+                // only re-applies the offset during momentum (ShopMenu.cs:1951), so after a purchase
+                // the list visually snaps to the top while the selection follows the bought item —
+                // leaving it off-screen if it was below the fold. Capture the real scroll offset here
+                // and re-apply it after the rebuild (RestoreScrollOffset, below) so the viewport stays put.
+                object scrollArea = _scrollAreaField?.GetValue(shop);
+                int prevYOffset = GetScrollOffset(scrollArea);
 
                 AccessTools.Method(typeof(ShopMenu), "rebuildSaleButtons")?.Invoke(shop, null);
-
-                // #75: restore the scroll the rebuild clobbered, clamped to the valid window. The
-                // bought item is at/below the viewport top (you select then buy), so the items that
-                // were visible stay visible. itemsPerPage is reflected (Android-differing); fall back
-                // to a forSale-count clamp if it's unavailable (the engine re-clamps on next draw).
-                try
-                {
-                    int count = shop.forSale?.Count ?? 0;
-                    int itemsPerPage = (ItemsPerPageField != null) ? (int)ItemsPerPageField.GetValue(shop) : 0;
-                    int maxScroll = (itemsPerPage > 0) ? Math.Max(0, count - itemsPerPage) : Math.Max(0, count - 1);
-                    shop.currentItemIndex = Math.Max(0, Math.Min(prevScroll, maxScroll));
-                }
-                catch { /* best-effort scroll restore */ }
 
                 // Refresh hoveredItem at the same row the user was on. setCurrentItem
                 // (ShopMenu.cs:1380-1422) sets currentlySelectedItem, currentItem, and
@@ -628,6 +639,10 @@ namespace AndroidConsolizer.Patches
                     catch { /* best-effort */ }
                 }
 
+                // #75: re-apply the captured scroll offset to the freshly rebuilt buttons so the
+                // viewport stays exactly where the user left it across the purchase.
+                RestoreScrollOffset(shop, scrollArea, prevYOffset);
+
                 if (prevSnapId == -1) return;
 
                 ClickableComponent newSnap = shop.getComponentWithID(prevSnapId);
@@ -639,6 +654,64 @@ namespace AndroidConsolizer.Patches
                 shop.snapCursorToCurrentSnappedComponent();
             }
             catch { /* best-effort — older builds may not expose rebuildSaleButtons */ }
+        }
+
+        /// <summary>Lazily resolve the MobileScrollbox scroll methods off the runtime object type
+        /// (the type is absent from the PC DLL, so it can't be referenced at compile time).</summary>
+        private static void ResolveScrollboxMethods(object scrollArea)
+        {
+            if (_msMethodsResolved || scrollArea == null) return;
+            var t = scrollArea.GetType();
+            _msGetYOffset = AccessTools.Method(t, "getYOffsetForScroll");
+            _msSetYOffset = AccessTools.Method(t, "setYOffsetForScroll", new[] { typeof(int) });
+            _msSetMaxYOffset = AccessTools.Method(t, "setMaxYOffset", new[] { typeof(int) });
+            _msMethodsResolved = true;
+        }
+
+        /// <summary>#75: read the MobileScrollbox pixel scroll offset (0 if unavailable).</summary>
+        private static int GetScrollOffset(object scrollArea)
+        {
+            try
+            {
+                if (scrollArea == null) return 0;
+                ResolveScrollboxMethods(scrollArea);
+                if (_msGetYOffset != null)
+                    return (int)_msGetYOffset.Invoke(scrollArea, null);
+            }
+            catch { /* diagnostic/best-effort — never break the purchase */ }
+            return 0;
+        }
+
+        /// <summary>
+        /// #75: re-apply a captured scroll offset to the rebuilt buy-list buttons. rebuildSaleButtons
+        /// recreates every forSaleButton at its UNSCROLLED Y (decompile ShopMenu.cs:2580) and update()
+        /// only re-applies the scrollArea offset during momentum (ShopMenu.cs:1951), so without this
+        /// the list visually snaps to the top after a purchase. Recompute maxYOffset the way
+        /// ShopMenu.setScrollBarToCurrentIndex does (:1350) — forSale shrank by one — clamp the old
+        /// offset into the new range, then updateItemButtons repositions every button by the offset
+        /// (:732). All MobileScrollbox members are Android-only → reflected off the runtime object.
+        /// </summary>
+        private static void RestoreScrollOffset(ShopMenu shop, object scrollArea, int prevYOffset)
+        {
+            try
+            {
+                if (scrollArea == null) return;
+                ResolveScrollboxMethods(scrollArea);
+
+                int count = shop.forSale?.Count ?? 0;
+                int itemsPerPage = (ItemsPerPageField != null) ? (int)ItemsPerPageField.GetValue(shop) : 0;
+                int itemButtonHeight = (_itemButtonHeightField != null) ? (int)_itemButtonHeightField.GetValue(shop) : 0;
+                int newMax = Math.Max(0, (count - itemsPerPage) * (itemButtonHeight + 8));
+
+                _msSetMaxYOffset?.Invoke(scrollArea, new object[] { newMax });
+                int clamped = Math.Max(-newMax, Math.Min(0, prevYOffset));
+                _msSetYOffset?.Invoke(scrollArea, new object[] { clamped });
+                _updateItemButtonsMethod?.Invoke(shop, null);
+
+                if (ModEntry.Config?.VerboseLogging ?? false)
+                    Monitor?.Log($"[ShopScroll] restore offset {prevYOffset} -> {clamped} (newMax={newMax}, forSale={count})", LogLevel.Debug);
+            }
+            catch { /* best-effort scroll restore — never break the purchase */ }
         }
 
         /// <summary>
