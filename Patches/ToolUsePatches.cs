@@ -63,6 +63,14 @@ namespace AndroidConsolizer.Patches
                 else
                     Monitor.Log("[MoveCharge] Game1.pressUseToolButton not found — suppression not attached.", LogLevel.Warn);
 
+                // Stage 2: counteract the tap-to-move teardown that stalls the charge on movement.
+                var mobileInput = AccessTools.Method(typeof(Game1), "_mobileUpdateControlInput");
+                if (mobileInput != null)
+                    harmony.Patch(mobileInput,
+                        postfix: new HarmonyMethod(typeof(ToolUsePatches), nameof(MobileUpdateControlInput_Postfix)));
+                else
+                    Monitor.Log("[MoveCharge] Game1._mobileUpdateControlInput not found — charge keep-alive not attached.", LogLevel.Warn);
+
                 Monitor.Log("Tool-use (move-while-charging) patches applied.", LogLevel.Trace);
             }
             catch (Exception ex)
@@ -138,7 +146,7 @@ namespace AndroidConsolizer.Patches
 
                 Monitor?.Log(
                     $"[MoveCharge] tick={Game1.ticks} tool={p.CurrentTool?.Name} power={p.toolPower.Value} "
-                    + $"hold={p.toolHold.Value} using={p.UsingTool} canMove={p.CanMove} "
+                    + $"hold={p.toolHold.Value} using={p.UsingTool} canRelease={p.canReleaseTool} canMove={p.CanMove} "
                     + $"moveDirs={p.movementDirections.Count} holdActive={_holdActive} "
                     + $"suppressed={_suppressedThisHold} btnHeld={GameplayButtonPatches.GameUseToolHeld} "
                     + $"Lstk=({GameplayButtonPatches.RawLeftStickX:F2},{GameplayButtonPatches.RawLeftStickY:F2})",
@@ -170,6 +178,37 @@ namespace AndroidConsolizer.Patches
                 return false; // skip original
             }
             catch { return true; }
+        }
+
+        /// <summary>Stage 2 — keep the charge alive while moving. The Android tap-to-move system
+        /// (driven from Game1._mobileUpdateControlInput, which runs every tick BEFORE the charge
+        /// ramp and press block inside Game1.UpdateControlInput) tears down an in-progress tool use
+        /// the instant a movement direction is held: it drops canReleaseTool/useToolHeld so the
+        /// engine's charge ramp (decompile ~13914) stalls and canStrafeForToolUse returns false,
+        /// then ends the use and fires the charged area prematurely. While our hold session is open
+        /// over a qualifying upgraded Hoe/Watering Can, re-assert the charge-hold state right after
+        /// that teardown so the engine's OWN ramp accumulates toolPower and canStrafeForToolUse lets
+        /// the player slide. On button release the session closes (GetState postfix runs earlier in
+        /// the same tick), so this stops and vanilla EndUsingTool fires the charged area normally.
+        /// The ref params are the caller's (UpdateControlInput) locals.</summary>
+        private static void MobileUpdateControlInput_Postfix(ref bool useToolHeld, ref bool useToolButtonReleased)
+        {
+            try
+            {
+                var cfg = ModEntry.Config;
+                if (cfg == null || !cfg.EnableMoveWhileCharging) return;
+                if (!_holdActive || !IsQualifyingTool()) return;
+
+                var p = Game1.player;
+                if (p == null) return;
+
+                // Undo the tap-to-move teardown so the engine's charge ramp + strafe run normally.
+                useToolHeld = true;
+                useToolButtonReleased = false;
+                p.canReleaseTool = true;
+                p.UsingTool = true;
+            }
+            catch { /* never break tool use */ }
         }
     }
 }
