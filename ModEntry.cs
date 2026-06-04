@@ -209,7 +209,6 @@ namespace AndroidConsolizer
             Patches.CraftingPagePatches.Apply(harmony, this.Monitor);
             Patches.MuseumMenuPatches.Apply(harmony, this.Monitor);
             Patches.BootDiagnosticPatches.Apply(harmony, this.Monitor);
-            Patches.ToolChargeDiagnosticPatches.Apply(harmony, this.Monitor);
             Patches.BootDiagnosticPatches.ApplyAdditionalPatches(harmony, this.Monitor);
 
             // Register events
