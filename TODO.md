@@ -169,7 +169,7 @@ Three player-facing real-time gameplay systems. Each likely needs multiple patch
 - **Expected (console):** Move freely, hold tool button to aim (stick controls crosshairs), release to fire.
 - **NOT mod-caused (same subsystem as #25).** Android's tap-to-move/mobile-input layer (`Game1._mobileUpdateControlInput`) injected the slingshot's use-tool button events from stick/tap motion (`tapToMove.mobileKeyStates`), so stick motion alone fired it, a held button auto-fired, and movement was blocked. Aim was also mirrored/down-defaulting because Android defaults `Options.useLegacySlingshotFiring = true` (Switch uses non-legacy).
 - **Resolved:** postfix `_mobileUpdateControlInput` to drive the three use-tool flags from the physical tool button only (hold→draw/aim with left stick, release→fire once), and force `useLegacySlingshotFiring=false` for console direct-aim. GMCM `EnableSlingshotAim`. Fix in `Patches/SlingshotAimPatches.cs`. Full writeup in `DONE.md`.
-- **Dual-stick stretch (better-than-console) deferred** — right-stick aim-and-fire while walking; see the design spec `docs/superpowers/specs/2026-06-04-slingshot-combat-25b-design.md` "Making it even better". Separate toggle/commit; needs a slingshot carve-out in `SuppressRightStickInOverworld`.
+- **Dual-stick (better-than-console) is NOT an AC feature** — per the console-parity-only scope, it's spun out as a future **standalone mod** (right-stick aim-and-fire while walking). Design seed preserved in `docs/superpowers/specs/2026-06-04-slingshot-combat-25b-design.md` "Making it even better". See memory `feedback_ac_console_parity_only_extras_are_separate_mods`.
 
 ---
 

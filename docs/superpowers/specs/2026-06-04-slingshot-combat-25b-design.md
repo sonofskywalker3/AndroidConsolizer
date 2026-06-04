@@ -48,9 +48,11 @@ User equips the slingshot, tries to walk, then hold-aim-releases a couple of tim
 
 **Gating:** new GMCM toggle `EnableSlingshotAim` (default true), scoped strictly to slingshot use. No effect on any other tool/weapon.
 
-## Making it even better — dual-stick slingshot (stretch / v2, optional)
+## Making it even better — dual-stick slingshot (SPUN OUT to a separate mod — NOT AC)
 
-Better-than-console twin-stick aiming (design philosophy: "console as baseline, not ceiling"):
+> **Re-scoped 2026-06-04:** per the user, AndroidConsolizer stays **console-parity only**; better-than-console features become their own standalone mods rather than being rolled into AC (now feasible because publishing/updating multiple mods is automated). This design is preserved here as the **seed for a future standalone slingshot mod**, not an AC feature. Do NOT implement it in AC.
+
+Better-than-console twin-stick aiming:
 
 - Slingshot equipped: **left stick walks** (and still drives the console hold-to-aim when the tool button is held).
 - **Right stick** simultaneously **aims the slingshot and fires** in that direction — twin-stick-shooter style, no tool-button hold required. Walk and shoot at once.
@@ -65,7 +67,7 @@ Design notes for this stretch:
 - v1 = the slingshot draw/aim/fire loop only (console parity, left-stick aim).
 - Not melee weapons. Not the broader v4.0 right-stick cursor.
 - Ammo management (`SlingshotPatches`) is untouched.
-- Dual-stick is explicitly a follow-on, gated and committed separately.
+- Dual-stick is NOT an AC feature — it's a separate-mod seed (see the re-scoped section above).
 
 ## Verification
 
