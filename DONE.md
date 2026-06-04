@@ -4,6 +4,26 @@ Technical reference for all completed work. Implementation notes, root causes, a
 
 ---
 
+## v3.9.0 Console Parity: Big Systems
+
+### #25 Tool Charging While Moving — FIXED v3.8.8→v3.8.13 (device-verified G Cloud 2026-06-04)
+- **Symptom:** holding an upgraded Hoe/Watering Can while walking rapid-fired single uses and locked movement, instead of charging the area effect like console.
+- **NOT mod-caused** — vanilla Android behavior (confirmed in Phase-1 diagnostic: the mod delivers a clean sustained hold, `rawX==finalX==True`).
+- **Root cause (two layers, both pinned from the Android decompile):**
+  1. **Held-button auto-repeat** — `Game1.UpdateControlInput` (decompile ~`Game1.cs:13640`) forces `useToolButtonPressed=true` *every frame* a non-melee tool button is held (`state2.IsButtonDown(X) && oldPadState.IsButtonDown(X)`), not just on the rising edge. The press block (~13884, gated `!UsingTool`) therefore re-fires the tool each time a use animation completes, and `pressUseToolButton()` re-zeroes `toolPower`/`toolHold` (12269-12270) on every fire — so the charge never accumulates.
+  2. **Tap-to-move teardown on movement** — the instant a movement direction is held, `Game1._mobileUpdateControlInput` (run every tick *before* the charge ramp) tears down the in-progress use: `canReleaseTool`/`useToolHeld` drop, the engine's charge ramp (~13914) stalls (`toolHold` freezes), `canStrafeForToolUse()` returns false (no movement), and after ~40 ticks the use force-ends and fires the charged area prematurely. The stationary charge works precisely because none of this fires.
+- **Fix (`Patches/ToolUsePatches.cs`, gated behind GMCM `EnableMoveWhileCharging`, scoped to upgraded `UpgradeLevel>=1` Hoe/WateringCan):**
+  - **Stage 1 (v3.8.10):** "one tool-use begin per physical hold" — prefixes on `Farmer.FireTool` + `Game1.pressUseToolButton` allow the first begin of a hold and suppress every later-tick re-fire, so the auto-repeat stops re-zeroing the charge. Hold session opens on the first begin, closes on the game-facing use-tool button release (final `Buttons.X` after the X/Y swap, detected in `GameplayButtonPatches.GetState_Postfix`). *Insufficient alone* — device test showed the tap-to-move teardown still stalled/fired the charge on movement.
+  - **Stage 2 (v3.8.12):** postfix on `Game1._mobileUpdateControlInput` re-asserts the charge-hold state (`useToolHeld=true`, `useToolButtonReleased=false`, `canReleaseTool=true`, `UsingTool=true`) right after the tap-to-move teardown and before the engine's ramp, while the hold session is open. The engine's **own** charge ramp then accumulates `toolPower` and `canStrafeForToolUse` lets the player slide; release closes the session and vanilla `EndUsingTool` fires the charged area. *Fix-the-data, let-the-engine-work* — no custom charge driver.
+  - **Safety guard (v3.8.13):** Stage 2 early-outs on `eventUp || farmEvent` (mirrors the engine's own `flag4`) so a button still held when a cutscene starts can't force `UsingTool=true` through the event.
+- **Device-verified:** log shows `power 1→2→3→4` while `moveDirs=1`, `canRelease=True` throughout, `suppressed=0` — the engine ramp runs through the movement. User confirmed the feel ("nailed it").
+- **Scope (v1):** upgraded Hoe + Watering Can only; basic (level-0) tools stay single-use (no vanilla area to charge); Pickaxe/Axe and console hop-to-grid are out of scope. Vanilla's ~150ms start hitch is kept.
+- **Diagnostics:** Phase-1 throwaways removed v3.8.8; a `VerboseLogging`-gated `[MoveCharge]` per-tick charge-state line stays in `ToolUsePatches` (it's how the Stage-1-vs-Stage-2 decision was made).
+- **LESSON (applies beyond this fix):** on Android, the tap-to-move system (`Game1._mobileUpdateControlInput` → `TapToMove`/`MobileKeyStates`) actively clobbers held-button tool state when a movement direction is present — it runs every tick before the charge ramp. Any feature mixing held-tool-button + movement must reckon with it. See memory `android-taptomove-clobbers-tool-on-move`.
+- **Files:** `Patches/ToolUsePatches.cs` (new), `Patches/GameplayButtonPatches.cs` (game-facing use-tool release detection), `ModConfig.cs` + `ModEntry.cs` (toggle + GMCM + registration). Design: `docs/superpowers/specs/2026-06-04-tool-charging-while-moving-phase2-design.md`; plan: `docs/superpowers/plans/2026-06-04-tool-charging-while-moving-phase2.md`.
+
+---
+
 ## v3.8.0 Console Parity: Quick Wins (device-verified G Cloud 2026-05-29)
 
 ### #27 Toolbar Size Slider — FIXED v3.7.68→v3.7.71 (device-verified G Cloud 2026-05-30/31)

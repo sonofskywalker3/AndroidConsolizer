@@ -158,14 +158,11 @@ Vanilla GeodeMenu opens with `_selectedItemIndex = -1` — the cursor sits at sl
 
 Three player-facing real-time gameplay systems. Each likely needs multiple patches with device testing. Bundling them into one focused arc keeps testing context warm.
 
-### 25. Tool Charging Broken While Moving
+### 25. Tool Charging Broken While Moving — ✅ DONE v3.8.13 (device-verified G Cloud 2026-06-04, see `DONE.md`)
 - Holding tool button while moving rapid-fires single uses instead of charging. Player stops moving and tool keeps firing.
 - **Expected (console):** Holding tool button while moving begins charging. Player hops one square at a time.
 - **NOT mod-caused.** Occurs regardless of layout. Android port difference.
-- **Root-cause hypothesis:** Android's tool-use code checks for movement and prevents charge-state entry.
-- **Fix approach (v1):** Allow movement to continue while charging. Don't need console hop-to-grid-center for v1.
-- **Investigation:** Decompile tool-use state machine. Look for `Farmer.isMoving()` check.
-- **Testing plan:** For each upgradeable tool at each upgrade level, test charged use stationary + while walking vs. Switch behavior.
+- **Resolved:** two root causes — the held-button auto-repeat (`Game1.cs:13640`) re-firing + re-zeroing the charge, and the Android tap-to-move teardown (`_mobileUpdateControlInput`) stalling the charge on movement. Fix in `Patches/ToolUsePatches.cs` (Stage 1 suppress re-fire + Stage 2 re-assert charge-hold), GMCM `EnableMoveWhileCharging`. Upgraded Hoe + Watering Can; hop-to-grid deferred. Full writeup in `DONE.md`.
 
 ### 25b. Slingshot Combat
 - Having slingshot equipped stops movement. Slingshot doesn't behave like console.
