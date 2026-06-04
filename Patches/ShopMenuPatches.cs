@@ -23,6 +23,7 @@ namespace AndroidConsolizer.Patches
         private static FieldInfo QuantityToBuyField;
         private static FieldInfo InventoryButtonField;
         private static FieldInfo CurrentlySelectedItemField;
+        private static FieldInfo ItemsPerPageField;
 
 
         /// <summary>Check if the active menu is a ShopMenu on the buy tab (right stick should be suppressed).</summary>
@@ -106,6 +107,9 @@ namespace AndroidConsolizer.Patches
             // via reflection, which works on both. Same pattern as the Android vs PC DLL
             // workarounds documented in CLAUDE.md.
             CurrentlySelectedItemField = AccessTools.Field(typeof(ShopMenu), "currentlySelectedItem");
+            // #75: itemsPerPage is an Android-differing member (see CLAUDE.md / memory) — reflect it
+            // to clamp the restored scroll position after rebuildSaleButtons resets currentItemIndex.
+            ItemsPerPageField = AccessTools.Field(typeof(ShopMenu), "itemsPerPage");
 
             try
             {
@@ -575,7 +579,27 @@ namespace AndroidConsolizer.Patches
                     ? (int)CurrentlySelectedItemField.GetValue(shop)
                     : -1;
 
+                // #75: rebuildSaleButtons() resets currentItemIndex = 0 (decompile ShopMenu.cs:2721),
+                // and neither it nor setCurrentItem restores the scroll. So after a purchase the buy
+                // list jumps to the top while the selection follows the bought item — which then sits
+                // off-screen if it was below the fold. Capture the scroll here and restore it after the
+                // rebuild so the viewport stays put across a purchase.
+                int prevScroll = shop.currentItemIndex;
+
                 AccessTools.Method(typeof(ShopMenu), "rebuildSaleButtons")?.Invoke(shop, null);
+
+                // #75: restore the scroll the rebuild clobbered, clamped to the valid window. The
+                // bought item is at/below the viewport top (you select then buy), so the items that
+                // were visible stay visible. itemsPerPage is reflected (Android-differing); fall back
+                // to a forSale-count clamp if it's unavailable (the engine re-clamps on next draw).
+                try
+                {
+                    int count = shop.forSale?.Count ?? 0;
+                    int itemsPerPage = (ItemsPerPageField != null) ? (int)ItemsPerPageField.GetValue(shop) : 0;
+                    int maxScroll = (itemsPerPage > 0) ? Math.Max(0, count - itemsPerPage) : Math.Max(0, count - 1);
+                    shop.currentItemIndex = Math.Max(0, Math.Min(prevScroll, maxScroll));
+                }
+                catch { /* best-effort scroll restore */ }
 
                 // Refresh hoveredItem at the same row the user was on. setCurrentItem
                 // (ShopMenu.cs:1380-1422) sets currentlySelectedItem, currentItem, and
