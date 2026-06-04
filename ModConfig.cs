@@ -127,6 +127,15 @@ namespace AndroidConsolizer
         /// <summary>Whether to fix controller navigation on GameMenu tabs (Social, Animals, Crafting, Collections, Options).</summary>
         public bool EnableGameMenuNavigation { get; set; } = true;
 
+        /// <summary>
+        /// #25: Holding an upgraded (Copper+) Hoe or Watering Can while moving charges the
+        /// area effect (console parity) instead of rapid-firing single uses and locking
+        /// movement. The character slides freely during the charge; release fires the charged
+        /// area. A quick tap still performs one normal single use. Basic (level-0) tools and
+        /// Pickaxe/Axe are unaffected. Disable to restore vanilla Android behavior.
+        /// </summary>
+        public bool EnableMoveWhileCharging { get; set; } = true;
+
         /// <summary>Whether to use free cursor (vanilla) instead of snap navigation on the Options page and GMCM config page.</summary>
         public bool FreeCursorOnSettings { get; set; } = false;
 
