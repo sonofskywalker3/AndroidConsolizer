@@ -197,6 +197,7 @@ namespace AndroidConsolizer
             Patches.ToolUsePatches.Apply(harmony, this.Monitor);
             Patches.FishingRodPatches.Apply(harmony, this.Monitor);
             Patches.SlingshotPatches.Apply(harmony, this.Monitor);
+            Patches.SlingshotAimPatches.Apply(harmony, this.Monitor);
             Patches.InventoryManagementPatches.Apply(harmony, this.Monitor);
             Patches.CarpenterMenuPatches.Apply(harmony, this.Monitor);
             Patches.FurniturePlacementPatches.Apply(harmony, this.Monitor);
@@ -356,6 +357,10 @@ namespace AndroidConsolizer
             // upgraded Hoe/Watering Can is mid-charge, so the move-while-charging fix can be
             // verified from the log without a playtest.
             Patches.ToolUsePatches.LogChargeStateIfVerbose();
+
+            // #25b diagnostic (VerboseLogging-gated): once-per-tick slingshot control-state snapshot
+            // while a Slingshot is equipped, so we can pin where Android breaks aim/movement.
+            Patches.SlingshotAimPatches.LogAimStateIfVerbose();
 
             // Cutscene skip: detect Start press via GetState edge detection
             // (SMAPI can't see Start because it's suppressed at GetState level during events)
