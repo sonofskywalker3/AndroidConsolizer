@@ -858,9 +858,47 @@ namespace AndroidConsolizer.Patches
             _rbHoldTicks = 0;
         }
 
+        // #75 diagnostic: last-logged scroll/selection state (once-per-change guard).
+        private static int _lastLoggedScrollIdx = int.MinValue;
+        private static int _lastLoggedSnapId = int.MinValue;
+
+        /// <summary>#75 diagnostic (VerboseLogging-gated): on the BUY tab, log the list scroll state
+        /// whenever it changes — `currentItemIndex` (viewport top), the snapped button (its id + on-
+        /// screen Y), and the forSale/button counts. Characterizes the "list scrolls oddly / selected
+        /// item ends up off-screen" bug: we can see whether currentItemIndex jumps independently of the
+        /// selection, and whether the snapped component leaves the visible band. CartCatalog also patches
+        /// ShopMenu (possible cross-mod interaction), so the snapshot is the first step to ruling that
+        /// in/out. Never throws.</summary>
+        internal static void LogScrollStateIfVerbose(ShopMenu shop)
+        {
+            try
+            {
+                if (!(ModEntry.Config?.VerboseLogging ?? false)) return;
+                if (shop == null) return;
+                bool onBuyTab = InvVisibleField == null || !(bool)InvVisibleField.GetValue(shop);
+                if (!onBuyTab) return;
+
+                int idx = shop.currentItemIndex;
+                var snapped = shop.currentlySnappedComponent;
+                int snapId = snapped?.myID ?? -999;
+                if (idx == _lastLoggedScrollIdx && snapId == _lastLoggedSnapId) return;
+                _lastLoggedScrollIdx = idx;
+                _lastLoggedSnapId = snapId;
+
+                Monitor?.Log(
+                    $"[ShopScroll] currentItemIndex={idx} snappedId={snapId} snappedY={snapped?.bounds.Y ?? -1} "
+                    + $"forSale={shop.forSale?.Count ?? -1} buttons={shop.forSaleButtons?.Count ?? -1}",
+                    LogLevel.Debug);
+            }
+            catch { /* diagnostic must never break the shop */ }
+        }
+
         /// <summary>Postfix for update — hold-to-repeat, right stick navigation, quantity reset.</summary>
         private static void Update_Postfix(ShopMenu __instance, GameTime time)
         {
+            // #75 diagnostic: characterize the buy-list scroll bug from the log.
+            LogScrollStateIfVerbose(__instance);
+
             // Get gamepad state once for all hold-to-repeat checks
             var gpState = GamePad.GetState(PlayerIndex.One);
 
