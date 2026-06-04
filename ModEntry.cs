@@ -352,6 +352,11 @@ namespace AndroidConsolizer
         /// <summary>Raised every game tick. Used to enforce toolbar row locking and handle triggers.</summary>
         private void OnUpdateTicked(object sender, UpdateTickedEventArgs e)
         {
+            // #25 diagnostic (VerboseLogging-gated): once-per-tick charge-state snapshot while an
+            // upgraded Hoe/Watering Can is mid-charge, so the move-while-charging fix can be
+            // verified from the log without a playtest.
+            Patches.ToolUsePatches.LogChargeStateIfVerbose();
+
             // Cutscene skip: detect Start press via GetState edge detection
             // (SMAPI can't see Start because it's suppressed at GetState level during events)
             if (Config.EnableCutsceneSkip && Patches.GameplayButtonPatches.StartPressedThisTick)
