@@ -704,7 +704,13 @@ namespace AndroidConsolizer.Patches
                 int newMax = Math.Max(0, (count - itemsPerPage) * (itemButtonHeight + 8));
 
                 _msSetMaxYOffset?.Invoke(scrollArea, new object[] { newMax });
-                int clamped = Math.Max(-newMax, Math.Min(0, prevYOffset));
+                // Clamp only the BOTTOM to the new (shorter) content. Do NOT clamp the top to 0:
+                // the game's own D-pad-up nav overshoots into a positive offset (whitespace above
+                // the top item, e.g. +64 — decompile ShopMenu.cs:943-950 has no top clamp), and
+                // forcing it to 0 here made the list visibly "shift up to fill" on purchase. Preserving
+                // the pre-purchase offset keeps the view perfectly still; the transient whitespace is
+                // the game's nav quirk and resolves on the next scroll.
+                int clamped = Math.Max(-newMax, prevYOffset);
                 _msSetYOffset?.Invoke(scrollArea, new object[] { clamped });
                 _updateItemButtonsMethod?.Invoke(shop, null);
 
