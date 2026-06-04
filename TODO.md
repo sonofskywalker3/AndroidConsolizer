@@ -138,6 +138,20 @@ Vanilla GeodeMenu opens with `_selectedItemIndex = -1` — the cursor sits at sl
 - **Files:** `Patches/FurniturePlacementPatches.cs` (extend the bomb/crab-pot exclusion).
 - **Size:** small localized patch, same family as #68. Next 0.0.1.
 
+### 74. Dropped Items Are Instantly Re-Collectable (no console drop-blocker)
+- **Reported 2026-06-04 (user, in-game):** dropping an item and immediately re-picking it up — on console there's a pickup blocker until you leave and re-enter the item's pickup radius; on Android you re-grab it instantly (often before you've even left the menu).
+- **Root cause — confirmed from the decompile (no runtime logs needed):** the console blocker is `Debris.DroppedByPlayerID` — the collection logic excludes whoever's ID matches it (`Debris.cs:594`, plus the 1200ms grace gate at `:682`). On this Android build **`DroppedByPlayerID` is never assigned anywhere** — it appears only inside `Debris.cs`'s own read logic and is set in zero places across the entire decompile. `Game1.createItemDebris` doesn't set it either. So it stays `0`, the dropper is never excluded, and re-pickup is immediate. Purely an Android omission.
+- **Candidate fix:** `createItemDebris` returns the `Debris`; in `Patches/InventoryManagementPatches.cs::DropHeldItem` (line ~1369) capture it and set `debris.DroppedByPlayerID.Value = Game1.player.UniqueMultiplayerID`. Re-engages the existing exclusion. Audit the other `createItemDebris` drop sites (ItemGrabMenuPatches ChestSwap fallbacks ~1845/1863/1870/1923/1937/1945/2195/2203, InventoryManagementPatches:1426) and decide which should also tag the dropper (the deliberate user-drop should; the "inventory full" failsafes probably yes too).
+- **⚠️ TEST THE FEEL BEFORE CHANGING (user concern):** `timeBeforeReturnToDroppingPlayer` is only **1200ms and counts down in real time** — drop 2–3 things in a row and the timer on the first may already be expiring by the time you finish, so you'd start re-collecting the earliest drops. Console may use a longer window or a true leave-radius gate. **Reproduce + observe the actual console timing before picking the implementation** (longer constant vs. a "must exit radius" guard). Don't ship the bare 1.2s without confirming it matches console.
+- **NOT related to** the `CancelHold()` cursor-held-item safety net (`InventoryManagementPatches.cs:1403`), which returns an on-cursor item to the bag when the menu closes. Different mechanism; rings are not "essential items" so vanilla's auto-return doesn't cover them.
+- **Files:** `Patches/InventoryManagementPatches.cs` (+ audit `Patches/ItemGrabMenuPatches.cs` drop sites). Decompile ref: `Debris.cs:89/111/594/682`, `Game1.cs:11357`.
+
+### 75. Shop Item List Scrolls Weirdly When Buying (visual only)
+- **Reported 2026-06-04 (user, in-game):** on the shop buy list, the **cursor/selection stays where it should**, but the item **list viewport scrolls oddly** — the selected item sometimes ends up off-screen, sometimes the list just shifts elsewhere. Visual only; selection logic is correct. Not yet pinned to a specific trigger.
+- **Logs don't capture this** (purely visual; the mod doesn't log scroll offsets) — needs a code dive into `Patches/ShopMenuPatches.cs` scroll / `currentItemIndex` handling, likely with a small visual-scroll diagnostic. Reproduce on device to characterize the trigger (on stick move? after a purchase when the list changes? at list ends?).
+- **Possible interaction:** CartCatalog is also loaded and patches `ShopMenu` (seen in the 2026-06-04 log: "Rewrote CartCatalog.dll to fix ShopMenu..ctor"). Rule in/out a cross-mod interaction.
+- **Files:** `Patches/ShopMenuPatches.cs` (scroll/index/viewport).
+
 ---
 
 ## v3.9.0 — Console Parity: Big Systems
