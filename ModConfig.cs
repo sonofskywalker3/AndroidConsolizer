@@ -136,6 +136,16 @@ namespace AndroidConsolizer
         /// </summary>
         public bool EnableMoveWhileCharging { get; set; } = true;
 
+        /// <summary>
+        /// #25b: Console-parity slingshot aim. On Android the tap-to-move / mobile-input layer
+        /// hijacks the slingshot — stick motion alone fires it, holding the tool button auto-fires
+        /// repeatedly, and movement is blocked. When true, the slingshot is driven only by the
+        /// physical tool button: hold to draw and aim (left stick swings the crosshair), release to
+        /// fire once, and the stick moves you normally when you're not aiming. Disable to restore
+        /// vanilla Android behaviour.
+        /// </summary>
+        public bool EnableSlingshotAim { get; set; } = true;
+
         /// <summary>Whether to use free cursor (vanilla) instead of snap navigation on the Options page and GMCM config page.</summary>
         public bool FreeCursorOnSettings { get; set; } = false;
 

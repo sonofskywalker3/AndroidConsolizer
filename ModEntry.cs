@@ -1358,6 +1358,14 @@ namespace AndroidConsolizer
 
             configMenu.AddBoolOption(
                 mod: this.ModManifest,
+                name: () => "Console Slingshot Aim",
+                tooltip: () => "Drive the slingshot from the physical tool button (like console): hold to draw and aim with the left stick, release to fire once, and move normally when not aiming. Fixes Android's tap-to-move hijack where stick motion fires it, holding auto-fires, and movement is blocked.",
+                getValue: () => Config.EnableSlingshotAim,
+                setValue: value => Config.EnableSlingshotAim = value
+            );
+
+            configMenu.AddBoolOption(
+                mod: this.ModManifest,
                 name: () => "Free Cursor on Settings",
                 tooltip: () => "Use the vanilla free-roaming cursor instead of snap navigation on the Options page and Mod Config page. Requires Console Menus to be enabled.",
                 getValue: () => Config.FreeCursorOnSettings,
