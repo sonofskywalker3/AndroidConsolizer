@@ -117,6 +117,9 @@ namespace AndroidConsolizer.Patches
         /// from within the 1-param overload (which delegates to 2-param internally).</summary>
         private static bool _inOneParamGetState;
 
+        // v3.8.7 #25 diagnostic: raw (pre-swap/suppress) and final (game-facing) tool face buttons.
+        internal static bool DiagRawToolX, DiagRawToolY, DiagFinalToolX, DiagFinalToolY;
+
         /// <summary>Invalidate the cached GetState so the next call recomputes.
         /// Must be called after setting Suppress*UntilRelease flags mid-tick,
         /// since the cache may already have the unsuppressed state.</summary>
@@ -346,6 +349,10 @@ namespace AndroidConsolizer.Patches
                 RawLeftTrigger = Math.Max(__result.Triggers.Left, RawLeftTriggerButton ? 1f : 0f);
                 RawRightTrigger = Math.Max(__result.Triggers.Right, RawRightTriggerButton ? 1f : 0f);
 
+                // v3.8.7 #25 diagnostic: raw tool face buttons BEFORE any swap/suppression.
+                DiagRawToolX = __result.IsButtonDown(Buttons.X);
+                DiagRawToolY = __result.IsButtonDown(Buttons.Y);
+
                 // Zero out right thumbstick when ShopMenu is on buy tab.
                 // This prevents vanilla (and Game1's scroll-wheel conversion) from scrolling
                 // currentItemIndex via right stick; our own navigation reads RawRightStickY.
@@ -467,6 +474,8 @@ namespace AndroidConsolizer.Patches
                 {
                     __result = ApplyButtonSuppression(__result);
                     _cachedState = __result;
+                    DiagFinalToolX = __result.IsButtonDown(Buttons.X);
+                    DiagFinalToolY = __result.IsButtonDown(Buttons.Y);
                     _cachedRawRightStickY = RawRightStickY;
                     _cachedRawLeftStickX = RawLeftStickX;
                     _cachedRawLeftStickY = RawLeftStickY;
@@ -494,6 +503,8 @@ namespace AndroidConsolizer.Patches
                 {
                     __result = ApplyButtonSuppression(__result);
                     _cachedState = __result;
+                    DiagFinalToolX = __result.IsButtonDown(Buttons.X);
+                    DiagFinalToolY = __result.IsButtonDown(Buttons.Y);
                     _cachedRawRightStickY = RawRightStickY;
                     _cachedRawLeftStickX = RawLeftStickX;
                     _cachedRawLeftStickY = RawLeftStickY;
@@ -528,6 +539,8 @@ namespace AndroidConsolizer.Patches
 
                 __result = ApplyButtonSuppression(__result);
                 _cachedState = __result;
+                DiagFinalToolX = __result.IsButtonDown(Buttons.X);
+                DiagFinalToolY = __result.IsButtonDown(Buttons.Y);
                 _cachedRawRightStickY = RawRightStickY;
                 _cachedRawLeftStickX = RawLeftStickX;
                 _cachedRawLeftStickY = RawLeftStickY;

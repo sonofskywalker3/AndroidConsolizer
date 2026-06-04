@@ -110,12 +110,26 @@ namespace AndroidConsolizer.Patches
             catch { }
         }
 
+        private static int _lastBtnLogTick = -1;
+
         private static void CanStrafeForToolUse_Postfix(Farmer __instance, bool __result)
         {
             try
             {
                 if (__instance != Game1.player || !ShouldLog()) return;
-                Monitor?.Log($"[ToolCharge] canStrafeForToolUse -> {__result} {State()}", LogLevel.Debug);
+                if (Game1.ticks == _lastBtnLogTick) return; // once per tick (canStrafe is polled many times/tick)
+                _lastBtnLogTick = Game1.ticks;
+
+                bool moving = System.Math.Abs(GameplayButtonPatches.RawLeftStickX) > 0.01f
+                           || System.Math.Abs(GameplayButtonPatches.RawLeftStickY) > 0.01f
+                           || (Game1.player?.movementDirections?.Count ?? 0) > 0;
+
+                Monitor?.Log(
+                    $"[ToolCharge] canStrafe={__result} {State()} "
+                    + $"| rawX={GameplayButtonPatches.DiagRawToolX} rawY={GameplayButtonPatches.DiagRawToolY} "
+                    + $"finalX={GameplayButtonPatches.DiagFinalToolX} finalY={GameplayButtonPatches.DiagFinalToolY} "
+                    + $"moving={moving} Lstk=({GameplayButtonPatches.RawLeftStickX:F2},{GameplayButtonPatches.RawLeftStickY:F2})",
+                    LogLevel.Debug);
             }
             catch { }
         }
