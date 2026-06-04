@@ -1,0 +1,4 @@
+Seed Planting Ghost Fix — one bug fix since v3.8.4.
+
+Fixed:
+- Crop seeds no longer show a translucent "ghost" preview in front of your character while planting. The single-tile placement ghost added in v3.8 for machines and sprinklers was also catching seed packets, which plant directly into tilled soil and don't need a placement preview. Seeds now plant cleanly with no ghost; furniture and machine/sprinkler placement ghosts are unchanged.
