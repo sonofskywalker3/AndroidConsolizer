@@ -199,6 +199,12 @@ namespace AndroidConsolizer.Patches
                 if (cfg == null || !cfg.EnableMoveWhileCharging) return;
                 if (!_holdActive || !IsQualifyingTool()) return;
 
+                // Don't re-assert charge state when gameplay is suspended by an event/cutscene or
+                // farm event. Mirrors the engine's own `flag4` gate on the charge ramp; without it,
+                // a button still physically held when a cutscene starts would force UsingTool=true
+                // for the whole event, fighting the game's completelyStopAnimatingOrDoingAction.
+                if (Game1.eventUp || Game1.farmEvent != null) return;
+
                 var p = Game1.player;
                 if (p == null) return;
 
