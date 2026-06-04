@@ -30,6 +30,12 @@ namespace AndroidConsolizer.Patches
         internal static bool GameUseToolHeld;
         private static bool _prevGameUseToolHeld;
 
+        /// <summary>Rising/falling edges of the GAME-facing use-tool button (final Buttons.X),
+        /// computed once per tick alongside GameUseToolHeld. Read by SlingshotAimPatches (#25b) to
+        /// drive the slingshot from the physical button instead of the tap-to-move injections.</summary>
+        internal static bool GameUseToolPressedEdge;
+        internal static bool GameUseToolReleasedEdge;
+
         /// <summary>Raw trigger values cached from GetState before suppression, for HandleTriggersDirectly.</summary>
         internal static float RawLeftTrigger;
         internal static float RawRightTrigger;
@@ -288,6 +294,8 @@ namespace AndroidConsolizer.Patches
         private static void FinalizeToolHeldTracking(GamePadState finalState)
         {
             GameUseToolHeld = finalState.IsButtonDown(Buttons.X);
+            GameUseToolPressedEdge = GameUseToolHeld && !_prevGameUseToolHeld;
+            GameUseToolReleasedEdge = !GameUseToolHeld && _prevGameUseToolHeld;
             if (_prevGameUseToolHeld && !GameUseToolHeld)
                 ToolUsePatches.OnUseToolReleased();
             _prevGameUseToolHeld = GameUseToolHeld;

@@ -47,13 +47,54 @@ namespace AndroidConsolizer.Patches
             {
                 _weaponControlField = AccessTools.Field(typeof(Options), "weaponControl");
                 _safeTimeField = AccessTools.Field(typeof(Game1), "controllerSlingshotSafeTime");
-                // Phase 1: no Harmony patches — diagnostic is driven from ModEntry.OnUpdateTicked.
-                Monitor.Log("Slingshot-aim (#25b) diagnostic ready.", LogLevel.Trace);
+
+                // The fix: drive the slingshot from the physical tool button, not the tap-to-move
+                // injections. Postfix the same Android mobile-input method #25 uses.
+                var mobileInput = AccessTools.Method(typeof(Game1), "_mobileUpdateControlInput");
+                if (mobileInput != null)
+                    harmony.Patch(mobileInput,
+                        postfix: new HarmonyMethod(typeof(SlingshotAimPatches), nameof(MobileUpdateControlInput_Postfix)));
+                else
+                    Monitor.Log("[Slingshot] Game1._mobileUpdateControlInput not found — aim fix not attached.", LogLevel.Warn);
+
+                Monitor.Log("Slingshot-aim (#25b) patches applied.", LogLevel.Trace);
             }
             catch (Exception ex)
             {
-                Monitor.Log($"Failed to init slingshot-aim diagnostic: {ex.Message}", LogLevel.Error);
+                Monitor.Log($"Failed to apply slingshot-aim patches: {ex.Message}", LogLevel.Error);
             }
+        }
+
+        /// <summary>The #25b fix. Android's tap-to-move/mobile-input layer injects the slingshot's
+        /// use-tool button events (Game1._mobileUpdateControlInput lines 2446-2457) from stick/tap
+        /// motion via tapToMove.mobileKeyStates — so stick motion alone fires the slingshot, a held
+        /// button auto-fires repeatedly (spurious mid-hold useToolButtonReleased), and movement is
+        /// blocked because any stick touch enters usingSlingshot/UsingTool. While a Slingshot is the
+        /// current tool, override the three use-tool refs to reflect ONLY the physical tool button
+        /// (final Buttons.X, tracked in GameplayButtonPatches): held → draw/aim, release edge → fire
+        /// once. This runs inside Game1.UpdateControlInput before the press block (~13884) and the
+        /// release path (~13689), so the clean console path drives beginUsing / tickUpdate (left-stick
+        /// aim) / onRelease. The ref params are the caller's locals, matched by name.</summary>
+        private static void MobileUpdateControlInput_Postfix(
+            ref bool useToolButtonPressed, ref bool useToolButtonReleased, ref bool useToolHeld)
+        {
+            try
+            {
+                var cfg = ModEntry.Config;
+                if (cfg == null || !cfg.EnableSlingshotAim) return;
+                if (Game1.player?.CurrentTool is not Slingshot) return;
+
+                // Don't fight the engine when gameplay is suspended (mirrors the engine's flag4).
+                if (Game1.eventUp || Game1.farmEvent != null) return;
+
+                bool held = GameplayButtonPatches.GameUseToolHeld;
+
+                // Replace the stick/tap-derived injections with the physical button only.
+                useToolHeld = held;
+                useToolButtonPressed = held;                                  // begin-once: gated by !UsingTool at ~13884
+                useToolButtonReleased = GameplayButtonPatches.GameUseToolReleasedEdge; // fire once on physical release
+            }
+            catch { /* never break slingshot use */ }
         }
 
         /// <summary>VerboseLogging-gated, once-per-tick slingshot control-state snapshot. Active only
