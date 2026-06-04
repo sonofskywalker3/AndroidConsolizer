@@ -194,6 +194,7 @@ namespace AndroidConsolizer
             Patches.ToolbarPatches.Apply(harmony, this.Monitor);
             Patches.ShippingBinPatches.Apply(harmony, this.Monitor);
             Patches.GameplayButtonPatches.Apply(harmony, this.Monitor);
+            Patches.ToolUsePatches.Apply(harmony, this.Monitor);
             Patches.FishingRodPatches.Apply(harmony, this.Monitor);
             Patches.SlingshotPatches.Apply(harmony, this.Monitor);
             Patches.InventoryManagementPatches.Apply(harmony, this.Monitor);

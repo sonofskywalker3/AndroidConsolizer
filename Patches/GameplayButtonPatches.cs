@@ -25,6 +25,11 @@ namespace AndroidConsolizer.Patches
         internal static float RawLeftStickX;
         internal static float RawLeftStickY;
 
+        /// <summary>True this tick when the GAME-facing use-tool button (final Buttons.X after
+        /// the X/Y swap) is held. Read by ToolUsePatches' release detection (#25).</summary>
+        internal static bool GameUseToolHeld;
+        private static bool _prevGameUseToolHeld;
+
         /// <summary>Raw trigger values cached from GetState before suppression, for HandleTriggersDirectly.</summary>
         internal static float RawLeftTrigger;
         internal static float RawRightTrigger;
@@ -277,6 +282,17 @@ namespace AndroidConsolizer.Patches
             );
         }
 
+        /// <summary>Track the game-facing use-tool button (final Buttons.X) once per tick and,
+        /// on its falling edge, close the move-while-charging hold session. Called from each
+        /// GetState_Postfix exit after swaps/suppression are applied (#25).</summary>
+        private static void FinalizeToolHeldTracking(GamePadState finalState)
+        {
+            GameUseToolHeld = finalState.IsButtonDown(Buttons.X);
+            if (_prevGameUseToolHeld && !GameUseToolHeld)
+                ToolUsePatches.OnUseToolReleased();
+            _prevGameUseToolHeld = GameUseToolHeld;
+        }
+
         /// <summary>Prefix for 1-param GetState — sets nesting guard so the 2-param postfix
         /// (called internally by the 1-param overload) knows to skip.</summary>
         private static void GetState_OneParam_Prefix()
@@ -467,6 +483,7 @@ namespace AndroidConsolizer.Patches
                 {
                     __result = ApplyButtonSuppression(__result);
                     _cachedState = __result;
+                    FinalizeToolHeldTracking(__result);
                     _cachedRawRightStickY = RawRightStickY;
                     _cachedRawLeftStickX = RawLeftStickX;
                     _cachedRawLeftStickY = RawLeftStickY;
@@ -494,6 +511,7 @@ namespace AndroidConsolizer.Patches
                 {
                     __result = ApplyButtonSuppression(__result);
                     _cachedState = __result;
+                    FinalizeToolHeldTracking(__result);
                     _cachedRawRightStickY = RawRightStickY;
                     _cachedRawLeftStickX = RawLeftStickX;
                     _cachedRawLeftStickY = RawLeftStickY;
@@ -528,6 +546,7 @@ namespace AndroidConsolizer.Patches
 
                 __result = ApplyButtonSuppression(__result);
                 _cachedState = __result;
+                FinalizeToolHeldTracking(__result);
                 _cachedRawRightStickY = RawRightStickY;
                 _cachedRawLeftStickX = RawLeftStickX;
                 _cachedRawLeftStickY = RawLeftStickY;
