@@ -1366,13 +1366,35 @@ namespace AndroidConsolizer.Patches
         /// </summary>
         private static bool DropHeldItem(Item heldItem)
         {
-            Game1.createItemDebris(heldItem, Game1.player.getStandingPosition(), Game1.player.FacingDirection);
+            var debris = Game1.createItemDebris(heldItem, Game1.player.getStandingPosition(), Game1.player.FacingDirection);
+            TagAsPlayerDrop(debris);
             Game1.playSound("throwDownITem");
             Monitor.Log($"InventoryManagement: Dropped {heldItem.Name} on ground", LogLevel.Info);
             Game1.player.CursorSlotItem = null;
             IsHoldingItem = false;
             SourceSlotId = -1;
             return true;
+        }
+
+        /// <summary>
+        /// #74: Tag a deliberate player drop with the dropper's ID so the engine's own console
+        /// drop-blocker engages. On Android, Debris.DroppedByPlayerID is declared but never assigned
+        /// anywhere, so the ~1200ms exclusion (Debris.updateChunks, decompile ~line 682, which rejects
+        /// the dropper as a pickup target while timeBeforeReturnToDroppingPlayer &gt; 0) never fires and
+        /// you re-grab your own drop instantly. Setting it re-engages the vanilla mechanism. Only called
+        /// for deliberate player inventory-drops — NOT a blanket createItemDebris hook, so monster loot,
+        /// harvest, and other debris stay instantly collectable. DroppedByPlayerID is a vanilla NetLong
+        /// (present on the PC DLL too) so direct access is safe. Never throws.
+        /// </summary>
+        private static void TagAsPlayerDrop(Debris debris)
+        {
+            try
+            {
+                if (debris == null) return;
+                if (!(ModEntry.Config?.EnableConsoleDropBlocker ?? false)) return;
+                debris.DroppedByPlayerID.Value = Game1.player.UniqueMultiplayerID;
+            }
+            catch { /* a drop must never fail because of the blocker tag */ }
         }
 
         /// <summary>
@@ -1423,7 +1445,8 @@ namespace AndroidConsolizer.Patches
                     else if (!Game1.player.addItemToInventoryBool(item))
                     {
                         // Inventory full - drop item
-                        Game1.createItemDebris(item, Game1.player.getStandingPosition(), Game1.player.FacingDirection);
+                        var spilled = Game1.createItemDebris(item, Game1.player.getStandingPosition(), Game1.player.FacingDirection);
+                        TagAsPlayerDrop(spilled);
                         Monitor?.Log($"InventoryManagement: Dropped {item.Name} (inventory full)", LogLevel.Warn);
                     }
 

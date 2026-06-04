@@ -1366,6 +1366,14 @@ namespace AndroidConsolizer
 
             configMenu.AddBoolOption(
                 mod: this.ModManifest,
+                name: () => "Console Drop Blocker",
+                tooltip: () => "Stop yourself from instantly re-grabbing an item you just dropped (like console). Tags your deliberate drops so the game's own ~1.2s pickup delay engages. Doesn't affect monster loot, harvest, or other drops.",
+                getValue: () => Config.EnableConsoleDropBlocker,
+                setValue: value => Config.EnableConsoleDropBlocker = value
+            );
+
+            configMenu.AddBoolOption(
+                mod: this.ModManifest,
                 name: () => "Free Cursor on Settings",
                 tooltip: () => "Use the vanilla free-roaming cursor instead of snap navigation on the Options page and Mod Config page. Requires Console Menus to be enabled.",
                 getValue: () => Config.FreeCursorOnSettings,
