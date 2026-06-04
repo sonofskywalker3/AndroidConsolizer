@@ -84,6 +84,15 @@ namespace AndroidConsolizer.Patches
                 if (cfg == null || !cfg.EnableSlingshotAim) return;
                 if (Game1.player?.CurrentTool is not Slingshot) return;
 
+                // Console aim direction. Android defaults Options.useLegacySlingshotFiring = TRUE
+                // (Options.cs:2515, mobile default) — the old "pull-back" geometry: crosshair draws
+                // OPPOSITE the stick, defaults straight down when centered, and won't fire without
+                // real aim distance (a centered release does nothing). Switch runs NON-legacy direct
+                // aim (crosshair points where you push; a held release fires toward facing). Flip it
+                // for parity. Guarded so we only write once.
+                if (Game1.options.useLegacySlingshotFiring)
+                    Game1.options.useLegacySlingshotFiring = false;
+
                 // Don't fight the engine when gameplay is suspended (mirrors the engine's flag4).
                 if (Game1.eventUp || Game1.farmEvent != null) return;
 
@@ -135,6 +144,7 @@ namespace AndroidConsolizer.Patches
                     + $"usingTool={p.UsingTool} canRelease={p.canReleaseTool} canMove={p.CanMove} "
                     + $"moveDirs={p.movementDirections.Count} toolPower={p.toolPower.Value} "
                     + $"safeTime={safeTime:F2} charge={charge:F2} backArm={backArm} aim=({aimX},{aimY}) "
+                    + $"legacy={Game1.options.useLegacySlingshotFiring} "
                     + $"btnHeld(X)={GameplayButtonPatches.GameUseToolHeld} swapXY={GameplayButtonPatches.ShouldSwapXY()} "
                     + $"Lraw=({GameplayButtonPatches.RawLeftStickX:F2},{GameplayButtonPatches.RawLeftStickY:F2}) "
                     + $"Lgame=({gameLeft.X:F2},{gameLeft.Y:F2}) ammo={slingshot.attachments[0]?.Stack ?? 0}",
