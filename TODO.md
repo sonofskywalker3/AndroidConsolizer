@@ -156,6 +156,8 @@ Vanilla GeodeMenu opens with `_selectedItemIndex = -1` — the cursor sits at sl
 
 ## v3.9.0 — Console Parity: Big Systems
 
+**Release plan (decided 2026-06-04):** 3.9.0 is the **next public release** — we do NOT cut a release per 3.8.x patch. It bundles everything unreleased since 3.8.0: **#25 charge-while-moving** (done v3.8.13), **#25b slingshot** (done v3.8.16), and the remaining small parity items **#73 / #74 / #75** ("whatever we do next"). **4.0 = The Right Stick Update** (#12, #62) ships separately and should put us at ~100% console parity. Better-than-console extras (e.g. dual-stick slingshot) are NOT in either — they become their own mods.
+
 Three player-facing real-time gameplay systems. Each likely needs multiple patches with device testing. Bundling them into one focused arc keeps testing context warm.
 
 ### 25. Tool Charging Broken While Moving — ✅ DONE v3.8.13 (device-verified G Cloud 2026-06-04, see `DONE.md`)
