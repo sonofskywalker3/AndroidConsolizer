@@ -152,11 +152,11 @@ Vanilla GeodeMenu opens with `_selectedItemIndex = -1` — the cursor sits at sl
 - **NOT related to** the `CancelHold()` cursor-held-item safety net (`InventoryManagementPatches.cs:1403`), which returns an on-cursor item to the bag when the menu closes. Different mechanism; rings are not "essential items" so vanilla's auto-return doesn't cover them.
 - **Files:** `Patches/InventoryManagementPatches.cs` (+ audit `Patches/ItemGrabMenuPatches.cs` drop sites). Decompile ref: `Debris.cs:89/111/594/682`, `Game1.cs:11357`.
 
-### 75. Shop Item List Scrolls Weirdly When Buying (visual only)
-- **Reported 2026-06-04 (user, in-game):** on the shop buy list, the **cursor/selection stays where it should**, but the item **list viewport scrolls oddly** — the selected item sometimes ends up off-screen, sometimes the list just shifts elsewhere. Visual only; selection logic is correct. Not yet pinned to a specific trigger.
-- **Logs don't capture this** (purely visual; the mod doesn't log scroll offsets) — needs a code dive into `Patches/ShopMenuPatches.cs` scroll / `currentItemIndex` handling, likely with a small visual-scroll diagnostic. Reproduce on device to characterize the trigger (on stick move? after a purchase when the list changes? at list ends?).
-- **Possible interaction:** CartCatalog is also loaded and patches `ShopMenu` (seen in the 2026-06-04 log: "Rewrote CartCatalog.dll to fix ShopMenu..ctor"). Rule in/out a cross-mod interaction.
-- **Files:** `Patches/ShopMenuPatches.cs` (scroll/index/viewport).
+### 75. Shop Buy-List Jumps To Top On Purchase — 🔧 FIX-ATTEMPT v3.8.21, awaiting device test
+- **Clarified trigger (2026-06-04):** NOT regular scroll navigation — it's **after a PURCHASE**: the list viewport jumps instead of staying still (and when you buy out a stack it re-selects the right item but the list still moves), so the selection can end up off-screen. Inconsistent.
+- **Root cause (decompile-confirmed):** AC's `RebuildSaleButtonsAndRestoreSnap` runs after every finite-stock purchase and calls vanilla `rebuildSaleButtons()`, which **resets `currentItemIndex = 0`** (`ShopMenu.cs:2721`). `setCurrentItem` restores the SELECTION but never the scroll (`ShopMenu.cs:1380-1423`). So the buy list snaps to the top on every purchase; the selected item lands off-screen if it was below the fold.
+- **Fix (v3.8.21):** in `RebuildSaleButtonsAndRestoreSnap`, capture `currentItemIndex` before the rebuild and restore it after, clamped to `[0, max(0, forSale.Count - itemsPerPage)]` (itemsPerPage reflected, Android-differing; forSale-count fallback). `[ShopScroll]` VerboseLogging diagnostic (v3.8.19) kept to verify. **Files:** `Patches/ShopMenuPatches.cs`.
+- **Still to verify on device:** list stays put across a purchase; buying out a stack re-selects the next item AND keeps it on-screen. Rule out a CartCatalog `ShopMenu` cross-mod interaction if it still misbehaves.
 
 ---
 
