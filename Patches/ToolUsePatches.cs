@@ -38,6 +38,12 @@ namespace AndroidConsolizer.Patches
         /// this tick pass through; calls on later ticks are spurious re-fires and are suppressed.</summary>
         private static int _allowTick = -1;
 
+        /// <summary>Diagnostic counter: re-fires suppressed during the current hold. Reset on release.</summary>
+        private static int _suppressedThisHold;
+
+        /// <summary>Diagnostic: last tick the charge-state line was logged (once-per-tick guard).</summary>
+        private static int _lastChargeLogTick = -1;
+
         public static void Apply(Harmony harmony, IMonitor monitor)
         {
             Monitor = monitor;
@@ -95,6 +101,7 @@ namespace AndroidConsolizer.Patches
             if (Game1.ticks == _allowTick) return false;
 
             // A later tick while still holding → spurious re-fire.
+            _suppressedThisHold++;
             return true;
         }
 
@@ -104,6 +111,40 @@ namespace AndroidConsolizer.Patches
         {
             _holdActive = false;
             _allowTick = -1;
+            _suppressedThisHold = 0;
+        }
+
+        /// <summary>VerboseLogging-gated, once-per-tick charge-state snapshot. Lets us verify from
+        /// the device log (engineering correctness, no playtest needed) whether the held-button
+        /// re-fire is being suppressed AND whether the engine's charge ramp accumulates toolPower
+        /// while moving — the data the Stage-1-vs-Stage-2 decision (#25) turns on. Logs only while
+        /// a qualifying tool is equipped and a charge is in flight (button held, hold session open,
+        /// or power already building). Called once per tick from ModEntry.OnUpdateTicked.</summary>
+        internal static void LogChargeStateIfVerbose()
+        {
+            try
+            {
+                if (!(ModEntry.Config?.VerboseLogging ?? false)) return;
+                if (!IsQualifyingTool()) return;
+
+                var p = Game1.player;
+                if (p == null) return;
+
+                bool inFlight = _holdActive || GameplayButtonPatches.GameUseToolHeld || p.toolPower.Value > 0;
+                if (!inFlight) return;
+
+                if (Game1.ticks == _lastChargeLogTick) return;
+                _lastChargeLogTick = Game1.ticks;
+
+                Monitor?.Log(
+                    $"[MoveCharge] tick={Game1.ticks} tool={p.CurrentTool?.Name} power={p.toolPower.Value} "
+                    + $"hold={p.toolHold.Value} using={p.UsingTool} canMove={p.CanMove} "
+                    + $"moveDirs={p.movementDirections.Count} holdActive={_holdActive} "
+                    + $"suppressed={_suppressedThisHold} btnHeld={GameplayButtonPatches.GameUseToolHeld} "
+                    + $"Lstk=({GameplayButtonPatches.RawLeftStickX:F2},{GameplayButtonPatches.RawLeftStickY:F2})",
+                    LogLevel.Debug);
+            }
+            catch { /* diagnostic must never break gameplay */ }
         }
 
         /// <summary>Prefix on Farmer.FireTool — skip the spurious single-use swing on re-fires.</summary>
