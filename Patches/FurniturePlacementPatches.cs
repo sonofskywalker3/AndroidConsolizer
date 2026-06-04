@@ -119,6 +119,43 @@ namespace AndroidConsolizer.Patches
                 return false;
             }
 
+            // --- #73: crop seeds — single validity box, NO ghost sprite. ---
+            // Seeds report isPlaceable() == true on Android but plant into HoeDirt (not "placed"
+            // like a machine), so there's no ghost. On controller, vanilla DrawRedGreenRectangleForPlacing
+            // returns false, so drawPlacementBounds falls through to the full multi-tile green map
+            // (touch behaviour). Draw ONE box at the target tile and return true so drawPlacementBounds
+            // short-circuits (decompile Object.cs:5234) — giving the console single-box look, no ghost.
+            // Gated under the same console-placement toggle as craftables.
+            if (ModEntry.Config?.EnableConsoleCraftablePlacement == true
+                && !__instance.bigCraftable.Value
+                && __instance.Category == SObject.SeedsCategory
+                && __instance.isPlaceable())
+            {
+                Vector2 tile = __instance.TileLocation;
+                int x = (int)tile.X * 64;
+                int y = (int)tile.Y * 64;
+                bool canPlace = Utility.playerCanPlaceItemHere(location, __instance, x, y, Game1.player);
+                int srcX = canPlace ? 194 : 210;
+
+                // Single 1x1 validity square at the target tile. No translucent sprite — seeds
+                // don't get a placement ghost (that was the original #73 complaint).
+                spriteBatch.Draw(
+                    Game1.mouseCursors,
+                    new Vector2((int)tile.X * 64 - Game1.viewport.X, (int)tile.Y * 64 - Game1.viewport.Y),
+                    new Microsoft.Xna.Framework.Rectangle(srcX, 388, 16, 16),
+                    Color.White,
+                    0f,
+                    Vector2.Zero,
+                    4f,
+                    SpriteEffects.None,
+                    0.01f
+                );
+
+                Game1.isCheckingNonMousePlacement = false;
+                __result = true;
+                return false;
+            }
+
             // --- #68: placeable craftables (machines, kegs, sprinklers, etc.). ---
             // Plain Object / BigCraftable, 1x1 placement footprint. On controller vanilla
             // draws the full multi-tile green map over every valid tile (cluttered/useless);
