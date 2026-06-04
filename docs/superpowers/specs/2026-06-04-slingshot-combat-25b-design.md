@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-04
 **Item:** TODO #25b (v3.9.x — the deliberate exception to the "right-stick ships in v4.0" rule)
-**Status:** design approved (investigation-first); Phase 1 diagnostic next.
+**Status:** ✅ v1 console parity SHIPPED v3.8.14→v3.8.16 (device-verified G Cloud 2026-06-04, see `DONE.md` "#25b Slingshot Combat"). Dual-stick stretch below is still open.
 
 ## Problem
 

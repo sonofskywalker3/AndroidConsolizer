@@ -164,15 +164,12 @@ Three player-facing real-time gameplay systems. Each likely needs multiple patch
 - **NOT mod-caused.** Occurs regardless of layout. Android port difference.
 - **Resolved:** two root causes — the held-button auto-repeat (`Game1.cs:13640`) re-firing + re-zeroing the charge, and the Android tap-to-move teardown (`_mobileUpdateControlInput`) stalling the charge on movement. Fix in `Patches/ToolUsePatches.cs` (Stage 1 suppress re-fire + Stage 2 re-assert charge-hold), GMCM `EnableMoveWhileCharging`. Upgraded Hoe + Watering Can; hop-to-grid deferred. Full writeup in `DONE.md`.
 
-### 25b. Slingshot Combat
-- Having slingshot equipped stops movement. Slingshot doesn't behave like console.
+### 25b. Slingshot Combat — ✅ DONE v3.8.14→v3.8.16 (device-verified G Cloud 2026-06-04, see `DONE.md`)
+- Having slingshot equipped stopped movement; slingshot didn't behave like console.
 - **Expected (console):** Move freely, hold tool button to aim (stick controls crosshairs), release to fire.
-- **EXPLICIT EXCEPTION to the "right-stick features ship in v4.0" rule.** Slingshot is high-usage parity (people actually fight monsters), and gating it on the cursor release would leave a working ranged weapon hostage to a much bigger feature arc.
-- **Key question:** Vanilla Android bug or mod-caused?
-  - Our X/Y swap in `GetState_Postfix` might interfere with slingshot's pull-back mechanic (continuous held state, not just press).
-  - Fix idea: disable X/Y swap during slingshot use (`Game1.player.CurrentTool is Slingshot`)?
-- **Investigation:** Test with mod disabled. Decompile `Slingshot.beginUsing()`, `tickUpdate()`, `endUsing()`.
-- Possibly related to #25 (both involve stick + tool-use state).
+- **NOT mod-caused (same subsystem as #25).** Android's tap-to-move/mobile-input layer (`Game1._mobileUpdateControlInput`) injected the slingshot's use-tool button events from stick/tap motion (`tapToMove.mobileKeyStates`), so stick motion alone fired it, a held button auto-fired, and movement was blocked. Aim was also mirrored/down-defaulting because Android defaults `Options.useLegacySlingshotFiring = true` (Switch uses non-legacy).
+- **Resolved:** postfix `_mobileUpdateControlInput` to drive the three use-tool flags from the physical tool button only (hold→draw/aim with left stick, release→fire once), and force `useLegacySlingshotFiring=false` for console direct-aim. GMCM `EnableSlingshotAim`. Fix in `Patches/SlingshotAimPatches.cs`. Full writeup in `DONE.md`.
+- **Dual-stick stretch (better-than-console) deferred** — right-stick aim-and-fire while walking; see the design spec `docs/superpowers/specs/2026-06-04-slingshot-combat-25b-design.md` "Making it even better". Separate toggle/commit; needs a slingshot carve-out in `SuppressRightStickInOverworld`.
 
 ---
 
