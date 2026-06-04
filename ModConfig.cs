@@ -146,6 +146,15 @@ namespace AndroidConsolizer
         /// </summary>
         public bool EnableSlingshotAim { get; set; } = true;
 
+        /// <summary>
+        /// #74: Console-style drop blocker. On Android, dropping an item lets you instantly re-grab
+        /// it (often before you've left the menu) because the vanilla `Debris.DroppedByPlayerID`
+        /// exclusion is never set. When true, deliberate player drops tag the dropper so the engine's
+        /// own 1200ms exclusion engages — your own drop won't fly straight back. Monster loot, harvest,
+        /// and other debris are unaffected. Disable to restore vanilla Android instant re-pickup.
+        /// </summary>
+        public bool EnableConsoleDropBlocker { get; set; } = true;
+
         /// <summary>Whether to use free cursor (vanilla) instead of snap navigation on the Options page and GMCM config page.</summary>
         public bool FreeCursorOnSettings { get; set; } = false;
 
