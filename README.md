@@ -4,9 +4,13 @@ A SMAPI mod that makes Android Stardew Valley's controller support work like the
 
 If you play on a handheld (Odin, Ayaneo, Retroid, etc.) or dock your phone/tablet to a TV, this mod makes the game actually playable without a touchscreen.
 
-## Current Version: 3.8.4 — Switch Pro Controller & Recipe Fixes
+## Current Version: 3.8.5 — Seed Planting Ghost Fix
 
-## What's New in v3.8.4
+## What's New in v3.8.5
+
+**Seeds no longer show a placement ghost while planting.** The single-tile placement preview added in v3.8 for machines and sprinklers was also catching crop seeds, so a translucent seed-packet sprite appeared in front of your character as you planted. Seeds plant straight into tilled soil and never needed a preview — they now plant cleanly with no ghost. Furniture and machine/sprinkler placement ghosts are unchanged.
+
+## Previously in v3.8.4 — Switch Pro Controller & Recipe Fixes
 
 **Nintendo Switch Pro controllers now switch toolbar items correctly.** On some Android devices the Pro controller's ZL/ZR triggers are *digital-only* (no analog pressure), which the mod's toolbar navigation wasn't reading — so after you changed toolbar rows, the triggers stopped switching items until you nudged the D-pad. The mod now recognizes digital triggers and drives item-switching itself, so it keeps working across row changes. Thanks to kabusann2008 for the report.
 
