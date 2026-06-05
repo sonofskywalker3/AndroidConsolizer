@@ -167,12 +167,8 @@ Vanilla GeodeMenu opens with `_selectedItemIndex = -1` — the cursor sits at sl
 - **Device-gate RESOLVED:** zoom **does** move the render via the PinchZoom wiring → **ships in 3.9.0**. **Supersedes #76** (force retired in favor of the native checkbox).
 - **Only pending:** user's final confirm that the 50-200 range feels right (default 150 mid-bar). Engineering verified (log: "OptionsPage injection patches applied", no errors).
 
-### 78. Dialogue Choice Boxes Use Yellow Tint Instead of Console Finger-Cursor + Red Outline — 🆕 NEW 2026-06-04 (user, in-game)
-- **Reported 2026-06-04 (user, in-game):** on console, choice boxes (e.g. the "go to sleep?" Yes/No prompt) show the selected option with the **finger/hand cursor + a red outline**. AC currently tints the selected choice **yellow**, which the user dislikes ("good enough before, now I want you to fix that this release"). Wants console parity in 3.9.0.
-- **Scope:** dialogue/question choice boxes — `DialogueBox` question responses (sleep prompt, NPC yes/no, festival choices, etc.). Match console: red outline + finger cursor on the selected response; drop the yellow tint.
-- **Where (to confirm):** likely AC adds the yellow highlight in `Patches/DialogueBoxPatches.cs` (or it's vanilla Android's selected-response tint). Read the Android `DialogueBox.draw` response-draw to see how the current selection is indicated, then replace the tint with the console indicator (red `Game1.staminaRect` outline + `Game1.mouseCursors` finger tile at the selected response).
-- **Decompile ref:** `DialogueBox.cs` (Android) response rendering; `Game1.mouseCursors` cursor/finger tile.
-- **Files:** `Patches/DialogueBoxPatches.cs`. **Needs a quick brainstorm** (exact look + which menus) before implementing.
+### 78. Dialogue Choice Boxes Use Yellow Tint Instead of Console Finger-Cursor + Red Outline — ✅ DONE v3.8.32→v3.8.39 (device-verified G Cloud 2026-06-04)
+- **Resolved:** a `DialogueBox.draw` postfix (`Patches/DialogueBoxPatches.cs`, GMCM `EnableConsoleDialogueCursor`) overlays the selected response with the console look — covers the yellow box with the plain box, full-alpha text, a **maroon `rgb(128,0,0)`** outline (4px staminaRect bars), and the menu finger cursor (`mouseCursors` tile 44) on the bottom line ~20% in from the right; the `setUpQuestions` postfix pre-selects Yes. **Key gotcha:** both the overlay and the pre-selection had to drop the `gamepadControls && !lastCursorMotionWasMouse` gate — on Android `lastCursorMotionWasMouse` reads True even on a controller (synthesized touch), so the gate bailed (log-confirmed). See `DONE.md` "#78" + memory `android-lastcursormotionwasmouse-true-on-controller`. Color chosen via `tools/dialogue-outline-color-picker.html`. Spec: `docs/superpowers/specs/2026-06-04-dialogue-cursor-78-design.md`.
 
 ---
 
