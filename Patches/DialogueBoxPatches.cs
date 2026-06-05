@@ -87,17 +87,18 @@ namespace AndroidConsolizer.Patches
 
         /// <summary>
         /// Postfix on DialogueBox.setUpQuestions — after the game's setup runs (which leaves
-        /// selectedResponse at -1), pre-select the top option so something is visibly
-        /// highlighted and the game's up/down navigation behaves intuitively. Gated on the
-        /// same condition the game's own setUpForGamePadMode() uses, so touch/mouse users
-        /// keep vanilla behavior.
+        /// selectedResponse at -1), pre-select the top option (e.g. "Yes") so the box opens
+        /// with something highlighted and up/down navigation behaves intuitively.
+        ///
+        /// Deliberately NOT gated on `gamepadControls && !lastCursorMotionWasMouse` (the game's
+        /// own setUpForGamePadMode() gate): on Android the controller confirm arrives as a
+        /// synthesized touch, so those flags read as touch even on a controller, which made this
+        /// no-op (the box opened with nothing selected). AC is controller-only scope.
         /// </summary>
         private static void SetUpQuestions_Postfix(DialogueBox __instance)
         {
             try
             {
-                if (!Game1.options.gamepadControls || Game1.lastCursorMotionWasMouse)
-                    return;
                 if (__instance.responses == null || __instance.responses.Length == 0)
                     return;
 
