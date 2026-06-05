@@ -120,16 +120,16 @@ namespace AndroidConsolizer.Patches
                 InsertAfter(options, 34, new OptionsCheckbox(LabelAlwaysShowToolHit, OptAlwaysShowToolHit));
                 InsertAfter(options, OptAlwaysShowToolHit, new OptionsCheckbox(LabelHideToolHitMoving, OptHideToolHitMoving));
 
-                // Zoom slider (device-gated). Self-syncs to desiredBaseZoomLevel*100 (50-100) via
-                // setSliderToProperValue case 18. Bound to 50-100 so OptionsPagePatches' Left/Right nav
-                // steps within range; the value is APPLIED via OptionsPagePatches.ApplySliderValue
-                // because changeSliderOption(18) is a broken stepper.
+                // Zoom slider. Self-syncs to desiredBaseZoomLevel*100 via setSliderToProperValue case 18.
+                // Mobile zoom actually ranges ~46-400% (default 150); the user wants the bar capped to the
+                // useful 50-200 band. These bounds also clamp OptionsPagePatches' Left/Right ±10 nav; the
+                // value is APPLIED via OptionsPagePatches.ApplyMobileZoom (PinchZoom pipeline).
                 if (_optionsSliderCtor != null)
                 {
                     var zoom = (OptionsSlider)_optionsSliderCtor.Invoke(
                         new object[] { LabelZoom, OptZoom, -1, -1, __instance.width });
                     AccessTools.Field(typeof(OptionsSlider), "sliderMinValue")?.SetValue(zoom, 50);
-                    AccessTools.Field(typeof(OptionsSlider), "sliderMaxValue")?.SetValue(zoom, 100);
+                    AccessTools.Field(typeof(OptionsSlider), "sliderMaxValue")?.SetValue(zoom, 200);
                     InsertBefore(options, 1, zoom);
                 }
             }
