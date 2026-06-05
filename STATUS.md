@@ -1,12 +1,13 @@
 # AndroidConsolizer — Status
 
-**Current version:** **3.9.10 (dev iteration)** — last SHIPPED release is **v3.9.0** (2026-06-04, GitHub + Nexus). v3.9.1→v3.9.10 are unreleased dev patches building **v4.0 The Right Stick Update**. All committed to `master` (push fine; release needs a "yes"). Working tree clean.
+**Current version:** **3.9.16 (dev iteration)** — last SHIPPED release is **v3.9.0** (2026-06-04, GitHub + Nexus). v3.9.1→v3.9.16 are unreleased dev patches building **v4.0 The Right Stick Update**. All committed to `master` (push fine; release needs a "yes"). Working tree clean.
 
 ### ▶ FRESH AGENT START HERE
 - **READ `docs/superpowers/specs/2026-06-05-handoff-right-stick-cursor-wip.md` FIRST** — it has the full state of the in-progress v4.0 right-stick cursor.
 - **v4.0 "The Right Stick Update" (#12 + #62) — the overworld cursor CORE is DONE and device-verified** (cursor visible + auto-hide, interaction/tools/placement all follow the cursor incl. diagonals, no center-snap). It lives entirely in `Patches/RightStickCursorPatches.cs`.
-- **Remaining before the v4.0.0 release:** **#79 contextual cursor** (hand/speech-bubble sprite), the **stuck #76 tool-hit box**, **#77 settings persistence** (zoom + tool-hit box reset on cold restart), and pre-release hygiene (demote `[RStickDiag]`, drop the now-redundant `EnforceTick`, move #12/#62 to `DONE.md`). All detailed in the handoff + `TODO.md` v4.0 section.
-- **Start the next change at v3.9.11** (next 0.0.1) unless told otherwise; bump `manifest.json` BEFORE building, one change per commit, `git add <specific files>`.
+- **#79 contextual cursor — ✅ DONE (reduced scope, v3.9.11→v3.9.16, device-verified):** tile cursor (chest/mailbox → hand, inspectables → magnifier) via `RightStickCursorPatches.ResolveContextualCursor()`. NPC speech-bubble/gift + forage/furnace grab deliberately dropped (per-frame engine-call cost; NPCs only show talk with pending dialogue). Session also fixed: logging floods (v3.9.12/14), #54 trigger fast re-pull `ConfirmTicks` 4→2 (v3.9.15, log-verified 107/107 pulls), #73 fertilizer box-only (v3.9.16). See `DONE.md` "#79 …".
+- **Remaining before the v4.0.0 release:** the **stuck #76 tool-hit box** (revert to facing tile on cursor fade), **#77 settings persistence** (zoom + tool-hit box reset on cold restart), and pre-release hygiene (demote remaining diagnostics — `[BtnMap]`/`[ToolIdx]`/`[SPDiag]`, drop the now-redundant `EnforceTick`, move #12/#62 to `DONE.md`). Detailed in the handoff + `TODO.md` v4.0 section.
+- **Start the next change at v3.9.17** (next 0.0.1) unless told otherwise; bump `manifest.json` BEFORE building, one change per commit, `git add <specific files>`.
 - **PC 1.6 decompile now cloned** at `…/decompiler/stardew-valley-pc/Stardew Valley/StardewValley/` — use it to confirm console-intended behavior vs Android mobile overrides.
 - Publishing is automated: **creating a GitHub release auto-publishes the file to Nexus** via `.github/workflows/publish-nexus.yml`; `release-notes/nexus-update.mjs` updates the mod-page description + version; the per-version **changelog** paste is the only manual step. See memory `nexus-publishing`.
 - Primary test device: **G Cloud**. Deploy/logs via `cd ../SyncdewValley; pwsh -NoProfile -File sync.ps1 deploy|logs` (SyncdewValley is at `Stardee Valoo/SyncdewValley`).
