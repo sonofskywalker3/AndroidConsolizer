@@ -1,14 +1,13 @@
 # AndroidConsolizer — Status
 
-**Current version:** **3.9.18 (dev iteration)** — last SHIPPED release is **v3.9.0** (2026-06-04, GitHub + Nexus). v3.9.1→v3.9.18 are unreleased dev patches building **v4.0 The Right Stick Update**. All committed to `master` (push fine; release needs a "yes"). Working tree clean.
+**Current version:** **4.0.0 — SHIPPED 2026-06-05 (GitHub release `v4.0.0` + Nexus).** "The Right Stick Update." With the right stick now the console free cursor, the mod is **considered FEATURE COMPLETE** (the full Switch control scheme is covered) — ongoing work is bug fixes + parity-closing feature requests only, no new feature classes planned. All committed + pushed to `master`. Working tree clean.
 
 ### ▶ FRESH AGENT START HERE
-- **READ `docs/superpowers/specs/2026-06-05-handoff-right-stick-cursor-wip.md` FIRST** — it has the full state of the in-progress v4.0 right-stick cursor.
-- **v4.0 "The Right Stick Update" (#12 + #62) — the overworld cursor CORE is DONE and device-verified** (cursor visible + auto-hide, interaction/tools/placement all follow the cursor incl. diagonals, no center-snap). It lives entirely in `Patches/RightStickCursorPatches.cs`.
-- **#79 contextual cursor — ✅ DONE (reduced scope, v3.9.11→v3.9.16, device-verified):** tile cursor (chest/mailbox → hand, inspectables → magnifier) via `RightStickCursorPatches.ResolveContextualCursor()`. NPC speech-bubble/gift + forage/furnace grab deliberately dropped (per-frame engine-call cost; NPCs only show talk with pending dialogue). Session also fixed: logging floods (v3.9.12/14), #54 trigger fast re-pull `ConfirmTicks` 4→2 (v3.9.15, log-verified 107/107 pulls), #73 fertilizer box-only (v3.9.16). See `DONE.md` "#79 …".
-- **All v4.0 features DONE + device-verified:** #12 cursor, #62 furniture, #79 contextual cursor (tile scope), #76 tool-hit box revert (v3.9.17), #77 zoom + tool-hit persistence (v3.9.18). Also fixed this session: #54 trigger fast re-pull (v3.9.15), #73 fertilizer box-only (v3.9.16), two logging-flood cleanups (v3.9.12/14).
-- **Remaining before the v4.0.0 release:** pre-release hygiene only — demote remaining verbose diagnostics (`[BtnMap]`/`[ToolIdx]`/`[SPDiag]`), consider removing the now-redundant `EnforceTick`. Then bump to 4.0.0 and (on the user's explicit "yes") cut the release with a README ≡ Nexus "What's New."
-- **Start the next change at v3.9.19** (next 0.0.1) unless told otherwise; bump `manifest.json` BEFORE building, one change per commit, `git add <specific files>`.
+- **The mod is FEATURE COMPLETE as of v4.0.0.** Don't plan new feature milestones. Handle reported bugs (Nexus comments/bugs, user playtesting) and consider feature requests only if they bring Android closer to **full console parity** (something genuinely missed). See memory `androidconsolizer-feature-complete-v4`.
+- **Only manual release step still pending for v4.0.0:** paste `release-notes/4.0.0-nexus-changelog.txt` on the Nexus version-history page (`unex changelog` is dead). Everything else (file upload via the publish workflow, description + version field via `nexus-update.mjs`) is done.
+- **v4.0 "The Right Stick Update" — ALL DONE + device-verified, then released:** #12 right-stick overworld cursor + #62 placement-ghost follow, #79 contextual cursor (tile scope; NPC/forage deliberately out), #76 tool-hit box reverts to facing on fade (v3.9.17), #77 zoom + all-options persistence across cold restart (v3.9.18→v3.9.23). Plus #54 faster trigger re-pull (v3.9.15), #73 fertilizer box-only (v3.9.16), verbose-logging perf cleanups (v3.9.12/14/19). Lives in `Patches/RightStickCursorPatches.cs` + `OptionsPagePatches.cs` + small wiring. Full writeup in `DONE.md`.
+- **`EnforceTick` is intentionally retained** (redundant with the `setMousePositionRaw` postfix but idempotent/harmless — see its doc comment; safe post-release cleanup if ever wanted).
+- **Start the next change at v4.0.1** (next 0.0.1) unless told otherwise; bump `manifest.json` BEFORE building, one change per commit, `git add <specific files>`.
 - **PC 1.6 decompile now cloned** at `…/decompiler/stardew-valley-pc/Stardew Valley/StardewValley/` — use it to confirm console-intended behavior vs Android mobile overrides.
 - Publishing is automated: **creating a GitHub release auto-publishes the file to Nexus** via `.github/workflows/publish-nexus.yml`; `release-notes/nexus-update.mjs` updates the mod-page description + version; the per-version **changelog** paste is the only manual step. See memory `nexus-publishing`.
 - Primary test device: **G Cloud**. Deploy/logs via `cd ../SyncdewValley; pwsh -NoProfile -File sync.ps1 deploy|logs` (SyncdewValley is at `Stardee Valoo/SyncdewValley`).
@@ -83,9 +82,9 @@ Roadmap was re-evaluated after v3.6.0 — see [`docs/superpowers/specs/2026-05-0
 | v3.5.x → v3.6.0 | Chest & Item Polish + Bug Fix Release | **Complete** |
 | v3.7.0 | Bug Fix Release 2 | **Complete — shipped to GitHub 2026-05-14** |
 | v3.8.0 | Console Parity: Quick Wins | **Complete — shipped 2026-05-31 (GitHub + Nexus)** |
-| **v3.9.0** | **Console Parity: Big Systems** | **Next** |
-| v4.0.0 | The Right Stick Update | Pending |
-| post-4.0 | Advanced Features | Pending |
+| v3.9.0 | Console Parity: Big Systems | **Complete — shipped 2026-06-04** |
+| **v4.0.0** | **The Right Stick Update** | **Complete — shipped 2026-06-05 (GitHub + Nexus). Mod now FEATURE COMPLETE.** |
+| post-4.0 | Bug fixes + parity-closing requests only | Ongoing (no new feature classes) |
 
 **Key roadmap shifts:**
 - **#12 cursor decoupled from #18 / #19.** Switch handles museum donations and geode breaking with snap-based navigation, no free cursor required. Bundling them with the cursor was a planning error.
