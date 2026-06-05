@@ -409,6 +409,7 @@ namespace AndroidConsolizer.Patches
                 // The deltas accumulate, so a small nudge drifts the cursor many tiles away
                 // and interact/sickle then target the wrong tile.
                 if (ModEntry.Config?.SuppressRightStickInOverworld == true
+                    && !RightStickCursorPatches.DiagnosticLiftSuppression
                     && Game1.activeClickableMenu == null
                     && __result.ThumbSticks.Right != Vector2.Zero)
                 {
