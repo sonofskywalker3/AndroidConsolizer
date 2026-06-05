@@ -296,18 +296,14 @@ namespace AndroidConsolizer
             }
 
             // Clean up inventory management state when leaving inventory
-            if (e.OldMenu is GameMenu oldGameMenu)
+            if (e.OldMenu is GameMenu)
             {
                 Patches.InventoryManagementPatches.OnMenuClosed();
                 Patches.FishingRodPatches.ClearSelection();
                 Patches.SlingshotPatches.ClearSelection();
+                // OnOptionsPageClosed also persists all serializable vanilla options (#77) when the
+                // Options page was used this session — independent of the current tab at close.
                 Patches.OptionsPagePatches.OnOptionsPageClosed();
-                // #77: if closed straight from the Options tab, persist ALL serializable vanilla
-                // options the game's own way (AC's controller toggles bypass the per-change save).
-                // Mirrors GameMenu's leave-options-tab save (GameMenu.cs:437); covers every option
-                // beyond zoom (which is handled separately via SavedZoomPercent).
-                if (oldGameMenu.currentTab == GameMenu.optionsTab)
-                    Patches.OptionsPagePatches.PersistVanillaOptions();
             }
 
             // Fix snap navigation in ItemGrabMenu (chests, fishing treasure, etc.)
