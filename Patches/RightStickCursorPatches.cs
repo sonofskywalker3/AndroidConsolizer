@@ -55,10 +55,64 @@ namespace AndroidConsolizer.Patches
                 {
                     Monitor.Log("[RStickCursor] pressActionButton not found; interaction cursor targeting disabled.", LogLevel.Warn);
                 }
+
+                // Make TOOL USE + held-object placement follow the right-stick cursor. In
+                // pressUseToolButton, when a controller button is held (i.e. you're swinging a
+                // tool), Android overrides the target to player.GetLocationNextToWhereYoureFacing()
+                // (Game1.cs:12317-12327) — the facing tile. That method has only those two callers
+                // (both in the tool path), so a postfix that returns the cursor tile while the
+                // cursor is active cleanly redirects tool/placement targeting to the cursor (console
+                // parity, user-confirmed: tools hit the selected spot, not the facing spot). When
+                // the cursor fades it returns the normal facing tile.
+                // Resolve by STRING — GetLocationNextToWhereYoureFacing is absent on the PC
+                // reference DLL (Android-only), so nameof/direct refs won't compile. Resolves
+                // against the Android Character at runtime; null-checked below.
+                var locNextTo = AccessTools.Method(
+                    typeof(Character), "GetLocationNextToWhereYoureFacing",
+                    new[] { typeof(int) });
+                if (locNextTo != null)
+                {
+                    harmony.Patch(
+                        locNextTo,
+                        postfix: new HarmonyMethod(typeof(RightStickCursorPatches), nameof(GetLocationNextToWhereYoureFacing_Postfix)));
+                }
+                else
+                {
+                    Monitor.Log("[RStickCursor] GetLocationNextToWhereYoureFacing not found; tool cursor targeting disabled.", LogLevel.Warn);
+                }
             }
             catch (Exception ex)
             {
                 Monitor.Log($"[RStickCursor] Apply failed: {ex.Message}", LogLevel.Warn);
+            }
+        }
+
+        /// <summary>
+        /// Postfix on Character.GetLocationNextToWhereYoureFacing: while the right-stick cursor is
+        /// active, return the cursor tile (pixel position) instead of the facing-adjacent tile, so
+        /// tool swings + held-object placement target the cursor (console parity). Scoped to the
+        /// local player and the cursor-visible window (timerUntilMouseFade > 0); when the cursor
+        /// fades, the normal facing-tile result stands. The engine clamps to tool range downstream
+        /// (GetToolLocation) and turns the player toward the result.
+        /// </summary>
+        private static void GetLocationNextToWhereYoureFacing_Postfix(Character __instance, ref Vector2 __result)
+        {
+            try
+            {
+                if (ModEntry.Config?.EnableRightStickCursor != true) return;
+                if (!(__instance is Farmer farmer) || !farmer.IsLocalPlayer) return;
+                if (Game1.activeClickableMenu != null || Game1.eventUp) return;
+                if (farmer.CurrentTool is StardewValley.Tools.Slingshot) return;
+
+                int fade = 0;
+                try { fade = (int)(_timerUntilMouseFade?.GetValue(null) ?? 0); } catch { return; }
+                if (fade <= 0) return; // cursor faded → keep the facing-tile result
+
+                __result = new Vector2(Game1.getOldMouseX() + Game1.viewport.X, Game1.getOldMouseY() + Game1.viewport.Y);
+            }
+            catch (Exception ex)
+            {
+                Monitor.Log($"[RStickCursor] locNextTo postfix error: {ex.Message}", LogLevel.Trace);
             }
         }
 
