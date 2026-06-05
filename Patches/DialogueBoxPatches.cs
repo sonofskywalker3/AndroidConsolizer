@@ -36,8 +36,8 @@ namespace AndroidConsolizer.Patches
         // Finger sits this fraction of the box width left of the right edge, on the bottom line.
         private const float FingerRightInset = 0.2f;
 
-        // Outline color — a darker rust red (user preference; "closer to rust than clown hair").
-        private static readonly Color OutlineColor = new Color(158, 48, 30);
+        // Outline color — maroon (user-picked via the tools/dialogue-outline-color-picker.html).
+        private static readonly Color OutlineColor = new Color(128, 0, 0);
 
         // Throttle for the #78 draw diagnostic (VerboseLogging only).
         private static int _lastDiagTick = -1000;
