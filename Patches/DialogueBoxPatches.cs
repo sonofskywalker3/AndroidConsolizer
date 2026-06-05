@@ -30,9 +30,13 @@ namespace AndroidConsolizer.Patches
         // Red outline thickness in pixels: 1 source-pixel x the menu's 4x box scale,
         // matching the tool-hit-location box border (Farmer.cs:6368, mouseCursors tile 29).
         private const int OUTLINE_THICKNESS = 4;
-        // mouseCursors standard tiles: 29 = tool-hit red target box; 0 = regular finger cursor.
+        // mouseCursors standard tiles: 29 = tool-hit red target box; 44 = the menu/inventory
+        // snap "finger" cursor (the same one GeodeMenu and the Museum draw — NOT tile 0, which is
+        // the plain mouse pointer).
         private const int ToolHitTileIndex = 29;
-        private const int FingerTileIndex = 0;
+        private const int FingerTileIndex = 44;
+        // Finger sits this fraction of the box width left of the right edge, on the bottom line.
+        private const float FingerRightInset = 0.2f;
 
         // Sampled-once exact red from the tool-hit sprite (cached). Falls back to pure red.
         private static Color? _toolHitRed;
@@ -188,11 +192,11 @@ namespace AndroidConsolizer.Patches
                 // 3) Red outline matching the tool-hit box border.
                 DrawOutline(b, new Rectangle(boxX, boxY, boxW, boxH), OUTLINE_THICKNESS, GetToolHitRed());
 
-                // 4) Regular finger cursor at the box bottom-right corner (same anchor math
-                //    AC uses for the inventory held-item draw).
+                // 4) Menu/inventory finger cursor (tile 44) along the box bottom line, ~20% in
+                //    from the right edge.
                 b.Draw(
                     Game1.mouseCursors,
-                    new Vector2(boxX + boxW - 16, boxY + boxH - 16),
+                    new Vector2(boxX + boxW - 16 - (int)(boxW * FingerRightInset), boxY + boxH - 16),
                     Game1.getSourceRectForStandardTileSheet(Game1.mouseCursors, FingerTileIndex, 16, 16),
                     Color.White, 0f, Vector2.Zero, 4f, SpriteEffects.None, 0.9f);
             }
@@ -236,7 +240,8 @@ namespace AndroidConsolizer.Patches
             if (_toolHitRed.HasValue)
                 return _toolHitRed.Value;
 
-            Color result = new Color(255, 0, 0);
+            // Muted orange-red fallback (not pure 255,0,0 — that reads too bright as a solid bar).
+            Color result = new Color(200, 50, 35);
             try
             {
                 var sheet = Game1.mouseCursors;
@@ -245,18 +250,18 @@ namespace AndroidConsolizer.Patches
                     Rectangle src = Game1.getSourceRectForStandardTileSheet(sheet, ToolHitTileIndex, 16, 16);
                     var buffer = new Color[src.Width * src.Height];
                     sheet.GetData(0, src, buffer, 0, buffer.Length);
-                    int bestScore = int.MinValue;
+                    // Average the red-dominant opaque pixels — the box's representative tint,
+                    // which includes the sprite's shading (so it's muted, not the hottest pixel).
+                    long rSum = 0, gSum = 0, bSum = 0;
+                    int count = 0;
                     foreach (var c in buffer)
                     {
-                        if (c.A < 128)
+                        if (c.A < 200 || c.R <= c.G || c.R <= c.B)
                             continue;
-                        int score = c.R - c.G - c.B;
-                        if (score > bestScore)
-                        {
-                            bestScore = score;
-                            result = new Color(c.R, c.G, c.B);
-                        }
+                        rSum += c.R; gSum += c.G; bSum += c.B; count++;
                     }
+                    if (count > 0)
+                        result = new Color((int)(rSum / count), (int)(gSum / count), (int)(bSum / count));
                 }
             }
             catch (Exception ex)
