@@ -30,8 +30,41 @@ namespace AndroidConsolizer.Patches
         public static void Apply(Harmony harmony, IMonitor monitor)
         {
             Monitor = monitor;
-            // No Harmony patch needed for the diagnostic — it polls from OnUpdateTicked.
-            // (Registration kept symmetric with the other patch classes.)
+            // No Harmony patch needed — the cursor is engine-native; we only nudge one flag
+            // per tick (EnforceTick) and log a diagnostic. Both run from OnUpdateTicked.
+        }
+
+        /// <summary>
+        /// Call from ModEntry.OnUpdateTicked. When the right stick moves the overworld cursor,
+        /// tell the game the cursor is the active pointer by setting lastCursorMotionWasMouse=true.
+        ///
+        /// Why: Game1.UpdateControlInput moves the cursor from the right stick (13303-13334) but,
+        /// unlike the real-mouse branch, leaves lastCursorMotionWasMouse=false. On Android the
+        /// cursor-draw gate (Game1.cs:11971/12161) and Character.GetToolLocation(1213-1219) then
+        /// skip the cursor and fall back to the facing tile (player.GetGrabTile) — so the cursor
+        /// is invisible AND tools target the facing tile. Setting the flag true makes the engine
+        /// draw the cursor (wasMouseVisibleThisFrame becomes true) and aim tools/interaction at
+        /// the cursor tile. When the stick goes idle and the 4s fade zeroes mouseCursorTransparency,
+        /// the gates' "transparency == 0" term reverts targeting to the facing tile on its own.
+        ///
+        /// Scoped: overworld only (no active menu), cursor enabled, not while a slingshot is the
+        /// active tool (#25b aim = left stick). One-tick lag on first flick is imperceptible.
+        /// </summary>
+        public static void EnforceTick()
+        {
+            try
+            {
+                if (ModEntry.Config?.EnableRightStickCursor != true) return;
+                if (Game1.activeClickableMenu != null) return;
+                if (Game1.player?.CurrentTool is StardewValley.Tools.Slingshot) return;
+                if (GameplayButtonPatches.RawRightStickX == 0f && GameplayButtonPatches.RawRightStickY == 0f) return;
+
+                Game1.lastCursorMotionWasMouse = true;
+            }
+            catch (Exception ex)
+            {
+                Monitor.Log($"[RStickCursor] enforce error: {ex.Message}", LogLevel.Trace);
+            }
         }
 
         /// <summary>Call from ModEntry.OnUpdateTicked. Logs engine cursor state while the right stick moves.</summary>
