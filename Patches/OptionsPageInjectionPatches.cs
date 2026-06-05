@@ -111,26 +111,48 @@ namespace AndroidConsolizer.Patches
                         || (adjustBtn != null && ReferenceEquals(o, adjustBtn)));
                 }
 
-                options.Add(new OptionsCheckbox(LabelAlwaysShowToolHit, OptAlwaysShowToolHit));
-                options.Add(new OptionsCheckbox(LabelHideToolHitMoving, OptHideToolHitMoving));
+                // Insert in roughly console menu order rather than appending at the bottom. On console
+                // the tool-hit checkboxes sit in the gameplay block right after "Show Advanced Crafting
+                // Information" (whichOption 34), and zoom sits up near the display options. So: tool-hit
+                // after 34; zoom before the first audio slider (whichOption 1 = music volume), which is
+                // the top of the list after the touch options are hidden. Falls back to append if an
+                // anchor isn't present.
+                InsertAfter(options, 34, new OptionsCheckbox(LabelAlwaysShowToolHit, OptAlwaysShowToolHit));
+                InsertAfter(options, OptAlwaysShowToolHit, new OptionsCheckbox(LabelHideToolHitMoving, OptHideToolHitMoving));
 
                 // Zoom slider (device-gated). Self-syncs to desiredBaseZoomLevel*100 (50-100) via
                 // setSliderToProperValue case 18. Bound to 50-100 so OptionsPagePatches' Left/Right nav
-                // steps within range; the value is APPLIED via changeDropDownOption (see
-                // OptionsPagePatches.ApplySliderValue) because changeSliderOption(18) is a broken stepper.
+                // steps within range; the value is APPLIED via OptionsPagePatches.ApplySliderValue
+                // because changeSliderOption(18) is a broken stepper.
                 if (_optionsSliderCtor != null)
                 {
                     var zoom = (OptionsSlider)_optionsSliderCtor.Invoke(
                         new object[] { LabelZoom, OptZoom, -1, -1, __instance.width });
                     AccessTools.Field(typeof(OptionsSlider), "sliderMinValue")?.SetValue(zoom, 50);
                     AccessTools.Field(typeof(OptionsSlider), "sliderMaxValue")?.SetValue(zoom, 100);
-                    options.Add(zoom);
+                    InsertBefore(options, 1, zoom);
                 }
             }
             catch (Exception ex)
             {
                 Monitor?.Log($"OptionsPage Ctor_Postfix error: {ex.Message}", LogLevel.Error);
             }
+        }
+
+        /// <summary>Insert after the first option with the given whichOption (append if not found).</summary>
+        private static void InsertAfter(List<OptionsElement> options, int afterWhich, OptionsElement element)
+        {
+            int idx = options.FindIndex(o => o.whichOption == afterWhich);
+            if (idx >= 0) options.Insert(idx + 1, element);
+            else options.Add(element);
+        }
+
+        /// <summary>Insert before the first option with the given whichOption (append if not found).</summary>
+        private static void InsertBefore(List<OptionsElement> options, int beforeWhich, OptionsElement element)
+        {
+            int idx = options.FindIndex(o => o.whichOption == beforeWhich);
+            if (idx >= 0) options.Insert(idx, element);
+            else options.Add(element);
         }
 
         private static void ResolveScrollboxMembers(object scrollArea)
