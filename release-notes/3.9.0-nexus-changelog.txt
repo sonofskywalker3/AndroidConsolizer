@@ -1,0 +1,16 @@
+Console Parity: Big Systems — everything since v3.8.5.
+
+The big real-time systems now play like the Switch, plus a pass over the dialogs and the Options page. Every group is individually toggleable via GMCM.
+
+New:
+- Charge tools while moving — hold an upgraded Hoe or Watering Can while walking and it charges its area effect like console, instead of rapid-firing single uses and locking you in place. Basic tools, Pickaxe and Axe are unaffected.
+- Console slingshot aiming — move freely with a slingshot equipped; hold the tool button to draw and aim with the left stick, release to fire once. Aim is the Switch's direct aim, not Android's mirrored, straight-down default.
+- Drop blocker — you can no longer instantly re-grab an item the moment you drop it; the game's own short pickup delay now engages, like console. Monster loot and harvested crops are unaffected.
+- Restored Options page + working zoom — the in-game Options page now carries the console "Always show tool hit location" checkboxes and a Zoom Level slider that actually moves the view. Touch-only joypad options are hidden when a controller is connected, and the page scrolls far enough to reach the Mod Options (GMCM) button.
+
+Fixed:
+- Seeds and fertilizer now show a single red/green target box on the tile you'll plant into, instead of the touch-style green map lighting up every tilled tile on screen.
+- The shop buy list holds its scroll position after a purchase — buying no longer jumps the list to the top or pushes your selection off-screen.
+- Dialogue choice boxes (the "Go to sleep?" Yes/No, NPC yes/no, festival choices) open with the first option selected and show a red outline + finger cursor instead of the yellow highlight.
+
+Each feature is individually toggleable in Generic Mod Config Menu. Zoom level and the tool-hit-location checkboxes live on the in-game Options page.
