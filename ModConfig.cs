@@ -155,15 +155,6 @@ namespace AndroidConsolizer
         /// </summary>
         public bool EnableConsoleDropBlocker { get; set; } = true;
 
-        /// <summary>
-        /// #76: Console "always show tool hit location" — the red box on the tile your tool will hit
-        /// (hoe/water/pickaxe/axe). Android defaults this off and the controller never holds the
-        /// Shift key that would force it, so the marker never appears. When true, forces
-        /// alwaysShowToolHitLocation on and hideToolHitLocationWhenInMotion off so the box is always
-        /// visible (even while moving). Disable to restore vanilla Android behaviour.
-        /// </summary>
-        public bool EnableToolHitLocation { get; set; } = true;
-
         /// <summary>Whether to use free cursor (vanilla) instead of snap navigation on the Options page and GMCM config page.</summary>
         public bool FreeCursorOnSettings { get; set; } = false;
 
