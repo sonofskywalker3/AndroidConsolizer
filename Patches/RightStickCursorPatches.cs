@@ -26,7 +26,7 @@ namespace AndroidConsolizer.Patches
 
         // Last semantic cursor state logged by DiagnosticTick, to debounce the diagnostic so it
         // logs only on change (not every tick) — the per-tick flood was the #79 v3.9.11 input-lag
-        // regression. Format: isAction|isSpeech|isInspect|resolved|npc|npcRaw.
+        // regression. Format: isAction|isSpeech|isInspect|resolved.
         private static string _lastCtxKey = null;
 
         // timerUntilMouseFade is public static int on Android; reflect defensively (Android-vs-PC pattern).
@@ -303,6 +303,13 @@ namespace AndroidConsolizer.Patches
         ///
         /// Scoped: overworld only (no active menu), cursor enabled, not while a slingshot is the
         /// active tool (#25b aim = left stick). One-tick lag on first flick is imperceptible.
+        ///
+        /// NOTE (v4.0 pre-release review): this is now largely redundant with SetMousePositionRaw_Postfix,
+        /// which re-asserts the same flag closer to the engine's recenter check and is identically scoped
+        /// to active right-stick motion. EnforceTick is INTENTIONALLY RETAINED for v4.0.0 — it's
+        /// idempotent and harmless (sets a bool that's already true), and removing it would put the
+        /// headline cursor feature at re-verification risk right before declaring feature-complete.
+        /// Safe to remove as a post-4.0 cleanup if desired (keep the postfix).
         /// </summary>
         public static void EnforceTick()
         {
@@ -424,9 +431,8 @@ namespace AndroidConsolizer.Patches
         /// semantic state changes (debounced), while the cursor is visible. This replaces the old
         /// per-tick [RStickDiag]+[RStickCtx] flood (~30 INFO lines/sec) that stalled Android's main
         /// thread on synchronous log I/O and dropped input edges (#79 v3.9.11 regression). Debouncing
-        /// also means it captures hover-on-target transitions (chest/NPC/forage) instead of only the
-        /// empty-ground sweeps the stick-moving gate used to log. Also probes whether an NPC is at the
-        /// cursor tile + the raw cursor it would set, to diagnose the talk/gift cases.
+        /// also means it captures hover-on-target transitions (chest/sign/forage) instead of only the
+        /// empty-ground sweeps the old stick-moving gate logged.
         /// </summary>
         public static void DiagnosticTick()
         {
