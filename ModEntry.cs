@@ -364,9 +364,13 @@ namespace AndroidConsolizer
             // while a Slingshot is equipped, so we can pin where Android breaks aim/movement.
             Patches.SlingshotAimPatches.LogAimStateIfVerbose();
 
-            // #12 Phase 0 diagnostic (VerboseLogging-gated): once-per-tick engine cursor state
-            // while the right stick moves in the overworld, so we can confirm the native cursor
-            // path runs once AC stops zeroing the right stick.
+            // #12 right-stick cursor: tell the game the cursor is the active pointer while the
+            // right stick moves it, so the engine draws the overworld cursor and aims tools at
+            // the cursor tile (Game1 leaves lastCursorMotionWasMouse=false on the right-stick path).
+            Patches.RightStickCursorPatches.EnforceTick();
+
+            // #12 diagnostic (VerboseLogging-gated): once-per-tick engine cursor state while the
+            // right stick moves in the overworld.
             Patches.RightStickCursorPatches.DiagnosticTick();
 
             // Cutscene skip: detect Start press via GetState edge detection
