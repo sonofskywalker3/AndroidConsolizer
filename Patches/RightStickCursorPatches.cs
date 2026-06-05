@@ -271,6 +271,78 @@ namespace AndroidConsolizer.Patches
         }
 
         /// <summary>
+        /// Resolve the contextual cursor sprite index for the right-stick cursor, mirroring the
+        /// engine's own pick in Game1.drawMouseCursor — which computes it (NPC talk/gift via
+        /// canGrabSomethingFromHere, tile hint at 15647-15649, farm animals at 15653-15671) then
+        /// resets mouseCursor to cursor_default at Game1.cs:15688, before our RenderedHud draw runs.
+        /// Priority matches the engine: NPC talk/gift -> actionable tile hint (grab/look/talk) ->
+        /// un-petted animal (grab) -> default. Read-only except the NPC probe, whose side effect on
+        /// Game1.mouseCursor/mouseCursorTransparency is snapshot-restored. Any error -> cursor_default.
+        /// </summary>
+        private static int ResolveContextualCursor()
+        {
+            try
+            {
+                Farmer player = Game1.player;
+                GameLocation loc = Game1.currentLocation;
+                if (player == null || loc == null) return Game1.cursor_default;
+
+                // Cursor world-tile (same formula as updateCursorTileHint, Game1.cs:7446-7447).
+                Vector2 cursorTile = new Vector2(
+                    (Game1.viewport.X + Game1.getOldMouseX()) / 64,
+                    (Game1.viewport.Y + Game1.getOldMouseY()) / 64);
+
+                // 1) NPC talk/gift. checkForCharacterInteractionAtTile sets Game1.mouseCursor as a
+                //    side effect (cursor_talk / cursor_gift); snapshot + restore mouseCursor and
+                //    transparency so engine state is untouched. Probe the cursor tile and the tile
+                //    below, matching canGrabSomethingFromHere (Utility.cs:5009-5013). We call this
+                //    directly rather than canGrabSomethingFromHere so we don't double-fire hoverAction.
+                int savedCursor = Game1.mouseCursor;
+                float savedAlpha = Game1.mouseCursorTransparency;
+                Game1.mouseCursor = Game1.cursor_default;
+                bool npc = Utility.checkForCharacterInteractionAtTile(cursorTile, player)
+                        || Utility.checkForCharacterInteractionAtTile(cursorTile + new Vector2(0f, 1f), player);
+                int npcCursor = Game1.mouseCursor;
+                Game1.mouseCursor = savedCursor;
+                Game1.mouseCursorTransparency = savedAlpha;
+                if (npc && (npcCursor == Game1.cursor_talk || npcCursor == Game1.cursor_gift))
+                    return npcCursor;
+
+                // 2) Actionable tile hint: chest/mailbox/shipping-bin = grab, MessageSpeech = talk,
+                //    Dialogue/Message = look. Flags persist from this tick's updateCursorTileHint.
+                if (Game1.isActionAtCurrentCursorTile)
+                {
+                    return Game1.isSpeechAtCurrentCursorTile ? Game1.cursor_talk
+                         : Game1.isInspectionAtCurrentCursorTile ? Game1.cursor_look
+                         : Game1.cursor_grab;
+                }
+
+                // 3) Un-petted farm animal under the cursor -> grab (mirrors Game1.cs:15653-15671).
+                var animals = loc.animals;
+                if (animals != null)
+                {
+                    Vector2 mouseWorld = new Vector2(
+                        Game1.getOldMouseX() + Game1.uiViewport.X,
+                        Game1.getOldMouseY() + Game1.uiViewport.Y);
+                    foreach (var pair in animals.Pairs)
+                    {
+                        FarmAnimal animal = pair.Value;
+                        if (!animal.wasPet.Value
+                            && animal.GetCursorPetBoundingBox().Contains((int)mouseWorld.X, (int)mouseWorld.Y))
+                            return Game1.cursor_grab;
+                    }
+                }
+
+                return Game1.cursor_default;
+            }
+            catch (Exception ex)
+            {
+                Monitor.Log($"[RStickCtx] resolve error: {ex.Message}", LogLevel.Trace);
+                return Game1.cursor_default;
+            }
+        }
+
+        /// <summary>
         /// Draw the overworld right-stick cursor ourselves. The Android engine's drawMouseCursor
         /// computes cursor state (transparency, wasMouseVisibleThisFrame) but renders NO sprite in
         /// the overworld — mobile strips the hardware cursor — so it stays invisible even with
@@ -293,7 +365,7 @@ namespace AndroidConsolizer.Patches
                 if (fade <= 0) return; // engine has faded the cursor out (auto-hide)
 
                 float alpha = Game1.mouseCursorTransparency > 0f ? Game1.mouseCursorTransparency : 1f;
-                int tile = Game1.mouseCursor >= 0 ? Game1.mouseCursor : 0;
+                int tile = ResolveContextualCursor();
 
                 b.Draw(
                     Game1.mouseCursors,
@@ -337,6 +409,12 @@ namespace AndroidConsolizer.Patches
                     $"mouseXY=({Game1.getMouseX()},{Game1.getMouseY()}) transparency={Game1.mouseCursorTransparency:0.00} " +
                     $"timerUntilMouseFade={fade} lastCursorMotionWasMouse={Game1.lastCursorMotionWasMouse} " +
                     $"cursorEnabled={ModEntry.Config?.EnableRightStickCursor}",
+                    LogLevel.Info);
+
+                Monitor.Log(
+                    $"[RStickCtx] tile=({(Game1.viewport.X + Game1.getOldMouseX()) / 64},{(Game1.viewport.Y + Game1.getOldMouseY()) / 64}) " +
+                    $"isAction={Game1.isActionAtCurrentCursorTile} isSpeech={Game1.isSpeechAtCurrentCursorTile} " +
+                    $"isInspect={Game1.isInspectionAtCurrentCursorTile} resolvedCursor={ResolveContextualCursor()}",
                     LogLevel.Info);
             }
             catch (Exception ex)
