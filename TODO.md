@@ -172,7 +172,9 @@ Vanilla GeodeMenu opens with `_selectedItemIndex = -1` — the cursor sits at sl
 
 ---
 
-## v3.9.0 — Console Parity: Big Systems
+## v3.9.0 — Console Parity: Big Systems — ✅ SHIPPED 2026-06-04 (GitHub release v3.9.0 + Nexus)
+
+**Shipped:** all bundled items done and device-verified — #25, #25b, #74, #73, #75, #77 (supersedes #76), #78. GitHub release `v3.9.0`, Nexus file uploaded via the publish workflow, description + version updated to 3.9.0. Only manual step remaining at release time: paste `release-notes/3.9.0-nexus-changelog.txt` on the Nexus version-history page. Next milestone: **v4.0 — The Right Stick Update** (#12, #62) below.
 
 **Release plan (decided 2026-06-04):** 3.9.0 is the **next public release** — we do NOT cut a release per 3.8.x patch. It bundles everything unreleased since 3.8.0: **#25 charge-while-moving** (done v3.8.13), **#25b slingshot** (done v3.8.16), and the remaining small parity items **#74** (drop-blocker, ✅ done v3.8.17), **#76** (always-show-tool-hit-location, NEW), **#73** (seed target box — reopened, likely folds into #76), and **#75** (shop scroll). **4.0 = The Right Stick Update** (#12, #62) ships separately and should put us at ~100% console parity. Better-than-console extras (e.g. dual-stick slingshot) are NOT in either — they become their own mods.
 
@@ -197,20 +199,23 @@ Three player-facing real-time gameplay systems. Each likely needs multiple patch
 
 **Placement rule:** *all right-stick features ship in v4.0*, with slingshot aim (#25b) as the deliberate v3.9 exception. Major version bump because the right-stick cursor is the only remaining feature class that doesn't exist on Switch — calling v4.0 "The Right Stick Update" makes the bump narratively legible.
 
-### 12. Right Joystick Cursor Mode
-- **Bundled feature (LARGE)**
-- **Cursor mode:** Right joystick moves free cursor in menus + gameplay.
-  - Essential for precise furniture placement, free-cursor-driven future menus.
-  - On Switch: right stick moves cursor, disappears after inactivity. Press for left click.
-  - Implementation: read right stick axis (already cached as `RawRightStickX/Y` in `GameplayButtonPatches`), call `Game1.setMousePosition()` per tick.
-  - Complexity: dead zones, acceleration curves, auto-hide, interaction with snap navigation.
-  - **Scope to be fleshed out** from the console right-stick research (kicked off 2026-06-04): this item should cover EVERY console right-stick behavior, not just the cursor. Write a design spec from the research findings before implementing.
+### 12. Right Joystick — Full Console Behavior
+- **Bundled feature (LARGE).** Scope = EVERYTHING the right stick does on console, not just the cursor. **Research complete:** `docs/superpowers/specs/2026-06-04-right-stick-console-behavior-research.md` (wiki/community + decompile). Write an implementation spec from it before coding.
+- **Headline:** on console the right stick **is the free mouse cursor** (same cursor that drives tool targeting, tile interaction, placement, menu clicks). **This code already exists, complete, in the Android build** — `Game1.UpdateControlInput ~13298-13334` calls `setMousePositionRaw` from `ThumbSticks.Right`, gated only on `options.gamepadControls`. The blocker is the mobile path (`_mobileUpdateControlInput`) making the control type read TOUCH (suppresses `drawMouse`, the #18 trap) and/or `gamepadControls` effectively off. So this is mostly "let the existing path run + actually draw the cursor," not "build a cursor system."
+- **Behaviors to cover (from the research):**
+  - **Overworld:** right stick moves the free cursor → tool targeting follows it (hoe/can/pickaxe/axe hit the cursor tile); auto-hides after ~4 s (`timerUntilMouseFade=4000`), reverting tools to the facing tile. Likely a GMCM toggle since it changes targeting from facing-tile to cursor-tile (a real feel change).
+  - **R3 click = in-game chat; hold R3 ≥250 ms = emote wheel** (`emoteMenuShowTime=250`). Decide whether to enable chat on Android single-player (maybe hold-emote only).
+  - **Menus = scroll** (`updateActiveMenu ~5747-5769`: `receiveScrollWheelAction(±1)` at 0.2, timer `220-|Y|*170`). Coexist with AC snap nav (left/D-pad selects, right scrolls).
+  - **Placement (furniture #62 / carpenter):** ghost follows the cursor — wire into AC's existing CarpenterMenu ghost-follow.
+  - **Minigames:** right stick → D-pad key events (`4834-4865`) — low priority.
+  - **Map:** cursor over the map (no viewport pan).
+- **Implementation hooks:** `RawRightStickX/Y` already cached in `GameplayButtonPatches`; `setMousePositionRaw` (public), `thumbstickToMouseModifier` (reflect — private static), `timerUntilMouseFade`/`lastCursorMotionWasMouse`/`rightStickHoldTime`/`emoteMenuShowTime` (public static). Force `drawMouse` (set `mostRecentlyUsedControlType=GAMEPAD` on motion, or draw the cursor ourselves like #18). Full line refs in the research doc.
 - **~~Zoom control~~ — DROPPED 2026-06-04 (user decision).** Superseded by #77: the in-game Options page now has a working zoom slider (`OptionsPageInjectionPatches`, whichOption 18, drives the PinchZoom pipeline). The menu slider is the better home for zoom than a right-stick gesture — do NOT re-add right-stick zoom.
 
 ### 62. Right-Stick to Move Furniture Ghost
 - **Source:** Original "console furniture placement" ask had two parts. v3.5.38–v3.5.39 covered part 1 (single ghost rectangle + translucent sprite). Part 2: right stick moves the ghost the way it moves the carpenter building ghost.
-- **Belongs in v4.0** because it's a right-stick feature — same placement rule as #12.
-- **Behaviour to match:** Picking up furniture should produce a ghost in front of the player. Right stick offsets the ghost relative to the player's facing tile (not the cursor). Walking still re-anchors the ghost to in-front-of-player. A places, B cancels (returns furniture to inventory).
+- **Belongs in v4.0** because it's a right-stick feature — same placement rule as #12. **Likely falls out of #12**: the research (`docs/superpowers/specs/2026-06-04-right-stick-console-behavior-research.md`) confirms console drives the placement ghost off the **mouse cursor** (the same right-stick cursor as #12), NOT a separate facing-tile offset. So once #12's cursor exists, the furniture ghost should follow it directly — build #12 first, then verify furniture placement already tracks the cursor.
+- **Behaviour to match:** Picking up furniture produces a ghost that follows the right-stick **cursor** (console parity). A places, B cancels (returns furniture to inventory). _(The earlier "offset relative to the facing tile, not the cursor" sketch below was wrong per the research — console uses the cursor. Kept for history.)_
 - **Implementation sketch:**
   1. New `_furnitureGhostOffset` Vector2 in `FurniturePlacementPatches.cs`, accumulated each tick from `RawRightStickX/Y` (already cached in `GameplayButtonPatches`).
   2. Patch `Game1.GetPlacementGrabTile` to add `_furnitureGhostOffset` when the player has a Furniture as `ActiveObject`.
