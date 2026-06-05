@@ -119,16 +119,17 @@ namespace AndroidConsolizer.Patches
                 return false;
             }
 
-            // --- #73: crop seeds — single validity box, NO ghost sprite. ---
-            // Seeds report isPlaceable() == true on Android but plant into HoeDirt (not "placed"
-            // like a machine), so there's no ghost. On controller, vanilla DrawRedGreenRectangleForPlacing
-            // returns false, so drawPlacementBounds falls through to the full multi-tile green map
-            // (touch behaviour). Draw ONE box at the target tile and return true so drawPlacementBounds
-            // short-circuits (decompile Object.cs:5234) — giving the console single-box look, no ghost.
-            // Gated under the same console-placement toggle as craftables.
+            // --- #73: crop seeds + fertilizer — single validity box, NO ghost sprite. ---
+            // Seeds and fertilizer (Category -19) report isPlaceable() == true on Android but plant
+            // into HoeDirt (not "placed" like a machine), so there's no ghost. On controller, vanilla
+            // DrawRedGreenRectangleForPlacing returns false, so drawPlacementBounds falls through to the
+            // full multi-tile green map (touch behaviour). Draw ONE box at the target tile and return
+            // true so drawPlacementBounds short-circuits (decompile Object.cs:5234) — giving the console
+            // single-box look, no ghost. Fertilizer was added v3.9.16 (it was hitting the #68 craftable
+            // branch below and drawing a ghost sprite). Gated under the same console-placement toggle.
             if (ModEntry.Config?.EnableConsoleCraftablePlacement == true
                 && !__instance.bigCraftable.Value
-                && __instance.Category == SObject.SeedsCategory
+                && (__instance.Category == SObject.SeedsCategory || __instance.Category == SObject.fertilizerCategory)
                 && __instance.isPlaceable())
             {
                 Vector2 tile = __instance.TileLocation;
@@ -224,7 +225,7 @@ namespace AndroidConsolizer.Patches
                 return true;
             if (obj.ParentSheetIndex == 685)
                 return true;
-            if (obj.Category == SObject.SeedsCategory)
+            if (obj.Category == SObject.SeedsCategory || obj.Category == SObject.fertilizerCategory)
                 return true;
             return false;
         }
