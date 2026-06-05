@@ -204,6 +204,7 @@ namespace AndroidConsolizer
             Patches.JunimoNoteMenuPatches.Apply(harmony, this.Monitor);
             Patches.GameMenuPatches.Apply(harmony, this.Monitor);
             Patches.OptionsPagePatches.Apply(harmony, this.Monitor);
+            Patches.OptionsPageInjectionPatches.Apply(harmony, this.Monitor);
             Patches.DialogueBoxPatches.Apply(harmony, this.Monitor);
             Patches.LoadGameMenuPatches.Apply(harmony, this.Monitor);
             Patches.LetterViewerMenuPatches.Apply(harmony, this.Monitor);
