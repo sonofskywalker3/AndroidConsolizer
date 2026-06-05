@@ -222,6 +222,7 @@ namespace AndroidConsolizer
             helper.Events.GameLoop.UpdateTicking += this.OnUpdateTicking;
             helper.Events.GameLoop.UpdateTicked += this.OnUpdateTicked;
             helper.Events.Display.MenuChanged += this.OnMenuChanged;
+            helper.Events.Display.RenderedHud += this.OnRenderedHud;
 
             // Cache reflection for cutscene skip
             EventSkippableField = AccessTools.Field(typeof(Event), "skippable");
@@ -264,6 +265,13 @@ namespace AndroidConsolizer
         }
 
         /// <summary>Raised when a menu is opened or closed.</summary>
+        /// <summary>#12 right-stick cursor: draw the overworld cursor ourselves (the Android engine
+        /// doesn't render an overworld cursor sprite). Auto-hides via timerUntilMouseFade.</summary>
+        private void OnRenderedHud(object sender, StardewModdingAPI.Events.RenderedHudEventArgs e)
+        {
+            Patches.RightStickCursorPatches.DrawCursor(e.SpriteBatch);
+        }
+
         private void OnMenuChanged(object sender, StardewModdingAPI.Events.MenuChangedEventArgs e)
         {
             // #18: When the museum donation menu closes, restore the SnappyMenus value
