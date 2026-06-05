@@ -2,44 +2,29 @@
 
 [**⬇ Download on Nexus Mods**](https://www.nexusmods.com/stardewvalley/mods/41869)
 
-Makes Android Stardew Valley's controller support work like the Nintendo Switch version. 90+ fixes across shops, inventory, chests, toolbar, Robin's building menu, Community Center bundles, furniture placement, and every game menu tab.
+Makes Android Stardew Valley's controller support work like the Nintendo Switch version. 90+ fixes across shops, inventory, chests, toolbar, Robin's building menu, Community Center bundles, furniture placement, every game menu tab — and the right-stick free cursor.
 
 If you play on a handheld (Odin, Ayaneo, Retroid, etc.) or dock your phone/tablet to a TV, this mod makes the game actually playable without a touchscreen.
 
 > This README mirrors the [Nexus Mods description](https://www.nexusmods.com/stardewvalley/mods/41869); the two are kept identical (the "Building from source" / "Troubleshooting" sections below are GitHub-only). Full version history lives in [docs/CHANGELOG.md](docs/CHANGELOG.md).
 
-## What's New in v3.9.0 — Console Parity: Big Systems
+> **🎉 Feature complete — v4.0.0.** With the right stick now working like the Switch, Android Consolizer covers the full console control scheme, so I'm considering the mod **feature complete**. If I missed something, let me know — I'll keep fixing any reported bugs, and I'll consider feature requests that bring it closer to full console parity.
 
-**The big real-time systems now play like the Switch.** This release moves past menus into how the game *feels* in your hands — charging tools while you walk, aiming the slingshot the console way — plus a sweep over the dialogs and Options page that still felt touch-first. Every group is individually toggleable via GMCM.
+## What's New in v4.0.0 — The Right Stick Update
 
-- **Charge tools while moving** — hold an upgraded Hoe or Watering Can while walking and it charges its area effect like console, instead of rapid-firing single uses and locking you in place. (Basic tools, Pickaxe and Axe are unaffected.)
-- **Console slingshot aiming** — move freely with a slingshot equipped; hold the tool button to draw and aim with the left stick, release to fire once. Aim is the Switch's direct aim, not Android's mirrored, straight-down default.
-- **Drop blocker** — you can no longer instantly re-grab an item the moment you drop it; the game's own short pickup delay now engages, just like console. Monster loot and harvested crops are unaffected.
-- **Seeds show a single target box** — planting seeds now shows one console-style red/green box on the target tile instead of lighting up every tilled tile on screen.
-- **Shop list stays put after a purchase** — buying an item no longer jumps the buy list to the top (or off-screen); your place in the list holds.
-- **Restored Options + working zoom** — the in-game Options page now carries the console "Always show tool hit location" checkboxes and a **Zoom Level** slider that actually moves the view; touch-only joypad options are hidden when a controller is connected, and the page scrolls far enough to reach the Mod Options (GMCM) button.
-- **Dialogue choice boxes match console** — question prompts (the "Go to sleep?" Yes/No, NPC yes/no, festival choices) now open with the first option selected and show a red outline + finger cursor instead of the yellow highlight.
+**The right stick is now the console free cursor** — the last piece of the Switch control scheme that Android was missing. Every group is individually toggleable via GMCM.
 
-## Recent fixes — v3.8.4–v3.8.5
+- **Right-stick cursor** — the right stick moves an on-screen cursor that aims your tools, interaction, and placement at the tile under it, exactly like the Switch. Swing a tool and it hits the cursor's tile (diagonals included); move the cursor onto a chest or villager and the action targets it. The cursor auto-hides after ~4 seconds of no input, reverting tools to the tile you're facing.
+- **Contextual cursor** — the cursor shows a hand over things you can grab or use (chests, the mailbox) and a magnifying glass over things you can inspect, like console.
+- **Place with the cursor** — furniture, machines, and seeds place under the right-stick cursor; A places, B cancels.
+- **Tool-hit box follows through** — the optional "always show tool hit location" box tracks the cursor while it's up and snaps back to your facing tile when it fades.
+- **Settings that stick** — the in-game Zoom level and the tool-hit-location options now survive a full restart (Android wasn't saving them), and options you change with the controller are saved the same as touch.
+- **Snappier trigger toolbar** — changing toolbar slots quickly with LT/RT no longer drops presses.
+- **Fertilizer shows a single target box** — like seeds, instead of the screen-wide green map.
 
-**Seeds plant with no ghost** — the single-tile placement preview no longer catches crop seeds, which plant straight into tilled soil. Furniture and machine/sprinkler ghosts are unchanged.
+## Previous releases
 
-**Switch Pro controllers switch toolbar items** — digital-only ZL/ZR triggers are now read, so item-switching keeps working after a toolbar row change. Thanks to kabusann2008.
-
-**Buying recipes teaches them** — purchasing a cooking or crafting recipe with a gamepad now actually learns the recipe, exactly like the vanilla buy flow. Thanks to Rizkyrahmadhani12.
-
-**Note for Switch Pro users:** when a Pro controller is paired to a non-Nintendo Android device, the system usually reports its buttons in Xbox positions. If your face buttons feel swapped, set **Controller Layout = Xbox** and keep **Control Style = Switch**. A proper auto-detecting fix is planned.
-
-## Also in v3.8 — Console Parity: Quick Wins
-
-A big batch of console-parity fixes — the menus that still felt touch-only on a controller now behave like the Switch version. Each group is individually toggleable via GMCM.
-
-- **Resizable toolbar** — the Options "Toolbar Slot Size" slider finally works (icons and stack/quality numbers scale with it), capped so the full row clears the energy bar. "Toolbar Padding" lifts the toolbar off the screen edge.
-- **Museum donations & rearranging with a controller** — visible cursor, D-pad selection, A to donate, and full grid navigation when rearranging.
-- **Geode breaking feels like console** — single A-press to crack, the geode auto-selected with its tooltip, and spatial navigation between geodes.
-- **Load Game & title screen cursors** — proper cursor + snap navigation (slot selection, scrolling, delete-confirmation dialog).
-- **Adventurer's Guild & multi-page mail** — the monster eradication list and multi-page letters are fully navigable.
-- **Plus:** Community Center bundle donation greys out ineligible items, the Dwarvish Translation Guide reward is learned (not dumped in your bag), single-tile placement ghost for craftables, hold-A to craft, and dialogue answer boxes start on the first option.
+Full version history is in [docs/CHANGELOG.md](docs/CHANGELOG.md). Recent highlights: **v3.9.0 — Console Parity: Big Systems** (charge tools while moving, console slingshot aiming, drop blocker, restored Options + working zoom, dialogue choice boxes); **v3.8.0 — Console Parity: Quick Wins** (resizable toolbar, museum donations, geode breaking, Load Game/title cursors, multi-page mail, and more).
 
 ## Controller Layout Support
 
@@ -142,7 +127,14 @@ Two control styles:
 - Charge an upgraded Hoe or Watering Can while walking — hold the tool button and move to charge its area effect, release to fire, instead of rapid-firing single uses and stopping in place
 - Slingshot: move freely with it equipped, hold the tool button to draw and aim with the left stick, release to fire once (Switch-style direct aim)
 - Drop blocker — you can't instantly re-grab an item you just dropped; the game's own short pickup delay engages, like console (monster loot and harvested crops unaffected)
-- Optional "always show tool hit location" box — the tile your hoe/can/pickaxe/axe will hit, toggled on the Options page
+- Optional "always show tool hit location" box — the tile your hoe/can/pickaxe/axe will hit (toggled on the Options page); it follows the right-stick cursor and snaps back to your facing tile when the cursor fades
+
+### Right Stick (Console Cursor)
+- The right stick moves an on-screen cursor in the overworld, exactly like the Switch — it aims tool swings, tile interaction, and item placement at the tile under it (diagonals included)
+- Contextual sprite: a hand over interactables (chests, the mailbox) and a magnifying glass over things you can inspect
+- Auto-hides ~4 seconds after the last stick input, reverting tools to the tile you're facing
+- Furniture, machine, and seed placement ghosts follow the cursor; A places, B cancels
+- Toggleable (Right Stick Cursor); when off, the right stick is zeroed in the overworld (no cursor drift)
 
 ### Other Fixes
 - Fishing rod bait/tackle: A picks up bait/tackle, Y on the rod attaches or detaches
@@ -150,7 +142,7 @@ Two control styles:
 - Cutscene skip: press Start twice during skippable cutscenes
 - Start button: tap = Game Menu, hold ~½ sec = Quest Log/Journal
 - Dialogue choice boxes open on the first option with a red outline + finger cursor (console look, no yellow highlight)
-- Right stick suppressed in the overworld (no more cursor drift)
+- Settings persistence: the in-game Zoom level and the tool-hit-location options survive a full restart, and options changed with the controller are saved the same as touch
 - GMCM controller navigation via our [controller-enabled GMCM fork](https://github.com/sonofskywalker3/GenericModConfigMenu)
 
 ### Bumper Mode
@@ -178,7 +170,7 @@ If you test on other hardware, let me know!
 
 ## Configuration
 
-Every feature is individually toggleable via [Generic Mod Config Menu](https://github.com/sonofskywalker3/GenericModConfigMenu/releases) or `config.json`: Controller Layout (Switch / Xbox / PlayStation), Control Style, Console Chests, Console Shops, Console Toolbar, Console Inventory, Console Shipping, Console Menus, Console Furniture Placement, Console Museum Donation + Geode menus, Move While Charging, Console Slingshot Aim, Console Drop Blocker, Console Dialogue Cursor, Pickup To Active Row, Hold To Craft, Suppress Right Stick in Overworld, Carpenter Menu Fix, Furniture Debounce, Hold Start for Quest Log, Bumper Mode, and more. (Zoom level and the tool-hit-location checkboxes live on the in-game Options page.)
+Every feature is individually toggleable via [Generic Mod Config Menu](https://github.com/sonofskywalker3/GenericModConfigMenu/releases) or `config.json`: Controller Layout (Switch / Xbox / PlayStation), Control Style, Console Chests, Console Shops, Console Toolbar, Console Inventory, Console Shipping, Console Menus, Console Furniture Placement, Console Museum Donation + Geode menus, Move While Charging, Console Slingshot Aim, Console Drop Blocker, Console Dialogue Cursor, Pickup To Active Row, Hold To Craft, Right Stick Cursor, Carpenter Menu Fix, Furniture Debounce, Hold Start for Quest Log, Bumper Mode, and more. (Zoom level and the tool-hit-location checkboxes live on the in-game Options page and now persist across restarts.)
 
 ## Also by this author
 

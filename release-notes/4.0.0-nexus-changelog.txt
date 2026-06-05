@@ -1,0 +1,16 @@
+The Right Stick Update — everything since v3.9.0. Android Consolizer is now feature complete.
+
+The right stick is now the console free cursor — the last piece of the Switch control scheme that Android was missing. With it in place I'm considering the mod feature complete; I'll keep fixing reported bugs and consider feature requests that bring it closer to full console parity. Every group is individually toggleable via GMCM.
+
+New:
+- Right-stick cursor — the right stick moves an on-screen cursor that aims your tools, interaction, and item placement at the tile under it, exactly like the Switch. Swing a tool and it hits the cursor's tile (diagonals included); move the cursor onto a chest or villager and the action targets it. The cursor auto-hides after ~4 seconds of no input, reverting tools to the tile you're facing.
+- Contextual cursor — a hand over things you can grab or use (chests, the mailbox) and a magnifying glass over things you can inspect, like console.
+- Place with the cursor — furniture, machines, and seeds place under the right-stick cursor; A places, B cancels.
+
+Fixed:
+- The optional "always show tool hit location" box now follows the right-stick cursor and snaps back to your facing tile when the cursor fades.
+- Settings persistence — the in-game Zoom level and the tool-hit-location options now survive a full restart (Android wasn't saving them), and options you change with the controller are saved the same as touch.
+- Snappier trigger toolbar — changing toolbar slots quickly with LT/RT no longer drops presses.
+- Fertilizer shows a single red/green target box, like seeds, instead of the screen-wide green map.
+
+Each feature is individually toggleable in Generic Mod Config Menu. Zoom level and the tool-hit-location options live on the in-game Options page and now persist across restarts.
