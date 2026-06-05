@@ -405,11 +405,13 @@ namespace AndroidConsolizer.Patches
 
                 // Right-stick overworld cursor (v4.0 #12). When the cursor is ENABLED, let the
                 // engine move the mouse from the right stick (Game1.UpdateControlInput:13303-13334)
-                // — that's the console cursor, drawn + faded natively (drawMouseCursor). When it's
-                // DISABLED, zero the right stick so it doesn't drift the cursor across the map.
-                // Menus are unaffected (activeClickableMenu == null gate); the slingshot carve-out
-                // is added in the next commit.
-                if (ModEntry.Config?.EnableRightStickCursor == false
+                // — that's the console cursor, drawn + faded natively (drawMouseCursor). Zero the
+                // overworld right stick when EITHER the cursor is disabled OR a slingshot is the
+                // active tool (console: slingshot aim is the LEFT stick; right stick does nothing —
+                // AC #25b), so the cursor never fights slingshot aim. Menus unaffected (the
+                // activeClickableMenu == null gate).
+                bool slingshotEquipped = Game1.player?.CurrentTool is StardewValley.Tools.Slingshot;
+                if ((ModEntry.Config?.EnableRightStickCursor == false || slingshotEquipped)
                     && Game1.activeClickableMenu == null
                     && __result.ThumbSticks.Right != Vector2.Zero)
                 {
