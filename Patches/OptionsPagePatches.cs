@@ -222,6 +222,16 @@ namespace AndroidConsolizer.Patches
             {
                 Monitor?.Log($"[#77] persist on options close failed: {ex.Message}", LogLevel.Trace);
             }
+
+            // #77 (general): if the Options page was used this GameMenu session, persist ALL serializable
+            // vanilla options via the game's own SaveStartupPreferences (AC's controller toggles bypass
+            // vanilla's per-change save). Gated on _optionsPageActive so it fires only when options were
+            // actually shown — not on every backpack close — and independent of currentTab at close.
+            if (_optionsPageActive)
+            {
+                _optionsPageActive = false;
+                PersistVanillaOptions();
+            }
         }
 
         // #77 (general): reflected handle to the Android-only OptionsPage.SaveStartupPreferences().
@@ -251,6 +261,7 @@ namespace AndroidConsolizer.Patches
                         Monitor?.Log("[#77] OptionsPage.SaveStartupPreferences not found; vanilla option persistence disabled.", LogLevel.Trace);
                 }
                 _saveStartupPrefs?.Invoke(null, null);
+                Monitor?.Log($"[#77] PersistVanillaOptions ran (found={_saveStartupPrefs != null} soundVol={Game1.options?.soundVolumeLevel:0.00})", LogLevel.Trace);
             }
             catch (Exception ex)
             {
@@ -278,7 +289,8 @@ namespace AndroidConsolizer.Patches
 
                 Monitor?.Log($"[#77] applied saved settings: zoom={ModEntry.Config.SavedZoomPercent} " +
                     $"alwaysShowToolHit={ModEntry.Config.SavedAlwaysShowToolHit} " +
-                    $"hideWhenMoving={ModEntry.Config.SavedHideToolHitWhenMoving}", LogLevel.Trace);
+                    $"hideWhenMoving={ModEntry.Config.SavedHideToolHitWhenMoving} " +
+                    $"(loaded soundVol={Game1.options.soundVolumeLevel:0.00})", LogLevel.Trace);
             }
             catch (Exception ex)
             {
@@ -485,6 +497,9 @@ namespace AndroidConsolizer.Patches
         private static bool _zoomResolved;
         // #77: set when the user moves the zoom slider, so OnOptionsPageClosed writes config only on change.
         private static bool _zoomDirty;
+        // #77: set true whenever the Options page renders this GameMenu session, so we persist vanilla
+        // options on close even if currentTab isn't the options tab at the exact close instant.
+        private static bool _optionsPageActive;
         private static PropertyInfo _pinchInstanceProp;
         private static FieldInfo _pinchInstanceField;
         private static MethodInfo _pinchSetZoomLevel;
@@ -782,6 +797,10 @@ namespace AndroidConsolizer.Patches
         /// </summary>
         private static void Update_Postfix(OptionsPage __instance, GameTime time)
         {
+            // #77: the options page is rendering — remember it so we persist vanilla options on close
+            // regardless of which tab is current at the close instant. Set before any gate.
+            _optionsPageActive = true;
+
             if (!ModEntry.Config.EnableGameMenuNavigation)
                 return;
             if (ModEntry.Config.FreeCursorOnSettings)
