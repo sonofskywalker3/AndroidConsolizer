@@ -81,6 +81,12 @@ namespace AndroidConsolizer
         /// with no new trigger input, so other navigation methods can take over.</summary>
         private int _triggerSlotTarget = -1;
 
+        /// <summary>Last rounded (LT,RT) pair logged by the "Triggers raw" verbose diagnostic, so it
+        /// logs only on change instead of every held frame (~18 DEBUG writes/sec while a trigger is
+        /// held). That per-frame flood stalled slot-change input on Android (choppy after a few
+        /// switches). Format "LT|RT" to 1 decimal.</summary>
+        private string _lastTrigLog = null;
+
         /// <summary>#54b: CurrentToolIndex snapshot taken at the START of each tick (before
         /// Game.Update runs vanilla's pressSwitchToolButton). Used as the clean base for the
         /// FIRST trigger press after a row switch, when _triggerSlotTarget has been cleared to
@@ -554,10 +560,17 @@ namespace AndroidConsolizer
             float leftTrigger = Patches.GameplayButtonPatches.RawLeftTrigger;
             float rightTrigger = Patches.GameplayButtonPatches.RawRightTrigger;
 
-            // Debug: Log trigger values when they're non-zero
+            // Debug: log raw trigger values, throttled to changes only. Logging every held frame
+            // floods ~18 DEBUG writes/sec while a trigger is held (analog ramp spans many frames),
+            // which stalls slot-change input on Android — dedupe on the rounded value.
             if (Config.VerboseLogging && (leftTrigger > 0.01f || rightTrigger > 0.01f))
             {
-                this.Monitor.Log($"Triggers raw: LT={leftTrigger:F2}, RT={rightTrigger:F2}", LogLevel.Debug);
+                string trigKey = $"{leftTrigger:F1}|{rightTrigger:F1}";
+                if (trigKey != _lastTrigLog)
+                {
+                    _lastTrigLog = trigKey;
+                    this.Monitor.Log($"Triggers raw: LT={leftTrigger:F2}, RT={rightTrigger:F2}", LogLevel.Debug);
+                }
             }
 
             // Use _triggerSlotTarget as base — it persists our last trigger-set position
