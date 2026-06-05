@@ -274,45 +274,28 @@ namespace AndroidConsolizer.Patches
         }
 
         /// <summary>
-        /// Resolve the contextual cursor sprite index for the right-stick cursor, mirroring the
-        /// engine's own pick in Game1.drawMouseCursor — which computes it (NPC talk/gift via
-        /// canGrabSomethingFromHere, tile hint at 15647-15649, farm animals at 15653-15671) then
-        /// resets mouseCursor to cursor_default at Game1.cs:15688, before our RenderedHud draw runs.
-        /// Priority matches the engine: NPC talk/gift -> actionable tile hint (grab/look/talk) ->
-        /// un-petted animal (grab) -> default. Read-only except the NPC probe, whose side effect on
-        /// Game1.mouseCursor/mouseCursorTransparency is snapshot-restored. Any error -> cursor_default.
+        /// Resolve the contextual cursor sprite index for the right-stick cursor from the engine's
+        /// per-tick tile-hint flags (set by GameLocation.isActionableTile): grab over actionable
+        /// objects/tiles/buildings (chests, mailbox, ...), talk over MessageSpeech tiles, look over
+        /// Dialogue/Message (inspectable) tiles; plus an un-petted farm animal -> grab. Pure read-only
+        /// and cheap — no engine helper calls.
+        ///
+        /// NPC talk/gift (via Utility.checkForCharacterInteractionAtTile) was DROPPED in v3.9.13: it
+        /// never resolved villagers reliably (the engine only sets cursor_talk when the NPC has pending
+        /// dialogue) AND, called every render frame, its character iteration + held-item gift probe +
+        /// checkForSpecialCharacterIconAtThisTile side effect hung toolbar slot changes and bounced the
+        /// placement ghost. Per the user's call (parity isn't worth breaking the toolbar), it's out.
+        /// See DONE.md / #79. Any error -> cursor_default.
         /// </summary>
         private static int ResolveContextualCursor()
         {
             try
             {
-                Farmer player = Game1.player;
                 GameLocation loc = Game1.currentLocation;
-                if (player == null || loc == null) return Game1.cursor_default;
+                if (loc == null) return Game1.cursor_default;
 
-                // Cursor world-tile (same formula as updateCursorTileHint, Game1.cs:7446-7447).
-                Vector2 cursorTile = new Vector2(
-                    (Game1.viewport.X + Game1.getOldMouseX()) / 64,
-                    (Game1.viewport.Y + Game1.getOldMouseY()) / 64);
-
-                // 1) NPC talk/gift. checkForCharacterInteractionAtTile sets Game1.mouseCursor as a
-                //    side effect (cursor_talk / cursor_gift); snapshot + restore mouseCursor and
-                //    transparency so engine state is untouched. Probe the cursor tile and the tile
-                //    below, matching canGrabSomethingFromHere (Utility.cs:5009-5013). We call this
-                //    directly rather than canGrabSomethingFromHere so we don't double-fire hoverAction.
-                int savedCursor = Game1.mouseCursor;
-                float savedAlpha = Game1.mouseCursorTransparency;
-                Game1.mouseCursor = Game1.cursor_default;
-                bool npc = Utility.checkForCharacterInteractionAtTile(cursorTile, player)
-                        || Utility.checkForCharacterInteractionAtTile(cursorTile + new Vector2(0f, 1f), player);
-                int npcCursor = Game1.mouseCursor;
-                Game1.mouseCursor = savedCursor;
-                Game1.mouseCursorTransparency = savedAlpha;
-                if (npc && (npcCursor == Game1.cursor_talk || npcCursor == Game1.cursor_gift))
-                    return npcCursor;
-
-                // 2) Actionable tile hint: chest/mailbox/shipping-bin = grab, MessageSpeech = talk,
-                //    Dialogue/Message = look. Flags persist from this tick's updateCursorTileHint.
+                // Actionable tile hint: chest/mailbox/etc = grab, MessageSpeech = talk,
+                // Dialogue/Message = look. Flags persist from this tick's updateCursorTileHint.
                 if (Game1.isActionAtCurrentCursorTile)
                 {
                     return Game1.isSpeechAtCurrentCursorTile ? Game1.cursor_talk
@@ -320,7 +303,7 @@ namespace AndroidConsolizer.Patches
                          : Game1.cursor_grab;
                 }
 
-                // 3) Un-petted farm animal under the cursor -> grab (mirrors Game1.cs:15653-15671).
+                // Un-petted farm animal under the cursor -> grab (mirrors Game1.cs:15653-15671).
                 var animals = loc.animals;
                 if (animals != null)
                 {
@@ -408,31 +391,17 @@ namespace AndroidConsolizer.Patches
                 try { fade = (int)(_timerUntilMouseFade?.GetValue(null) ?? -1); } catch { /* ignore */ }
                 if (fade <= 0) { _lastCtxKey = null; return; } // cursor hidden → nothing to log; reset so its next appearance logs
 
-                // Probe whether an NPC is at the cursor tile + the raw cursor it would set, snapshot-
-                // restored so engine state is untouched (diagnoses the villager talk/gift cases).
-                Vector2 cursorTile = new Vector2(
-                    (Game1.viewport.X + Game1.getOldMouseX()) / 64,
-                    (Game1.viewport.Y + Game1.getOldMouseY()) / 64);
-                int savedCursor = Game1.mouseCursor;
-                float savedAlpha = Game1.mouseCursorTransparency;
-                Game1.mouseCursor = Game1.cursor_default;
-                bool npc = Utility.checkForCharacterInteractionAtTile(cursorTile, Game1.player)
-                        || Utility.checkForCharacterInteractionAtTile(cursorTile + new Vector2(0f, 1f), Game1.player);
-                int npcRaw = Game1.mouseCursor;
-                Game1.mouseCursor = savedCursor;
-                Game1.mouseCursorTransparency = savedAlpha;
-
                 int resolved = ResolveContextualCursor();
 
                 string key = $"{Game1.isActionAtCurrentCursorTile}|{Game1.isSpeechAtCurrentCursorTile}|" +
-                             $"{Game1.isInspectionAtCurrentCursorTile}|{resolved}|{npc}|{npcRaw}";
+                             $"{Game1.isInspectionAtCurrentCursorTile}|{resolved}";
                 if (key == _lastCtxKey) return; // debounce: only log when the semantic state changes
                 _lastCtxKey = key;
 
                 Monitor.Log(
-                    $"[RStickCtx] tile=({(int)cursorTile.X},{(int)cursorTile.Y}) " +
+                    $"[RStickCtx] tile=({(Game1.viewport.X + Game1.getOldMouseX()) / 64},{(Game1.viewport.Y + Game1.getOldMouseY()) / 64}) " +
                     $"isAction={Game1.isActionAtCurrentCursorTile} isSpeech={Game1.isSpeechAtCurrentCursorTile} " +
-                    $"isInspect={Game1.isInspectionAtCurrentCursorTile} npc={npc} npcRaw={npcRaw} resolved={resolved}",
+                    $"isInspect={Game1.isInspectionAtCurrentCursorTile} resolved={resolved}",
                     LogLevel.Info);
             }
             catch (Exception ex)
