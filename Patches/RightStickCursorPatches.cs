@@ -1,6 +1,8 @@
 using System;
 using System.Reflection;
 using HarmonyLib;
+using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Graphics;
 using StardewModdingAPI;
 using StardewValley;
 
@@ -64,6 +66,49 @@ namespace AndroidConsolizer.Patches
             catch (Exception ex)
             {
                 Monitor.Log($"[RStickCursor] enforce error: {ex.Message}", LogLevel.Trace);
+            }
+        }
+
+        /// <summary>
+        /// Draw the overworld right-stick cursor ourselves. The Android engine's drawMouseCursor
+        /// computes cursor state (transparency, wasMouseVisibleThisFrame) but renders NO sprite in
+        /// the overworld — mobile strips the hardware cursor — so it stays invisible even with
+        /// lastCursorMotionWasMouse=true (device-confirmed v3.9.5). Mirror the #18 museum self-draw:
+        /// paint the pointer at Game1.getMouseX/Y. Gated on timerUntilMouseFade > 0, which the engine
+        /// counts down from 4000 after the last stick motion — so the cursor auto-hides ~4s after you
+        /// stop moving it, matching console. Call from a Display.RenderedHud handler.
+        /// </summary>
+        public static void DrawCursor(SpriteBatch b)
+        {
+            try
+            {
+                if (ModEntry.Config?.EnableRightStickCursor != true) return;
+                if (!Context.IsWorldReady || Game1.activeClickableMenu != null || Game1.eventUp) return;
+                if (Game1.player == null) return;
+                if (Game1.player.CurrentTool is StardewValley.Tools.Slingshot) return;
+
+                int fade = 0;
+                try { fade = (int)(_timerUntilMouseFade?.GetValue(null) ?? 0); } catch { return; }
+                if (fade <= 0) return; // engine has faded the cursor out (auto-hide)
+
+                float alpha = Game1.mouseCursorTransparency > 0f ? Game1.mouseCursorTransparency : 1f;
+                int tile = Game1.mouseCursor >= 0 ? Game1.mouseCursor : 0;
+
+                b.Draw(
+                    Game1.mouseCursors,
+                    new Vector2(Game1.getMouseX(), Game1.getMouseY()),
+                    Game1.getSourceRectForStandardTileSheet(Game1.mouseCursors, tile, 16, 16),
+                    Color.White * alpha,
+                    0f,
+                    Vector2.Zero,
+                    4f,
+                    SpriteEffects.None,
+                    1f
+                );
+            }
+            catch (Exception ex)
+            {
+                Monitor.Log($"[RStickCursor] draw failed: {ex.Message}", LogLevel.Trace);
             }
         }
 
