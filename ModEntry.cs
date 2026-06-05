@@ -212,6 +212,7 @@ namespace AndroidConsolizer
             Patches.CraftingPagePatches.Apply(harmony, this.Monitor);
             Patches.MuseumMenuPatches.Apply(harmony, this.Monitor);
             Patches.BootDiagnosticPatches.Apply(harmony, this.Monitor);
+            Patches.RightStickCursorPatches.Apply(harmony, this.Monitor);
             Patches.BootDiagnosticPatches.ApplyAdditionalPatches(harmony, this.Monitor);
 
             // Register events
@@ -362,6 +363,11 @@ namespace AndroidConsolizer
             // #25b diagnostic (VerboseLogging-gated): once-per-tick slingshot control-state snapshot
             // while a Slingshot is equipped, so we can pin where Android breaks aim/movement.
             Patches.SlingshotAimPatches.LogAimStateIfVerbose();
+
+            // #12 Phase 0 diagnostic (VerboseLogging-gated): once-per-tick engine cursor state
+            // while the right stick moves in the overworld, so we can confirm the native cursor
+            // path runs once AC stops zeroing the right stick.
+            Patches.RightStickCursorPatches.DiagnosticTick();
 
             // Cutscene skip: detect Start press via GetState edge detection
             // (SMAPI can't see Start because it's suppressed at GetState level during events)
