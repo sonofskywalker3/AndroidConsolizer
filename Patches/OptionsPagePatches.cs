@@ -366,16 +366,70 @@ namespace AndroidConsolizer.Patches
             }
         }
 
-        /// <summary>Apply a slider's new value. Zoom (whichOption 18) is special-cased: its
-        /// changeSliderOption case is a degenerate ±10 stepper that expects a 0-1 fraction, so we set
-        /// it absolutely via changeDropDownOption("&lt;pct&gt;%"), which writes desiredBaseZoomLevel
-        /// directly (decompile Options.cs:1506-1518). All other sliders use changeSliderOption.</summary>
+        /// <summary>Apply a slider's new value. Zoom (whichOption 18) is special-cased: setting
+        /// desiredBaseZoomLevel alone (changeSliderOption/changeDropDownOption) does NOT move the
+        /// render on mobile — the pinch-zoom pipeline (PinchZoom.Instance / MobileDisplay.ZoomScale)
+        /// is the real authority. So we drive it the way the game does programmatically. All other
+        /// sliders use changeSliderOption.</summary>
         private static void ApplySliderValue(OptionsSlider slider, int newVal)
         {
             if (slider.whichOption == 18)
-                Game1.options.changeDropDownOption(18, newVal + "%");
+                ApplyMobileZoom(newVal);
             else
                 Game1.options.changeSliderOption(slider.whichOption, newVal);
+        }
+
+        // Mobile zoom pipeline (Android-only). PinchZoom is in the PC-DLL-absent StardewValley.Mobile
+        // namespace, so it's resolved by name at runtime; Window_ClientSizeChanged is what actually
+        // re-applies the zoom to the viewport.
+        private static bool _zoomResolved;
+        private static PropertyInfo _pinchInstanceProp;
+        private static FieldInfo _pinchInstanceField;
+        private static MethodInfo _pinchSetZoomLevel;
+        private static MethodInfo _windowClientSizeChanged;
+
+        private static void ResolveZoomReflection()
+        {
+            if (_zoomResolved) return;
+            _zoomResolved = true;
+            var pinchType = AccessTools.TypeByName("StardewValley.Mobile.PinchZoom");
+            if (pinchType != null)
+            {
+                _pinchInstanceProp = AccessTools.Property(pinchType, "Instance");
+                if (_pinchInstanceProp == null)
+                    _pinchInstanceField = AccessTools.Field(pinchType, "Instance");
+                _pinchSetZoomLevel = AccessTools.Method(pinchType, "SetZoomLevel", new[] { typeof(float) });
+            }
+            _windowClientSizeChanged = AccessTools.Method(typeof(Game1), "Window_ClientSizeChanged",
+                new[] { typeof(object), typeof(EventArgs) });
+        }
+
+        /// <summary>Apply zoom the way the game does programmatically (decompile Game1.cs:1782-1787):
+        /// drive the mobile PinchZoom (the render authority), set desired/base zoom, then
+        /// Window_ClientSizeChanged to re-apply it to the viewport. changeDropDownOption(18) alone only
+        /// sets desiredBaseZoomLevel, which the mobile render ignores.</summary>
+        private static void ApplyMobileZoom(int pct)
+        {
+            try
+            {
+                ResolveZoomReflection();
+                float z = pct / 100f;
+
+                object pinch = _pinchInstanceProp != null ? _pinchInstanceProp.GetValue(null)
+                             : _pinchInstanceField?.GetValue(null);
+                if (pinch != null)
+                    _pinchSetZoomLevel?.Invoke(pinch, new object[] { z });
+
+                Game1.options.desiredBaseZoomLevel = z;
+                Game1.options.baseZoomLevel = z;
+
+                _windowClientSizeChanged?.Invoke(Game1.game1, new object[] { null, null });
+                Game1.forceSnapOnNextViewportUpdate = true;
+            }
+            catch (Exception ex)
+            {
+                Monitor?.Log($"ApplyMobileZoom error: {ex.Message}", LogLevel.Error);
+            }
         }
 
         /// <summary>Find the position of the current focused index in _interactiveIndices.</summary>
