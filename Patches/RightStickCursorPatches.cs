@@ -80,10 +80,61 @@ namespace AndroidConsolizer.Patches
                 {
                     Monitor.Log("[RStickCursor] GetLocationNextToWhereYoureFacing not found; tool cursor targeting disabled.", LogLevel.Warn);
                 }
+
+                // Diagonal tool hits. Character.GetToolLocation(bool) — which resolves where the
+                // tool actually hits — forces ignoreClick=true when isAnyGamePadButtonBeingHeld()
+                // (Character.cs:1215), i.e. while you hold the tool button, so it returns the facing
+                // CARDINAL tile and ignores lastClick (the cursor tile). That makes diagonal cursor
+                // tiles un-hittable with a controller. Prefix drops that held-button term while the
+                // cursor is active so the tool targets lastClick (the cursor tile), incl. diagonals.
+                var getToolLoc = AccessTools.Method(
+                    typeof(Character), nameof(Character.GetToolLocation), new[] { typeof(bool) });
+                if (getToolLoc != null)
+                {
+                    harmony.Patch(
+                        getToolLoc,
+                        prefix: new HarmonyMethod(typeof(RightStickCursorPatches), nameof(GetToolLocation_Prefix)));
+                }
+                else
+                {
+                    Monitor.Log("[RStickCursor] GetToolLocation(bool) not found; diagonal tool targeting disabled.", LogLevel.Warn);
+                }
             }
             catch (Exception ex)
             {
                 Monitor.Log($"[RStickCursor] Apply failed: {ex.Message}", LogLevel.Warn);
+            }
+        }
+
+        /// <summary>
+        /// Prefix on Character.GetToolLocation(bool): while the right-stick cursor is active, resolve
+        /// the tool target from lastClick (the cursor tile) instead of letting a held tool button
+        /// force the facing cardinal tile. Replicates the cursor-is-pointer behavior so diagonal
+        /// cursor tiles are hittable. Only forces ignoreClick on !wasMouseVisibleThisFrame (the fade
+        /// case), matching what the engine does for a real mouse.
+        /// </summary>
+        private static bool GetToolLocation_Prefix(Character __instance, bool ignoreClick, ref Vector2 __result)
+        {
+            try
+            {
+                if (ModEntry.Config?.EnableRightStickCursor != true) return true;
+                if (!(__instance is Farmer farmer) || !farmer.IsLocalPlayer) return true;
+                if (Game1.activeClickableMenu != null || Game1.eventUp) return true;
+                if (farmer.CurrentTool is StardewValley.Tools.Slingshot) return true;
+
+                int fade = 0;
+                try { fade = (int)(_timerUntilMouseFade?.GetValue(null) ?? 0); } catch { return true; }
+                if (fade <= 0) return true; // cursor faded → original facing-tile behavior
+
+                // Drop the isAnyGamePadButtonBeingHeld() term; keep the genuine fade fallback.
+                bool ic = ignoreClick || !Game1.wasMouseVisibleThisFrame;
+                __result = farmer.GetToolLocation(farmer.lastClick, ic);
+                return false;
+            }
+            catch (Exception ex)
+            {
+                Monitor.Log($"[RStickCursor] GetToolLocation prefix error: {ex.Message}", LogLevel.Trace);
+                return true;
             }
         }
 
