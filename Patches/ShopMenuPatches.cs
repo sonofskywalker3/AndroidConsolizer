@@ -668,6 +668,29 @@ namespace AndroidConsolizer.Patches
             _msMethodsResolved = true;
         }
 
+        /// <summary>#75: keep the buy-list scroll offset from resting above the top item. The game's
+        /// own DPad-up nav (ShopMenu.cs:948-950) adds a row to the offset with no upper clamp, leaving
+        /// a positive offset = whitespace above the first item. Pin it at 0 (the valid top) so the
+        /// whitespace never appears — fixing the cause, not tolerating it. A no-op unless the offset is
+        /// actually positive (only the overshoot produces that; drag/momentum self-clamp to &lt;= 0).</summary>
+        private static void ClampScrollTop(ShopMenu shop)
+        {
+            try
+            {
+                object scrollArea = _scrollAreaField?.GetValue(shop);
+                if (scrollArea == null) return;
+                ResolveScrollboxMethods(scrollArea);
+                if (_msGetYOffset == null || _msSetYOffset == null) return;
+                int offset = (int)_msGetYOffset.Invoke(scrollArea, null);
+                if (offset > 0)
+                {
+                    _msSetYOffset.Invoke(scrollArea, new object[] { 0 });
+                    _updateItemButtonsMethod?.Invoke(shop, null);
+                }
+            }
+            catch { /* best-effort — never break the shop */ }
+        }
+
         /// <summary>#75: read the MobileScrollbox pixel scroll offset (0 if unavailable).</summary>
         private static int GetScrollOffset(object scrollArea)
         {
@@ -1041,6 +1064,14 @@ namespace AndroidConsolizer.Patches
 
             // LB/RB quantity hold-to-repeat
             bool onBuyTab = InvVisibleField == null || !(bool)InvVisibleField.GetValue(__instance);
+
+            // #75: keep the buy-list scroll from resting ABOVE the top item. The game's own DPad-up
+            // nav overshoots the scroll offset into positive territory with no upper clamp
+            // (ShopMenu.cs:948-950) → whitespace above the first item. Pin it at the valid top so the
+            // whitespace never appears (fixes the cause, not the symptom). Only ever fires on that
+            // overshoot — drag/momentum already clamp the offset to <= 0.
+            if (onBuyTab)
+                ClampScrollTop(__instance);
 
             if (_lbHeld)
             {
