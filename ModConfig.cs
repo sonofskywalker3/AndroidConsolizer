@@ -155,6 +155,15 @@ namespace AndroidConsolizer
         /// </summary>
         public bool EnableConsoleDropBlocker { get; set; } = true;
 
+        /// <summary>
+        /// #78: Console-style dialogue question selection. Vanilla Android marks the selected response
+        /// in a question box (sleep Yes/No, NPC yes/no, festival/event choices) with a yellow highlight
+        /// box + faded text. When true, the selected response instead gets the console look: the plain
+        /// box (no yellow), full-strength text, a red outline matching the tool-hit box, and the regular
+        /// finger cursor at its bottom-right corner. Controller only; touch/mouse keeps vanilla.
+        /// </summary>
+        public bool EnableConsoleDialogueCursor { get; set; } = true;
+
         /// <summary>Whether to use free cursor (vanilla) instead of snap navigation on the Options page and GMCM config page.</summary>
         public bool FreeCursorOnSettings { get; set; } = false;
 
