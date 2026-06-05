@@ -21,6 +21,9 @@ namespace AndroidConsolizer.Patches
         /// <summary>Raw right stick Y cached from GetState before suppression, for ShopMenuPatches navigation.</summary>
         internal static float RawRightStickY;
 
+        /// <summary>Raw right stick X cached from GetState before suppression, for right-stick cursor / ghost math.</summary>
+        internal static float RawRightStickX;
+
         /// <summary>Raw left stick cached from GetState before suppression, for OptionsPagePatches navigation.</summary>
         internal static float RawLeftStickX;
         internal static float RawLeftStickY;
@@ -51,6 +54,7 @@ namespace AndroidConsolizer.Patches
         /// <summary>Cached swapped GamePadState to ensure all GetState() calls within the same tick return identical results.</summary>
         private static GamePadState? _cachedState;
         private static float _cachedRawRightStickY;
+        private static float _cachedRawRightStickX;
         private static float _cachedRawLeftStickX;
         private static float _cachedRawLeftStickY;
         private static float _cachedRawLeftTrigger;
@@ -331,6 +335,7 @@ namespace AndroidConsolizer.Patches
                 {
                     __result = _cachedState.Value;
                     RawRightStickY = _cachedRawRightStickY;
+                    RawRightStickX = _cachedRawRightStickX;
                     RawLeftStickX = _cachedRawLeftStickX;
                     RawLeftStickY = _cachedRawLeftStickY;
                     RawLeftTrigger = _cachedRawLeftTrigger;
@@ -347,8 +352,9 @@ namespace AndroidConsolizer.Patches
                 _prevStartPressed = rawStartPressed;
                 RawStartPressed = rawStartPressed;
 
-                // Cache raw right stick Y before any suppression, so ShopMenuPatches can use it
+                // Cache raw right stick X/Y before any suppression (ShopMenu scroll reads Y; right-stick cursor reads both)
                 RawRightStickY = __result.ThumbSticks.Right.Y;
+                RawRightStickX = __result.ThumbSticks.Right.X;
 
                 // Cache raw left stick before suppression, so OptionsPagePatches can use it
                 RawLeftStickX = __result.ThumbSticks.Left.X;
@@ -493,6 +499,7 @@ namespace AndroidConsolizer.Patches
                     _cachedState = __result;
                     FinalizeToolHeldTracking(__result);
                     _cachedRawRightStickY = RawRightStickY;
+                _cachedRawRightStickX = RawRightStickX;
                     _cachedRawLeftStickX = RawLeftStickX;
                     _cachedRawLeftStickY = RawLeftStickY;
                     _cachedRawLeftTrigger = RawLeftTrigger;
@@ -521,6 +528,7 @@ namespace AndroidConsolizer.Patches
                     _cachedState = __result;
                     FinalizeToolHeldTracking(__result);
                     _cachedRawRightStickY = RawRightStickY;
+                _cachedRawRightStickX = RawRightStickX;
                     _cachedRawLeftStickX = RawLeftStickX;
                     _cachedRawLeftStickY = RawLeftStickY;
                     _cachedRawLeftTrigger = RawLeftTrigger;
@@ -556,6 +564,7 @@ namespace AndroidConsolizer.Patches
                 _cachedState = __result;
                 FinalizeToolHeldTracking(__result);
                 _cachedRawRightStickY = RawRightStickY;
+                _cachedRawRightStickX = RawRightStickX;
                 _cachedRawLeftStickX = RawLeftStickX;
                 _cachedRawLeftStickY = RawLeftStickY;
                 _cachedRawLeftTrigger = RawLeftTrigger;
