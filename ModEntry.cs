@@ -1375,6 +1375,14 @@ namespace AndroidConsolizer
 
             configMenu.AddBoolOption(
                 mod: this.ModManifest,
+                name: () => "Console Dialogue Cursor",
+                tooltip: () => "Show the selected option in question boxes (sleep Yes/No, NPC yes/no, festival choices) the console way: a red outline plus the finger cursor at its corner, instead of Android's yellow highlight. Controller only; touch keeps the yellow box.",
+                getValue: () => Config.EnableConsoleDialogueCursor,
+                setValue: value => Config.EnableConsoleDialogueCursor = value
+            );
+
+            configMenu.AddBoolOption(
+                mod: this.ModManifest,
                 name: () => "Free Cursor on Settings",
                 tooltip: () => "Use the vanilla free-roaming cursor instead of snap navigation on the Options page and Mod Config page. Requires Console Menus to be enabled.",
                 getValue: () => Config.FreeCursorOnSettings,
