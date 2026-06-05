@@ -103,6 +103,28 @@ namespace AndroidConsolizer.Patches
                     Monitor.Log("[RStickCursor] GetToolLocation(bool) not found; diagonal tool targeting disabled.", LogLevel.Warn);
                 }
 
+                // #76 stuck tool-hit box. The "always show tool hit location" marker (Farmer.draw
+                // tile 29) targets GetToolLocation(getMousePosition()) — the Vector2 overload —
+                // which keeps pointing at the stale cursor position after the right-stick cursor
+                // fades, so the box aims the old way while the tool now hits the FACING tile. When
+                // the mouse cursor isn't visible this frame, force ignoreClick on the Vector2 overload
+                // so it resolves the facing tile (matching the bool overload and where the tool lands).
+                // Only two direct callers of this overload (Farmer.cs:6367 box, Game1.cs:12441 tool
+                // use — the latter already passes the facing-tile position when !wasMouseVisibleThisFrame),
+                // so this is safe. Overload exists on the PC DLL → nameof is fine.
+                var getToolLocVec = AccessTools.Method(
+                    typeof(Character), nameof(Character.GetToolLocation), new[] { typeof(Vector2), typeof(bool) });
+                if (getToolLocVec != null)
+                {
+                    harmony.Patch(
+                        getToolLocVec,
+                        prefix: new HarmonyMethod(typeof(RightStickCursorPatches), nameof(GetToolLocationVector_Prefix)));
+                }
+                else
+                {
+                    Monitor.Log("[RStickCursor] GetToolLocation(Vector2,bool) not found; #76 tool-hit box revert disabled.", LogLevel.Warn);
+                }
+
                 // Stop the cursor snapping to screen-center after it fades. Game1.UpdateControlInput
                 // recenters the cursor when the right stick moves it again after a full fade
                 // (timerUntilMouseFade<=0 && !lastCursorMotionWasMouse -> setMousePositionRaw(center),
@@ -182,6 +204,32 @@ namespace AndroidConsolizer.Patches
             {
                 Monitor.Log($"[RStickCursor] GetToolLocation prefix error: {ex.Message}", LogLevel.Trace);
                 return true;
+            }
+        }
+
+        /// <summary>
+        /// Prefix on Character.GetToolLocation(Vector2, bool): when the mouse cursor isn't visible this
+        /// frame (the right-stick cursor has faded, or there's no cursor), force ignoreClick so the
+        /// overload resolves the facing tile instead of the passed (stale) cursor position. Fixes the
+        /// #76 tool-hit box, which targets GetToolLocation(getMousePosition()) and otherwise stays
+        /// stuck where the cursor last was while the tool now hits the facing tile. The bool overload
+        /// already does this; the box uses the Vector2 overload directly, so it needs the same. The
+        /// only other direct caller (Game1.cs:12441 tool use) already passes the facing-tile position
+        /// when !wasMouseVisibleThisFrame, so forcing ignoreClick there is a no-op.
+        /// </summary>
+        private static void GetToolLocationVector_Prefix(Character __instance, ref bool ignoreClick)
+        {
+            try
+            {
+                if (ignoreClick) return;
+                if (!(__instance is Farmer farmer) || !farmer.IsLocalPlayer) return;
+                if (Game1.activeClickableMenu != null || Game1.eventUp) return;
+                if (!Game1.wasMouseVisibleThisFrame)
+                    ignoreClick = true;
+            }
+            catch (Exception ex)
+            {
+                Monitor.Log($"[RStickCursor] GetToolLocation(Vector2) prefix error: {ex.Message}", LogLevel.Trace);
             }
         }
 
