@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>#78 Dialogue Outline Color Picker</title>
+<style>
+  :root { --rust: rgb(158,48,30); }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; display: flex; flex-direction: column;
+    align-items: center; gap: 24px; padding: 28px 16px 48px;
+    background: #2b2b3a; color: #e7e7ef;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  h1 { font-size: 18px; font-weight: 600; margin: 0; opacity: .85; }
+  .sub { font-size: 13px; opacity: .6; margin: -16px 0 0; text-align:center; max-width: 520px; }
+
+  /* Mock Stardew dialogue box */
+  .stage { background:#1d6f46; padding: 40px 32px; border-radius: 6px; }
+  .dbox {
+    width: 460px; background:#e9d8b0; border: 8px solid #74552f;
+    border-radius: 4px; padding: 22px 20px;
+    box-shadow: inset 0 0 0 3px #c8a165, 0 6px 0 rgba(0,0,0,.35);
+    font-family: "Segoe UI", sans-serif;
+  }
+  .prompt { color:#5a3a1c; font-size: 20px; font-weight: 700; margin-bottom: 18px; }
+  .resp {
+    position: relative; background:#dcc488; border: 3px solid #b89a5e; border-radius: 3px;
+    padding: 14px 16px; margin: 10px 0; color:#4a3018; font-size: 19px; font-weight: 700;
+  }
+  /* selected response: rust outline (4px) + finger marker bottom-right-ish */
+  .resp.sel { border: 4px solid var(--rust); }
+  .finger {
+    position:absolute; right: 18%; bottom: -10px; width: 0; height: 0;
+    font-size: 26px; line-height: 1; transform: rotate(8deg);
+  }
+
+  .controls { width: 460px; display: flex; flex-direction: column; gap: 16px; }
+  .row { display:flex; align-items:center; gap: 12px; }
+  .row label { width: 18px; font-weight:700; }
+  .row input[type=range] { flex:1; }
+  .row input[type=number] { width: 64px; padding:4px 6px; background:#3a3a4c; color:#fff; border:1px solid #555; border-radius:4px; }
+  .r input[type=range]{ accent-color:#e0584a;} .g input[type=range]{accent-color:#5ad07a;} .b input[type=range]{accent-color:#5a9ad0;}
+
+  .readout {
+    display:flex; align-items:center; gap:16px; width:460px;
+    background:#22222e; border:1px solid #3a3a4c; border-radius:6px; padding:14px 16px;
+  }
+  .swatch { width:48px; height:48px; border-radius:4px; border:2px solid #000; background: var(--rust); }
+  .vals { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 15px; line-height:1.5; }
+  .vals b { color:#ffd479; }
+  .copy { margin-left:auto; }
+  .copy button { padding:8px 12px; border-radius:5px; border:0; background:#4a5; color:#04210f; font-weight:700; cursor:pointer; }
+
+  .presets { display:flex; gap:8px; flex-wrap:wrap; width:460px; }
+  .presets button {
+    padding:8px 10px; border-radius:5px; border:1px solid #444; cursor:pointer;
+    color:#fff; font-size:12px; font-weight:600;
+  }
+</style>
+</head>
+<body>
+  <h1>#78 — Dialogue selection outline color</h1>
+  <p class="sub">Drag R/G/B until the outline on <b>Yes</b> looks right, then read me the
+    <b>rgb(…)</b> line (or hit Copy and paste it back).</p>
+
+  <div class="stage">
+    <div class="dbox">
+      <div class="prompt">Go to sleep for the night?</div>
+      <div class="resp sel" id="yes">Yes<span class="finger">👆</span></div>
+      <div class="resp">No</div>
+    </div>
+  </div>
+
+  <div class="presets" id="presets"></div>
+
+  <div class="controls">
+    <div class="row r"><label>R</label><input type="range" min="0" max="255" id="rR"><input type="number" min="0" max="255" id="nR"></div>
+    <div class="row g"><label>G</label><input type="range" min="0" max="255" id="rG"><input type="number" min="0" max="255" id="nG"></div>
+    <div class="row b"><label>B</label><input type="range" min="0" max="255" id="rB"><input type="number" min="0" max="255" id="nB"></div>
+  </div>
+
+  <div class="readout">
+    <div class="swatch" id="swatch"></div>
+    <div class="vals">
+      <div><b>rgb(</b><span id="outRgb"></span><b>)</b></div>
+      <div>hex <span id="outHex"></span></div>
+    </div>
+    <div class="copy"><button id="copyBtn">Copy rgb()</button></div>
+  </div>
+
+<script>
+  const presets = [
+    ["current", 158, 48, 30],
+    ["firebrick", 178, 34, 34],
+    ["rust", 183, 65, 14],
+    ["brick", 140, 40, 28],
+    ["dark red", 120, 30, 22],
+    ["maroon", 128, 0, 0],
+  ];
+  let R = 158, G = 48, B = 30;
+
+  const $ = id => document.getElementById(id);
+  function clamp(v){ v = parseInt(v,10); if(isNaN(v)) v=0; return Math.max(0, Math.min(255, v)); }
+  function hex(n){ return n.toString(16).padStart(2,'0'); }
+  function apply(){
+    const css = `rgb(${R}, ${G}, ${B})`;
+    document.documentElement.style.setProperty('--rust', css);
+    $('swatch').style.background = css;
+    $('outRgb').textContent = `${R}, ${G}, ${B}`;
+    $('outHex').textContent = `#${hex(R)}${hex(G)}${hex(B)}`;
+    $('rR').value=$('nR').value=R; $('rG').value=$('nG').value=G; $('rB').value=$('nB').value=B;
+  }
+  function set(r,g,b){ R=clamp(r); G=clamp(g); B=clamp(b); apply(); }
+
+  ['R','G','B'].forEach(ch=>{
+    $('r'+ch).addEventListener('input', e=>{ window[ch]=clamp(e.target.value); apply(); });
+    $('n'+ch).addEventListener('input', e=>{ window[ch]=clamp(e.target.value); apply(); });
+  });
+  // expose R/G/B on window so the handlers above can write them
+  Object.defineProperty(window,'R',{get:()=>R,set:v=>R=v});
+  Object.defineProperty(window,'G',{get:()=>G,set:v=>G=v});
+  Object.defineProperty(window,'B',{get:()=>B,set:v=>B=v});
+
+  const pc = $('presets');
+  presets.forEach(([name,r,g,b])=>{
+    const btn=document.createElement('button');
+    btn.textContent=name; btn.style.background=`rgb(${r},${g},${b})`;
+    btn.onclick=()=>set(r,g,b);
+    pc.appendChild(btn);
+  });
+
+  $('copyBtn').onclick=()=>{
+    navigator.clipboard?.writeText(`rgb(${R}, ${G}, ${B})`);
+    $('copyBtn').textContent='Copied!'; setTimeout(()=>$('copyBtn').textContent='Copy rgb()',1200);
+  };
+
+  apply();
+</script>
+</body>
+</html>
