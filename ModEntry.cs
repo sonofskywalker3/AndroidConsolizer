@@ -302,6 +302,12 @@ namespace AndroidConsolizer
                 Patches.FishingRodPatches.ClearSelection();
                 Patches.SlingshotPatches.ClearSelection();
                 Patches.OptionsPagePatches.OnOptionsPageClosed();
+                // #77: if closed straight from the Options tab, persist ALL serializable vanilla
+                // options the game's own way (AC's controller toggles bypass the per-change save).
+                // Mirrors GameMenu's leave-options-tab save (GameMenu.cs:437); covers every option
+                // beyond zoom (which is handled separately via SavedZoomPercent).
+                if (oldGameMenu.currentTab == GameMenu.optionsTab)
+                    Patches.OptionsPagePatches.PersistVanillaOptions();
             }
 
             // Fix snap navigation in ItemGrabMenu (chests, fishing treasure, etc.)
