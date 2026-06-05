@@ -99,10 +99,54 @@ namespace AndroidConsolizer.Patches
                 {
                     Monitor.Log("[RStickCursor] GetToolLocation(bool) not found; diagonal tool targeting disabled.", LogLevel.Warn);
                 }
+
+                // Stop the cursor snapping to screen-center after it fades. Game1.UpdateControlInput
+                // recenters the cursor when the right stick moves it again after a full fade
+                // (timerUntilMouseFade<=0 && !lastCursorMotionWasMouse -> setMousePositionRaw(center),
+                // Game1.cs:13328-13331). The flag is false there because setMousePositionRaw itself
+                // nulls it (5536) on the same cursor-move call. A postfix re-asserts it true right
+                // after the move (only while the right stick is actually driving the cursor), so the
+                // recenter never fires and the cursor resumes where it was.
+                var setMouseRaw = AccessTools.Method(
+                    typeof(Game1), nameof(Game1.setMousePositionRaw), new[] { typeof(int), typeof(int) });
+                if (setMouseRaw != null)
+                {
+                    harmony.Patch(
+                        setMouseRaw,
+                        postfix: new HarmonyMethod(typeof(RightStickCursorPatches), nameof(SetMousePositionRaw_Postfix)));
+                }
+                else
+                {
+                    Monitor.Log("[RStickCursor] setMousePositionRaw not found; cursor recenter fix disabled.", LogLevel.Warn);
+                }
             }
             catch (Exception ex)
             {
                 Monitor.Log($"[RStickCursor] Apply failed: {ex.Message}", LogLevel.Warn);
+            }
+        }
+
+        /// <summary>
+        /// Postfix on Game1.setMousePositionRaw: while the right stick is actively driving the
+        /// overworld cursor, re-assert lastCursorMotionWasMouse=true (setMousePositionRaw nulls it).
+        /// This keeps the engine from recentering the cursor to mid-screen after it fades, and keeps
+        /// the cursor treated as the active pointer. Scoped to right-stick motion so unrelated
+        /// setMousePositionRaw calls (menus, warps) are untouched.
+        /// </summary>
+        private static void SetMousePositionRaw_Postfix()
+        {
+            try
+            {
+                if (ModEntry.Config?.EnableRightStickCursor != true) return;
+                if (Game1.activeClickableMenu != null) return;
+                if (Game1.player?.CurrentTool is StardewValley.Tools.Slingshot) return;
+                if (GameplayButtonPatches.RawRightStickX == 0f && GameplayButtonPatches.RawRightStickY == 0f) return;
+
+                Game1.lastCursorMotionWasMouse = true;
+            }
+            catch (Exception ex)
+            {
+                Monitor.Log($"[RStickCursor] setMousePositionRaw postfix error: {ex.Message}", LogLevel.Trace);
             }
         }
 
