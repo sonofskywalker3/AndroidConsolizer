@@ -183,6 +183,19 @@ namespace AndroidConsolizer
         public bool UseBumpersInsteadOfTriggers { get; set; } = false;
 
         /*********
+        ** #77: persisted native-option values
+        *********/
+        // Android's StartupPreferences does NOT save the in-game zoom or the tool-hit-location
+        // options, so they reset to defaults on every cold restart. AC records the user's choice
+        // here (snapshot on Options/GameMenu close + on the zoom slider change) and re-applies it on
+        // SaveLoaded. SavedZoomPercent == 0 means "user never set zoom" → don't apply (leave the
+        // mobile default untouched). The tool-hit bools default to the game defaults (harmless to
+        // re-apply on a fresh install).
+        public int SavedZoomPercent { get; set; } = 0;
+        public bool SavedAlwaysShowToolHit { get; set; } = false;
+        public bool SavedHideToolHitWhenMoving { get; set; } = false;
+
+        /*********
         ** Debug Settings
         *********/
         /// <summary>Whether to log verbose debug information.</summary>

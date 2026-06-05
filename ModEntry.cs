@@ -271,6 +271,10 @@ namespace AndroidConsolizer
                 this.Monitor.Log($"Save loaded - forced tool re-equip at index {original}, row {currentToolbarRow}", LogLevel.Trace);
 
             }
+
+            // #77: re-apply zoom + tool-hit-location options that Android doesn't persist across a
+            // cold restart (StartupPreferences omits them). Values were saved on Options/GameMenu close.
+            Patches.OptionsPagePatches.ApplySavedSettings();
         }
 
         /// <summary>Raised when a menu is opened or closed.</summary>
