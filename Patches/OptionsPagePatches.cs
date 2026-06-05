@@ -191,6 +191,51 @@ namespace AndroidConsolizer.Patches
             _interactiveIndices = null;
             _aPressTick = -1;
             _stickNavDir = 0;
+
+            // #77: Android doesn't persist the tool-hit-location options (or zoom) across a cold
+            // restart, so snapshot the current values into AC config and write once here. Zoom was
+            // already recorded in-memory by ApplySliderValue when the user moved the slider.
+            try
+            {
+                if (ModEntry.Config != null && Game1.options != null)
+                {
+                    ModEntry.Config.SavedAlwaysShowToolHit = Game1.options.alwaysShowToolHitLocation;
+                    ModEntry.Config.SavedHideToolHitWhenMoving = Game1.options.hideToolHitLocationWhenInMotion;
+                    ModEntry.ModHelper?.WriteConfig(ModEntry.Config);
+                }
+            }
+            catch (Exception ex)
+            {
+                Monitor?.Log($"[#77] persist on options close failed: {ex.Message}", LogLevel.Trace);
+            }
+        }
+
+        /// <summary>
+        /// #77: Re-apply the persisted zoom + tool-hit-location options on save load, since Android's
+        /// StartupPreferences doesn't save them (they reset to defaults each cold restart). Zoom is only
+        /// re-applied if the user actually set it (SavedZoomPercent > 0) so we never override the mobile
+        /// default. Call from ModEntry.OnSaveLoaded.
+        /// </summary>
+        public static void ApplySavedSettings()
+        {
+            try
+            {
+                if (ModEntry.Config == null || Game1.options == null) return;
+
+                Game1.options.alwaysShowToolHitLocation = ModEntry.Config.SavedAlwaysShowToolHit;
+                Game1.options.hideToolHitLocationWhenInMotion = ModEntry.Config.SavedHideToolHitWhenMoving;
+
+                if (ModEntry.Config.SavedZoomPercent > 0)
+                    ApplyMobileZoom(ModEntry.Config.SavedZoomPercent);
+
+                Monitor?.Log($"[#77] applied saved settings: zoom={ModEntry.Config.SavedZoomPercent} " +
+                    $"alwaysShowToolHit={ModEntry.Config.SavedAlwaysShowToolHit} " +
+                    $"hideWhenMoving={ModEntry.Config.SavedHideToolHitWhenMoving}", LogLevel.Trace);
+            }
+            catch (Exception ex)
+            {
+                Monitor?.Log($"[#77] ApplySavedSettings failed: {ex.Message}", LogLevel.Trace);
+            }
         }
 
         /// <summary>Close the active dropdown, optionally applying the selection.</summary>
@@ -374,7 +419,12 @@ namespace AndroidConsolizer.Patches
         private static void ApplySliderValue(OptionsSlider slider, int newVal)
         {
             if (slider.whichOption == 18)
+            {
                 ApplyMobileZoom(newVal);
+                // #77: remember the user's zoom so it survives a cold restart (Android doesn't
+                // persist it). Written to disk on Options/GameMenu close (OnOptionsPageClosed).
+                if (ModEntry.Config != null) ModEntry.Config.SavedZoomPercent = newVal;
+            }
             else
                 Game1.options.changeSliderOption(slider.whichOption, newVal);
         }
@@ -408,7 +458,7 @@ namespace AndroidConsolizer.Patches
         /// drive the mobile PinchZoom (the render authority), set desired/base zoom, then
         /// Window_ClientSizeChanged to re-apply it to the viewport. changeDropDownOption(18) alone only
         /// sets desiredBaseZoomLevel, which the mobile render ignores.</summary>
-        private static void ApplyMobileZoom(int pct)
+        internal static void ApplyMobileZoom(int pct)
         {
             try
             {
