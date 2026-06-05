@@ -193,15 +193,29 @@ namespace AndroidConsolizer.Patches
             _stickNavDir = 0;
 
             // #77: Android doesn't persist the tool-hit-location options (or zoom) across a cold
-            // restart, so snapshot the current values into AC config and write once here. Zoom was
-            // already recorded in-memory by ApplySliderValue when the user moved the slider.
+            // restart, so snapshot the current values into AC config. Write to disk ONLY when
+            // something actually changed — OnOptionsPageClosed runs on every GameMenu close (any tab),
+            // so an unconditional WriteConfig would hit disk every time you close your backpack.
             try
             {
                 if (ModEntry.Config != null && Game1.options != null)
                 {
-                    ModEntry.Config.SavedAlwaysShowToolHit = Game1.options.alwaysShowToolHitLocation;
-                    ModEntry.Config.SavedHideToolHitWhenMoving = Game1.options.hideToolHitLocationWhenInMotion;
-                    ModEntry.ModHelper?.WriteConfig(ModEntry.Config);
+                    bool changed = _zoomDirty;
+                    _zoomDirty = false;
+
+                    if (ModEntry.Config.SavedAlwaysShowToolHit != Game1.options.alwaysShowToolHitLocation)
+                    {
+                        ModEntry.Config.SavedAlwaysShowToolHit = Game1.options.alwaysShowToolHitLocation;
+                        changed = true;
+                    }
+                    if (ModEntry.Config.SavedHideToolHitWhenMoving != Game1.options.hideToolHitLocationWhenInMotion)
+                    {
+                        ModEntry.Config.SavedHideToolHitWhenMoving = Game1.options.hideToolHitLocationWhenInMotion;
+                        changed = true;
+                    }
+
+                    if (changed)
+                        ModEntry.ModHelper?.WriteConfig(ModEntry.Config);
                 }
             }
             catch (Exception ex)
@@ -422,8 +436,10 @@ namespace AndroidConsolizer.Patches
             {
                 ApplyMobileZoom(newVal);
                 // #77: remember the user's zoom so it survives a cold restart (Android doesn't
-                // persist it). Written to disk on Options/GameMenu close (OnOptionsPageClosed).
+                // persist it). Written to disk on Options/GameMenu close (OnOptionsPageClosed),
+                // and only when actually changed — _zoomDirty flags that.
                 if (ModEntry.Config != null) ModEntry.Config.SavedZoomPercent = newVal;
+                _zoomDirty = true;
             }
             else
                 Game1.options.changeSliderOption(slider.whichOption, newVal);
@@ -433,6 +449,8 @@ namespace AndroidConsolizer.Patches
         // namespace, so it's resolved by name at runtime; Window_ClientSizeChanged is what actually
         // re-applies the zoom to the viewport.
         private static bool _zoomResolved;
+        // #77: set when the user moves the zoom slider, so OnOptionsPageClosed writes config only on change.
+        private static bool _zoomDirty;
         private static PropertyInfo _pinchInstanceProp;
         private static FieldInfo _pinchInstanceField;
         private static MethodInfo _pinchSetZoomLevel;
