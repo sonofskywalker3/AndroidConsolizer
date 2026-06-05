@@ -55,11 +55,12 @@ namespace AndroidConsolizer
         public bool EnableConsoleShipping { get; set; } = true;
 
         /// <summary>
-        /// Stops the right thumbstick from moving the mouse cursor during overworld gameplay.
-        /// Vanilla Android maps the right stick to cursor motion, which causes interact/sickle
-        /// to target tiles many squares away from the player. Disable to restore vanilla behavior.
+        /// Console right-stick cursor: the right thumbstick moves an on-screen mouse cursor that
+        /// aims tools/interaction at the cursor tile (Switch parity), auto-hiding after ~4s of no
+        /// input (reverting tools to the facing tile). When false, the right stick is zeroed in the
+        /// overworld (no cursor drift) — the pre-v4.0 behaviour.
         /// </summary>
-        public bool SuppressRightStickInOverworld { get; set; } = true;
+        public bool EnableRightStickCursor { get; set; } = true;
 
         /*********
         ** Standalone Features

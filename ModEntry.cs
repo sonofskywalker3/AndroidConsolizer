@@ -1259,12 +1259,12 @@ namespace AndroidConsolizer
 
             configMenu.AddBoolOption(
                 mod: this.ModManifest,
-                name: () => "Suppress Right Stick in Overworld",
-                tooltip: () => "Stops the right stick from drifting the mouse cursor across the map during gameplay. " +
-                              "Vanilla Android maps right stick to cursor, which causes interact/sickle to target distant tiles. " +
-                              "Disable to restore vanilla behavior.",
-                getValue: () => Config.SuppressRightStickInOverworld,
-                setValue: value => Config.SuppressRightStickInOverworld = value
+                name: () => "Enable Right-Stick Cursor",
+                tooltip: () => "Right stick moves an on-screen cursor that aims your tools, matching Switch. " +
+                              "Auto-hides after a few seconds of no input, reverting tools to the tile you're facing. " +
+                              "Turn off to keep the right stick from moving the cursor (no drift).",
+                getValue: () => Config.EnableRightStickCursor,
+                setValue: value => Config.EnableRightStickCursor = value
             );
 
             // Standalone Features
