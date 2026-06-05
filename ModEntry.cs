@@ -707,7 +707,8 @@ namespace AndroidConsolizer
                     // CRITICAL: Always suppress raw ControllerX in inventory to prevent Android deletion bug
                     if (button == SButton.ControllerX && Config.EnableConsoleChests)
                     {
-                        this.Monitor.Log($"Suppressing raw X button in inventory to prevent deletion", LogLevel.Debug);
+                        if (Config.VerboseLogging)
+                            this.Monitor.Log($"Suppressing raw X button in inventory to prevent deletion", LogLevel.Debug);
                         this.Helper.Input.Suppress(button);
                     }
 
@@ -764,7 +765,8 @@ namespace AndroidConsolizer
                     // X button (after remapping) = Sort inventory
                     if (remapped == SButton.ControllerX && Config.EnableConsoleChests)
                     {
-                        this.Monitor.Log($"Intercepting {button} (remapped to X) in inventory - sorting", LogLevel.Debug);
+                        if (Config.VerboseLogging)
+                            this.Monitor.Log($"Intercepting {button} (remapped to X) in inventory - sorting", LogLevel.Debug);
                         this.Helper.Input.Suppress(button);
                         Patches.InventoryPagePatches.SortPlayerInventory();
                     }
