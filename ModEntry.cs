@@ -72,9 +72,12 @@ namespace AndroidConsolizer
 
         /// <summary>Consecutive ticks below TriggerReleaseThreshold required to confirm a release.
         /// Empirically tuned against G Cloud + Gamesir hall-effect dropouts: worst observed dropout
-        /// in a single physical pull was 3 ticks, so 4 absorbs all observed cases. Caps tap rate at
-        /// ~15/sec which is well above any human tap cadence.</summary>
-        private const int TriggerReleaseConfirmTicks = 4;
+        /// in a single physical pull was 3 ticks. v3.9.15 lowered this 4 -> 2 (user request) because 4
+        /// dropped fast re-pulls — the trigger had to dwell below the release threshold for ~64ms before
+        /// the next pull would register ("stuck when changing slots too quickly"). 2 lets fast re-pulls
+        /// through at the cost of possibly double-moving on a 2-3 tick analog dropout; bump back toward
+        /// 3-4 if spurious double-moves reappear.</summary>
+        private const int TriggerReleaseConfirmTicks = 2;
 
         /// <summary>The slot index we set on the last trigger press. Persists across presses
         /// to serve as the base for the next trigger move. Cleared after grace period expires
