@@ -30,16 +30,14 @@ namespace AndroidConsolizer.Patches
         // Red outline thickness in pixels: 1 source-pixel x the menu's 4x box scale,
         // matching the tool-hit-location box border (Farmer.cs:6368, mouseCursors tile 29).
         private const int OUTLINE_THICKNESS = 4;
-        // mouseCursors standard tiles: 29 = tool-hit red target box; 44 = the menu/inventory
-        // snap "finger" cursor (the same one GeodeMenu and the Museum draw — NOT tile 0, which is
-        // the plain mouse pointer).
-        private const int ToolHitTileIndex = 29;
+        // mouseCursors tile 44 = the menu/inventory snap "finger" cursor (the same one GeodeMenu
+        // and the Museum draw — NOT tile 0, which is the plain mouse pointer).
         private const int FingerTileIndex = 44;
         // Finger sits this fraction of the box width left of the right edge, on the bottom line.
         private const float FingerRightInset = 0.2f;
 
-        // Sampled-once exact red from the tool-hit sprite (cached). Falls back to pure red.
-        private static Color? _toolHitRed;
+        // Outline color — a darker rust red (user preference; "closer to rust than clown hair").
+        private static readonly Color OutlineColor = new Color(158, 48, 30);
 
         // Throttle for the #78 draw diagnostic (VerboseLogging only).
         private static int _lastDiagTick = -1000;
@@ -190,8 +188,8 @@ namespace AndroidConsolizer.Patches
                     To4(x + 40), To4(num + 4 - ((responses.Length > 2) ? 4 : 0)),
                     999999, width - 80, 999999, 1f);
 
-                // 3) Red outline matching the tool-hit box border.
-                DrawOutline(b, new Rectangle(boxX, boxY, boxW, boxH), OUTLINE_THICKNESS, GetToolHitRed());
+                // 3) Rust-red outline.
+                DrawOutline(b, new Rectangle(boxX, boxY, boxW, boxH), OUTLINE_THICKNESS, OutlineColor);
 
                 // 4) Menu/inventory finger cursor (tile 44) along the box bottom line, ~20% in
                 //    from the right edge.
@@ -229,49 +227,6 @@ namespace AndroidConsolizer.Patches
             b.Draw(Game1.staminaRect, new Rectangle(r.X, r.Y + r.Height - t, r.Width, t), color);   // bottom
             b.Draw(Game1.staminaRect, new Rectangle(r.X, r.Y, t, r.Height), color);                 // left
             b.Draw(Game1.staminaRect, new Rectangle(r.X + r.Width - t, r.Y, t, r.Height), color);   // right
-        }
-
-        /// <summary>
-        /// The exact orange-red of the tool-hit-location box (mouseCursors tile 29), sampled
-        /// once and cached. Picks the most-red opaque pixel in the tile. Falls back to pure
-        /// red if GetData is unavailable on the runtime.
-        /// </summary>
-        private static Color GetToolHitRed()
-        {
-            if (_toolHitRed.HasValue)
-                return _toolHitRed.Value;
-
-            // Muted orange-red fallback (not pure 255,0,0 — that reads too bright as a solid bar).
-            Color result = new Color(200, 50, 35);
-            try
-            {
-                var sheet = Game1.mouseCursors;
-                if (sheet != null)
-                {
-                    Rectangle src = Game1.getSourceRectForStandardTileSheet(sheet, ToolHitTileIndex, 16, 16);
-                    var buffer = new Color[src.Width * src.Height];
-                    sheet.GetData(0, src, buffer, 0, buffer.Length);
-                    // Average the red-dominant opaque pixels — the box's representative tint,
-                    // which includes the sprite's shading (so it's muted, not the hottest pixel).
-                    long rSum = 0, gSum = 0, bSum = 0;
-                    int count = 0;
-                    foreach (var c in buffer)
-                    {
-                        if (c.A < 200 || c.R <= c.G || c.R <= c.B)
-                            continue;
-                        rSum += c.R; gSum += c.G; bSum += c.B; count++;
-                    }
-                    if (count > 0)
-                        result = new Color((int)(rSum / count), (int)(gSum / count), (int)(bSum / count));
-                }
-            }
-            catch (Exception ex)
-            {
-                Monitor?.Log($"[DialogueBox] tool-hit red sample failed, using fallback red: {ex.Message}", LogLevel.Trace);
-            }
-
-            _toolHitRed = result;
-            return result;
         }
     }
 }
