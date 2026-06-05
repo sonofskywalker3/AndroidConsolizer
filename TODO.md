@@ -197,19 +197,15 @@ Three player-facing real-time gameplay systems. Each likely needs multiple patch
 
 **Placement rule:** *all right-stick features ship in v4.0*, with slingshot aim (#25b) as the deliberate v3.9 exception. Major version bump because the right-stick cursor is the only remaining feature class that doesn't exist on Switch — calling v4.0 "The Right Stick Update" makes the bump narratively legible.
 
-### 12. Right Joystick Cursor Mode + Zoom Control
+### 12. Right Joystick Cursor Mode
 - **Bundled feature (LARGE)**
 - **Cursor mode:** Right joystick moves free cursor in menus + gameplay.
   - Essential for precise furniture placement, free-cursor-driven future menus.
   - On Switch: right stick moves cursor, disappears after inactivity. Press for left click.
-  - Implementation: read right stick axis from `GamePad.GetState()`, call `Game1.setMousePosition()` per tick.
+  - Implementation: read right stick axis (already cached as `RawRightStickX/Y` in `GameplayButtonPatches`), call `Game1.setMousePosition()` per tick.
   - Complexity: dead zones, acceleration curves, auto-hide, interaction with snap navigation.
-- **Zoom control:** Add to in-game Options page (not GMCM).
-  - Confirmed: zoom slider does NOT exist on Android — mobile port stripped it (pinch-to-zoom only).
-  - Console: `whichOption = 18`, `OptionsSlider`, range 75%-200%, controls `Game1.options.desiredBaseZoomLevel`.
-  - Need to inject custom `OptionsSlider` subclass into `OptionsPage.options` list.
-  - Must subclass `OptionsSlider` with own value management since Android may not wire game's zoom handling.
-  - GMCM's "Mod Options" button partially cut off — slider injection may need to fix scroll bounds.
+  - **Scope to be fleshed out** from the console right-stick research (kicked off 2026-06-04): this item should cover EVERY console right-stick behavior, not just the cursor. Write a design spec from the research findings before implementing.
+- **~~Zoom control~~ — DROPPED 2026-06-04 (user decision).** Superseded by #77: the in-game Options page now has a working zoom slider (`OptionsPageInjectionPatches`, whichOption 18, drives the PinchZoom pipeline). The menu slider is the better home for zoom than a right-stick gesture — do NOT re-add right-stick zoom.
 
 ### 62. Right-Stick to Move Furniture Ghost
 - **Source:** Original "console furniture placement" ask had two parts. v3.5.38–v3.5.39 covered part 1 (single ghost rectangle + translucent sprite). Part 2: right stick moves the ghost the way it moves the carpenter building ghost.
