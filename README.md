@@ -184,6 +184,7 @@ Every feature is individually toggleable via [Generic Mod Config Menu](https://g
 
 - [**Cart Catalog**](https://www.nexusmods.com/stardewvalley/mods/47146) — Order from the Traveling Cart's daily stock; items arrive in a package on your porch the next morning.
 - [**Nap Time**](https://www.nexusmods.com/stardewvalley/mods/42616) — Nap in bed to recover energy without ending the day. Configurable rate and wake-up cap. PC + Android.
+- [**The Longest Year**](https://www.nexusmods.com/stardewvalley/mods/47192) — A roguelite time-loop: restore the Community Center within a year, or the Junimos rewind the seasons and you begin again, a little stronger. (Beta)
 
 ## Source
 
