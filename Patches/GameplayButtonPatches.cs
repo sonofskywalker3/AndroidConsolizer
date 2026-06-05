@@ -403,13 +403,13 @@ namespace AndroidConsolizer.Patches
                     );
                 }
 
-                // Zero out the right thumbstick during overworld gameplay (no active menu).
-                // Vanilla Android Game1.UpdateControlInput moves the mouse cursor by
-                // (rightStick * thumbstickToMouseModifier) every tick the stick is non-zero.
-                // The deltas accumulate, so a small nudge drifts the cursor many tiles away
-                // and interact/sickle then target the wrong tile.
-                if (ModEntry.Config?.SuppressRightStickInOverworld == true
-                    && !RightStickCursorPatches.DiagnosticLiftSuppression
+                // Right-stick overworld cursor (v4.0 #12). When the cursor is ENABLED, let the
+                // engine move the mouse from the right stick (Game1.UpdateControlInput:13303-13334)
+                // — that's the console cursor, drawn + faded natively (drawMouseCursor). When it's
+                // DISABLED, zero the right stick so it doesn't drift the cursor across the map.
+                // Menus are unaffected (activeClickableMenu == null gate); the slingshot carve-out
+                // is added in the next commit.
+                if (ModEntry.Config?.EnableRightStickCursor == false
                     && Game1.activeClickableMenu == null
                     && __result.ThumbSticks.Right != Vector2.Zero)
                 {

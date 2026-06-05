@@ -21,13 +21,6 @@ namespace AndroidConsolizer.Patches
     {
         private static IMonitor Monitor;
 
-        /// <summary>
-        /// Phase 0 only: when true, GameplayButtonPatches does NOT zero the overworld right
-        /// stick, so the engine cursor path can run and the diagnostic can observe it.
-        /// Phase 1 removes this in favour of the EnableRightStickCursor config flag.
-        /// </summary>
-        internal static bool DiagnosticLiftSuppression = true;
-
         private static int _lastLoggedTick = -1;
 
         // timerUntilMouseFade is public static int on Android; reflect defensively (Android-vs-PC pattern).
@@ -64,7 +57,7 @@ namespace AndroidConsolizer.Patches
                     $"[RStickDiag] rstick=({rx:0.00},{ry:0.00}) gamepadControls={Game1.options?.gamepadControls} " +
                     $"mouseXY=({Game1.getMouseX()},{Game1.getMouseY()}) transparency={Game1.mouseCursorTransparency:0.00} " +
                     $"timerUntilMouseFade={fade} lastCursorMotionWasMouse={Game1.lastCursorMotionWasMouse} " +
-                    $"liftSuppression={DiagnosticLiftSuppression}",
+                    $"cursorEnabled={ModEntry.Config?.EnableRightStickCursor}",
                     LogLevel.Info);
             }
             catch (Exception ex)
