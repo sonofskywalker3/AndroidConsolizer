@@ -3,6 +3,7 @@ using System.Reflection;
 using HarmonyLib;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
+using Microsoft.Xna.Framework.Input;
 using StardewModdingAPI;
 using StardewValley;
 
@@ -32,8 +33,59 @@ namespace AndroidConsolizer.Patches
         public static void Apply(Harmony harmony, IMonitor monitor)
         {
             Monitor = monitor;
-            // No Harmony patch needed — the cursor is engine-native; we only nudge one flag
-            // per tick (EnforceTick) and log a diagnostic. Both run from OnUpdateTicked.
+            try
+            {
+                // Make INTERACTION (check / open / gift / talk) follow the right-stick cursor.
+                // Game1.pressActionButton's tile gate (Game1.cs:11971) uses the cursor only when
+                // lastCursorMotionWasMouse is true, but the controller A-press handler sets it
+                // false (Game1.cs:13449) earlier in the same tick. A prefix re-asserts it true
+                // right before the gate reads it, while the cursor is active. Tool-swinging
+                // (pressUseToolButton) is deliberately NOT patched — it stays on the facing tile
+                // (console parity, user-confirmed on Switch 2026-06-05).
+                var pressAction = AccessTools.Method(
+                    typeof(Game1), nameof(Game1.pressActionButton),
+                    new[] { typeof(KeyboardState), typeof(MouseState), typeof(GamePadState) });
+                if (pressAction != null)
+                {
+                    harmony.Patch(
+                        pressAction,
+                        prefix: new HarmonyMethod(typeof(RightStickCursorPatches), nameof(PressActionButton_Prefix)));
+                }
+                else
+                {
+                    Monitor.Log("[RStickCursor] pressActionButton not found; interaction cursor targeting disabled.", LogLevel.Warn);
+                }
+            }
+            catch (Exception ex)
+            {
+                Monitor.Log($"[RStickCursor] Apply failed: {ex.Message}", LogLevel.Warn);
+            }
+        }
+
+        /// <summary>
+        /// Prefix on Game1.pressActionButton: while the right-stick cursor is active, tell the game
+        /// the cursor is the pointer so interaction targets the cursor tile (Game1.cs:11971) instead
+        /// of the facing tile. Scoped to the cursor-visible window (timerUntilMouseFade > 0) so once
+        /// the cursor auto-hides, interaction reverts to the facing tile — matching Switch.
+        /// </summary>
+        private static void PressActionButton_Prefix()
+        {
+            try
+            {
+                if (ModEntry.Config?.EnableRightStickCursor != true) return;
+                if (Game1.activeClickableMenu != null || Game1.eventUp) return;
+                if (Game1.player?.CurrentTool is StardewValley.Tools.Slingshot) return;
+
+                int fade = 0;
+                try { fade = (int)(_timerUntilMouseFade?.GetValue(null) ?? 0); } catch { return; }
+                if (fade <= 0) return; // cursor faded → let interaction use the facing tile
+
+                Game1.lastCursorMotionWasMouse = true;
+            }
+            catch (Exception ex)
+            {
+                Monitor.Log($"[RStickCursor] pressAction prefix error: {ex.Message}", LogLevel.Trace);
+            }
         }
 
         /// <summary>
