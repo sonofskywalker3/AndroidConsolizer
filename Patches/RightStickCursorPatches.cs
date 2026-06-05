@@ -24,7 +24,10 @@ namespace AndroidConsolizer.Patches
     {
         private static IMonitor Monitor;
 
-        private static int _lastLoggedTick = -1;
+        // Last semantic cursor state logged by DiagnosticTick, to debounce the diagnostic so it
+        // logs only on change (not every tick) — the per-tick flood was the #79 v3.9.11 input-lag
+        // regression. Format: isAction|isSpeech|isInspect|resolved|npc|npcRaw.
+        private static string _lastCtxKey = null;
 
         // timerUntilMouseFade is public static int on Android; reflect defensively (Android-vs-PC pattern).
         private static readonly FieldInfo _timerUntilMouseFade =
@@ -385,41 +388,56 @@ namespace AndroidConsolizer.Patches
             }
         }
 
-        /// <summary>Call from ModEntry.OnUpdateTicked. Logs engine cursor state while the right stick moves.</summary>
+        /// <summary>
+        /// Call from ModEntry.OnUpdateTicked. Logs the resolved contextual cursor ONLY when its
+        /// semantic state changes (debounced), while the cursor is visible. This replaces the old
+        /// per-tick [RStickDiag]+[RStickCtx] flood (~30 INFO lines/sec) that stalled Android's main
+        /// thread on synchronous log I/O and dropped input edges (#79 v3.9.11 regression). Debouncing
+        /// also means it captures hover-on-target transitions (chest/NPC/forage) instead of only the
+        /// empty-ground sweeps the stick-moving gate used to log. Also probes whether an NPC is at the
+        /// cursor tile + the raw cursor it would set, to diagnose the talk/gift cases.
+        /// </summary>
         public static void DiagnosticTick()
         {
             try
             {
                 if (ModEntry.Config?.VerboseLogging != true) return;
-                if (Game1.activeClickableMenu != null) return;
-                if (Game1.player == null) return;
-
-                float rx = GameplayButtonPatches.RawRightStickX;
-                float ry = GameplayButtonPatches.RawRightStickY;
-                if (rx == 0f && ry == 0f) return;
-
-                if (Game1.ticks == _lastLoggedTick) return;
-                _lastLoggedTick = Game1.ticks;
+                if (Game1.activeClickableMenu != null || Game1.player == null) return;
 
                 int fade = -1;
                 try { fade = (int)(_timerUntilMouseFade?.GetValue(null) ?? -1); } catch { /* ignore */ }
+                if (fade <= 0) { _lastCtxKey = null; return; } // cursor hidden → nothing to log; reset so its next appearance logs
+
+                // Probe whether an NPC is at the cursor tile + the raw cursor it would set, snapshot-
+                // restored so engine state is untouched (diagnoses the villager talk/gift cases).
+                Vector2 cursorTile = new Vector2(
+                    (Game1.viewport.X + Game1.getOldMouseX()) / 64,
+                    (Game1.viewport.Y + Game1.getOldMouseY()) / 64);
+                int savedCursor = Game1.mouseCursor;
+                float savedAlpha = Game1.mouseCursorTransparency;
+                Game1.mouseCursor = Game1.cursor_default;
+                bool npc = Utility.checkForCharacterInteractionAtTile(cursorTile, Game1.player)
+                        || Utility.checkForCharacterInteractionAtTile(cursorTile + new Vector2(0f, 1f), Game1.player);
+                int npcRaw = Game1.mouseCursor;
+                Game1.mouseCursor = savedCursor;
+                Game1.mouseCursorTransparency = savedAlpha;
+
+                int resolved = ResolveContextualCursor();
+
+                string key = $"{Game1.isActionAtCurrentCursorTile}|{Game1.isSpeechAtCurrentCursorTile}|" +
+                             $"{Game1.isInspectionAtCurrentCursorTile}|{resolved}|{npc}|{npcRaw}";
+                if (key == _lastCtxKey) return; // debounce: only log when the semantic state changes
+                _lastCtxKey = key;
 
                 Monitor.Log(
-                    $"[RStickDiag] rstick=({rx:0.00},{ry:0.00}) gamepadControls={Game1.options?.gamepadControls} " +
-                    $"mouseXY=({Game1.getMouseX()},{Game1.getMouseY()}) transparency={Game1.mouseCursorTransparency:0.00} " +
-                    $"timerUntilMouseFade={fade} lastCursorMotionWasMouse={Game1.lastCursorMotionWasMouse} " +
-                    $"cursorEnabled={ModEntry.Config?.EnableRightStickCursor}",
-                    LogLevel.Info);
-
-                Monitor.Log(
-                    $"[RStickCtx] tile=({(Game1.viewport.X + Game1.getOldMouseX()) / 64},{(Game1.viewport.Y + Game1.getOldMouseY()) / 64}) " +
+                    $"[RStickCtx] tile=({(int)cursorTile.X},{(int)cursorTile.Y}) " +
                     $"isAction={Game1.isActionAtCurrentCursorTile} isSpeech={Game1.isSpeechAtCurrentCursorTile} " +
-                    $"isInspect={Game1.isInspectionAtCurrentCursorTile} resolvedCursor={ResolveContextualCursor()}",
+                    $"isInspect={Game1.isInspectionAtCurrentCursorTile} npc={npc} npcRaw={npcRaw} resolved={resolved}",
                     LogLevel.Info);
             }
             catch (Exception ex)
             {
-                Monitor.Log($"[RStickDiag] error: {ex.Message}", LogLevel.Trace);
+                Monitor.Log($"[RStickCtx] diag error: {ex.Message}", LogLevel.Trace);
             }
         }
     }
