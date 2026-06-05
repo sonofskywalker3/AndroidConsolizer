@@ -224,6 +224,40 @@ namespace AndroidConsolizer.Patches
             }
         }
 
+        // #77 (general): reflected handle to the Android-only OptionsPage.SaveStartupPreferences().
+        private static MethodInfo _saveStartupPrefs;
+        private static bool _saveStartupPrefsResolved;
+
+        /// <summary>
+        /// #77 (general "any other setting"): persist ALL serializable vanilla Options via the game's
+        /// own OptionsPage.SaveStartupPreferences(). AC's controller toggles call a component's
+        /// receiveLeftClick directly, bypassing the per-change save the touch path triggers — so an
+        /// option changed via controller and then closed straight from the Options tab (B, not a
+        /// tab-switch) wouldn't survive a cold restart. Call this on Options-tab close to mirror the
+        /// game's own leave-options-tab save (GameMenu.cs:437). Persists tool-hit AND every other
+        /// serializable option (sound, portraits, autorun, ...). Zoom is NOT covered here (it's
+        /// [XmlIgnore]) — that stays on the SavedZoomPercent + ApplyMobileZoom path. SaveStartupPreferences
+        /// is an Android-only static (absent on the PC reference DLL) → resolved by string.
+        /// </summary>
+        public static void PersistVanillaOptions()
+        {
+            try
+            {
+                if (!_saveStartupPrefsResolved)
+                {
+                    _saveStartupPrefsResolved = true;
+                    _saveStartupPrefs = AccessTools.Method(typeof(StardewValley.Menus.OptionsPage), "SaveStartupPreferences");
+                    if (_saveStartupPrefs == null)
+                        Monitor?.Log("[#77] OptionsPage.SaveStartupPreferences not found; vanilla option persistence disabled.", LogLevel.Trace);
+                }
+                _saveStartupPrefs?.Invoke(null, null);
+            }
+            catch (Exception ex)
+            {
+                Monitor?.Log($"[#77] PersistVanillaOptions failed: {ex.Message}", LogLevel.Trace);
+            }
+        }
+
         /// <summary>
         /// #77: Re-apply the persisted zoom + tool-hit-location options on save load, since Android's
         /// StartupPreferences doesn't save them (they reset to defaults each cold restart). Zoom is only
