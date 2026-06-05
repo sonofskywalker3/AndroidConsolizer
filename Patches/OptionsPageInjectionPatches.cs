@@ -36,6 +36,14 @@ namespace AndroidConsolizer.Patches
         private const int ScrollBottomPad = 16;
         private const int ScrollExtra = 50;
 
+        // Hardcoded labels — the PC string keys (Options_AlwaysShowToolHitLocation etc.) are absent
+        // from the Android content, so LoadString won't resolve them.
+        private const string LabelAlwaysShowToolHit = "Always show tool hit location";
+        private const string LabelHideToolHitMoving = "Hide tool hit location while moving";
+
+        private const int OptAlwaysShowToolHit = 11;
+        private const int OptHideToolHitMoving = 12;
+
         public static void Apply(Harmony harmony, IMonitor monitor)
         {
             Monitor = monitor;
@@ -49,11 +57,39 @@ namespace AndroidConsolizer.Patches
                 if (update != null)
                     harmony.Patch(update, postfix: new HarmonyMethod(typeof(OptionsPageInjectionPatches), nameof(Update_Postfix)));
 
+                var ctor = AccessTools.Constructor(typeof(OptionsPage),
+                    new[] { typeof(int), typeof(int), typeof(int), typeof(int), typeof(float), typeof(float) });
+                if (ctor != null)
+                    harmony.Patch(ctor, postfix: new HarmonyMethod(typeof(OptionsPageInjectionPatches), nameof(Ctor_Postfix)));
+                else
+                    Monitor.Log("OptionsPageInjectionPatches: OptionsPage ctor not found — injection disabled", LogLevel.Warn);
+
                 Monitor.Log("OptionsPage injection patches applied.", LogLevel.Trace);
             }
             catch (Exception ex)
             {
                 Monitor.Log($"Failed to apply OptionsPage injection patches: {ex.Message}", LogLevel.Error);
+            }
+        }
+
+        /// <summary>Append injected options to the OptionsPage list. They self-sync their displayed
+        /// value because OptionsCheckbox/OptionsSlider ctors call set*ToProperValue, and Options handles
+        /// 11/12/18 there. The ctor's updateContentPositions already ran, so positions are set on the
+        /// next update tick (before first draw); the scroll-fit postfix resizes the scroll to include
+        /// these. Appended at the end (an "extra options" block).</summary>
+        private static void Ctor_Postfix(OptionsPage __instance)
+        {
+            try
+            {
+                var options = _optionsField?.GetValue(__instance) as List<OptionsElement>;
+                if (options == null) return;
+
+                options.Add(new OptionsCheckbox(LabelAlwaysShowToolHit, OptAlwaysShowToolHit));
+                options.Add(new OptionsCheckbox(LabelHideToolHitMoving, OptHideToolHitMoving));
+            }
+            catch (Exception ex)
+            {
+                Monitor?.Log($"OptionsPage Ctor_Postfix error: {ex.Message}", LogLevel.Error);
             }
         }
 

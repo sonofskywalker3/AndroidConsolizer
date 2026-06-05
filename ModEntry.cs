@@ -351,23 +351,6 @@ namespace AndroidConsolizer
                 player.CurrentToolIndex = _triggerSlotTarget;
         }
 
-        /// <summary>#76: keep the console "always show tool hit location" red box engaged.
-        /// On Android, Options.alwaysShowToolHitLocation defaults false and a controller never holds
-        /// the Shift that Farmer.draw also accepts, so the marker never shows; hideToolHitLocationWhenInMotion
-        /// defaults true (hides it while walking). When EnableToolHitLocation is on, force the option on
-        /// and the hide-while-moving off so the box is always visible (user choice). Guarded so it only
-        /// writes when a value actually differs (cheap per-tick, and also pins the value against the
-        /// in-game Options page). Both are vanilla Options bools (present on the PC DLL) — direct access.</summary>
-        private void EnforceToolHitLocationOptions()
-        {
-            if (!Context.IsWorldReady) return;
-            if (Config?.EnableToolHitLocation != true) return;
-            var o = Game1.options;
-            if (o == null) return;
-            if (!o.alwaysShowToolHitLocation) o.alwaysShowToolHitLocation = true;
-            if (o.hideToolHitLocationWhenInMotion) o.hideToolHitLocationWhenInMotion = false;
-        }
-
         /// <summary>Raised every game tick. Used to enforce toolbar row locking and handle triggers.</summary>
         private void OnUpdateTicked(object sender, UpdateTickedEventArgs e)
         {
@@ -379,10 +362,6 @@ namespace AndroidConsolizer
             // #25b diagnostic (VerboseLogging-gated): once-per-tick slingshot control-state snapshot
             // while a Slingshot is equipped, so we can pin where Android breaks aim/movement.
             Patches.SlingshotAimPatches.LogAimStateIfVerbose();
-
-            // #76: force the console "always show tool hit location" red box on (Android defaults it
-            // off and a controller never holds the Shift that would force it). Cheap guarded write.
-            EnforceToolHitLocationOptions();
 
             // Cutscene skip: detect Start press via GetState edge detection
             // (SMAPI can't see Start because it's suppressed at GetState level during events)
@@ -1392,14 +1371,6 @@ namespace AndroidConsolizer
                 tooltip: () => "Stop yourself from instantly re-grabbing an item you just dropped (like console). Tags your deliberate drops so the game's own ~1.2s pickup delay engages. Doesn't affect monster loot, harvest, or other drops.",
                 getValue: () => Config.EnableConsoleDropBlocker,
                 setValue: value => Config.EnableConsoleDropBlocker = value
-            );
-
-            configMenu.AddBoolOption(
-                mod: this.ModManifest,
-                name: () => "Show Tool Hit Location",
-                tooltip: () => "Always show the red target box on the tile your tool will hit (hoe, watering can, pickaxe, axe), like console. Stays visible while moving. Off restores vanilla Android (no marker on controller).",
-                getValue: () => Config.EnableToolHitLocation,
-                setValue: value => Config.EnableToolHitLocation = value
             );
 
             configMenu.AddBoolOption(
