@@ -158,6 +158,12 @@ namespace AndroidConsolizer
         /// <summary>Whether to use free cursor (vanilla) instead of snap navigation on the Options page and GMCM config page.</summary>
         public bool FreeCursorOnSettings { get; set; } = false;
 
+        /// <summary>Hide the touch-only options (virtual-joystick Controls dropdown, on-screen controls
+        /// toggle, invisible-button width, pinch-zoom, and the Adjust-joypad-controls button) from the
+        /// in-game Options page when a controller is active. They're meaningless with a physical
+        /// controller. Default on.</summary>
+        public bool HideTouchOptionsWithController { get; set; } = true;
+
         /// <summary>
         /// Use bumpers (LB/RB) instead of triggers (LT/RT) for controls.
         /// Toolbar: D-Pad Up/Down switches rows, bumpers move within row.

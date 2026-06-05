@@ -21,9 +21,15 @@ namespace AndroidConsolizer.Patches
 
         private static FieldInfo _optionsField;
         private static FieldInfo _scrollAreaField;
+        private static FieldInfo _adjustControlsField;
         // OptionsElement.ItemHeight is Android-only (absent from the PC DLL) → reflected. Virtual, so
         // GetValue dispatches to each subclass override (Checkbox 72, Slider 122, DropDown 64, etc.).
         private static PropertyInfo _itemHeightProp;
+
+        // Touch-only options to hide when a controller is active (decided with user): 139 Controls
+        // dropdown, 140 show-on-screen-controls toggle, 146 invisible-button width, 147 pinch-zoom.
+        // The Adjust-joypad-controls OptionsButton is matched by reference (optionsButtonAdjustControls).
+        private static readonly int[] TouchOptionIds = { 139, 140, 146, 147 };
 
         // MobileScrollbox is Android-only — resolve its members off the runtime object, once.
         private static MethodInfo _msSetMaxYOffset;
@@ -51,6 +57,7 @@ namespace AndroidConsolizer.Patches
             {
                 _optionsField = AccessTools.Field(typeof(OptionsPage), "options");
                 _scrollAreaField = AccessTools.Field(typeof(OptionsPage), "scrollArea");
+                _adjustControlsField = AccessTools.Field(typeof(OptionsPage), "optionsButtonAdjustControls");
                 _itemHeightProp = AccessTools.Property(typeof(OptionsElement), "ItemHeight");
 
                 var update = AccessTools.Method(typeof(OptionsPage), nameof(OptionsPage.update), new[] { typeof(GameTime) });
@@ -83,6 +90,18 @@ namespace AndroidConsolizer.Patches
             {
                 var options = _optionsField?.GetValue(__instance) as List<OptionsElement>;
                 if (options == null) return;
+
+                // Hide touch-only options when a controller is active. gamepadControls (not
+                // GamePad.IsConnected) matches the rest of OptionsPagePatches and sidesteps the Ayaneo
+                // IsConnected=false quirk. Removing entries relies on the scroll-fit postfix to re-size
+                // the list — already in place.
+                if ((ModEntry.Config?.HideTouchOptionsWithController ?? false) && Game1.options.gamepadControls)
+                {
+                    var adjustBtn = _adjustControlsField?.GetValue(__instance) as OptionsElement;
+                    options.RemoveAll(o =>
+                        Array.IndexOf(TouchOptionIds, o.whichOption) >= 0
+                        || (adjustBtn != null && ReferenceEquals(o, adjustBtn)));
+                }
 
                 options.Add(new OptionsCheckbox(LabelAlwaysShowToolHit, OptAlwaysShowToolHit));
                 options.Add(new OptionsCheckbox(LabelHideToolHitMoving, OptHideToolHitMoving));

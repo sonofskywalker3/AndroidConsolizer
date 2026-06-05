@@ -1383,6 +1383,14 @@ namespace AndroidConsolizer
 
             configMenu.AddBoolOption(
                 mod: this.ModManifest,
+                name: () => "Hide Touch Options (Controller)",
+                tooltip: () => "Hide the touch-only options (virtual-joystick Controls, on-screen controls toggle, invisible-button width, pinch-zoom, Adjust Joypad Controls) from the in-game Options page when a controller is connected. They don't apply to a physical controller.",
+                getValue: () => Config.HideTouchOptionsWithController,
+                setValue: value => Config.HideTouchOptionsWithController = value
+            );
+
+            configMenu.AddBoolOption(
+                mod: this.ModManifest,
                 name: () => "Use Bumpers Instead of Triggers",
                 tooltip: () => "For controllers where triggers aren't detected (e.g., Xbox via Bluetooth).\n" +
                               "Toolbar: D-Pad Up/Down switches rows, LB/RB moves within row.\n" +
