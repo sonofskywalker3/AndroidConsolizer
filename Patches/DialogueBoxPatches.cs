@@ -37,6 +37,9 @@ namespace AndroidConsolizer.Patches
         // Sampled-once exact red from the tool-hit sprite (cached). Falls back to pure red.
         private static Color? _toolHitRed;
 
+        // Throttle for the #78 draw diagnostic (VerboseLogging only).
+        private static int _lastDiagTick = -1000;
+
         public static void Apply(Harmony harmony, IMonitor monitor)
         {
             Monitor = monitor;
@@ -117,8 +120,11 @@ namespace AndroidConsolizer.Patches
             {
                 if (ModEntry.Config == null || !ModEntry.Config.EnableConsoleDialogueCursor)
                     return;
-                if (!Game1.options.gamepadControls || Game1.lastCursorMotionWasMouse)
-                    return;
+                // NOTE: deliberately NOT gating on `gamepadControls && !lastCursorMotionWasMouse`
+                // here. On Android the controller's confirm is delivered as a synthesized touch,
+                // so those input-type flags read as touch even on a controller (same trap as #18) —
+                // gating on them made this no-op on the G Cloud. AC is controller-only scope, so the
+                // config toggle is the gate. Diagnostic below logs the real flag values to confirm.
                 if (!__instance.isQuestion || __instance.transitioning)
                     return;
 
@@ -129,6 +135,18 @@ namespace AndroidConsolizer.Patches
                 int sel = __instance.selectedResponse;
                 if (sel < 0 || sel >= responses.Length)
                     return;
+
+                // Throttled diagnostic — confirms the gamepad-gate hypothesis and that the postfix
+                // now reaches the draw. Remove once #78 is device-verified.
+                if (ModEntry.Config.VerboseLogging && Math.Abs(Game1.ticks - _lastDiagTick) > 30)
+                {
+                    _lastDiagTick = Game1.ticks;
+                    Monitor?.Log(
+                        $"[#78] Draw_Postfix reached: sel={sel}/{responses.Length} " +
+                        $"gamepadControls={Game1.options.gamepadControls} " +
+                        $"lastCursorMotionWasMouse={Game1.lastCursorMotionWasMouse}",
+                        LogLevel.Debug);
+                }
 
                 string currentString = __instance.getCurrentString();
                 if (currentString == null)
