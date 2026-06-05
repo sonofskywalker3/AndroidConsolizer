@@ -4,6 +4,21 @@ Technical reference for all completed work. Implementation notes, root causes, a
 
 ---
 
+## v4.0 The Right Stick Update (CORE done, dev v3.9.1→v3.9.10 — NOT yet released)
+
+### #12 Right-Stick Overworld Cursor + #62 Furniture Ghost — CORE DONE (device-verified G Cloud 2026-06-05)
+- **Headline:** the console right-stick cursor is **engine-native** (NOT the #18 menu trap). `Game1.UpdateControlInput:13303-13334` already moves the cursor from `ThumbSticks.Right` (gated on `options.gamepadControls`, which is **True** at runtime — confirmed by a Phase-0 diagnostic). AC was *starving* it by zeroing the right stick (`SuppressRightStickInOverworld`). So this was mostly "stop starving the engine + draw the cursor + un-gate the targeting," not "build a cursor."
+- **Everything lives in `Patches/RightStickCursorPatches.cs`** (+ wiring in `GameplayButtonPatches.cs`, `ModEntry.cs`, `ModConfig.cs`). Toggle **`EnableRightStickCursor`** (renamed from `SuppressRightStickInOverworld`, semantics flipped, default on). Slingshot carve-out keeps right stick out of #25b aim.
+- **Cursor draw (v3.9.6):** Android renders no overworld cursor sprite (mobile strips it) — we self-draw via `Display.RenderedHud`, gated on `timerUntilMouseFade > 0` (auto-hides ~4s).
+- **Interaction (v3.9.7):** prefix on `Game1.pressActionButton` sets `lastCursorMotionWasMouse=true` at the gate's read site (the A-press handler nulls it at `13449` before the `11971` gate reads it). Cursor onto a chest while facing away + action spins you and opens it.
+- **Tools + placement (v3.9.8):** postfix on `Character.GetLocationNextToWhereYoureFacing` (Android-only, 2 callers, both tool path) returns the cursor tile while active — defeats Android's mobile-only facing-tile override (`pressUseToolButton:12317`, absent on PC). **Diagonal hits (v3.9.9):** prefix on `Character.GetToolLocation(bool)` drops the `isAnyGamePadButtonBeingHeld` term while active so the hit resolves from `lastClick` (cursor tile), not the facing cardinal tile.
+- **No center-snap (v3.9.10):** postfix on `Game1.setMousePositionRaw` re-asserts the flag true while the right stick drives the cursor, so the engine's post-fade recenter (`13328-13331`) never fires.
+- **Console parity (user-confirmed on real Switch):** cursor drives interaction + placement + **tool targeting incl. diagonals** (NOT facing-tile — corrected an earlier wrong assumption). See memory `switch-rightstick-tools-hit-facing-not-cursor`.
+- **#62 falls out:** furniture/craftable/seed placement ghost follows the same cursor (placement gate already passes for a placeable `ActiveObject`). Device-confirmed.
+- **NOT yet done (before v4.0.0 release):** #79 contextual cursor (hand/speech sprite), the stuck #76 tool-hit box (revert to facing on fade), #77 settings persistence (zoom + tool-hit box across cold restart), and pre-release hygiene (demote `[RStickDiag]`, consider removing the now-redundant `EnforceTick`). See `docs/superpowers/specs/2026-06-05-handoff-right-stick-cursor-wip.md`.
+
+---
+
 ## v3.9.0 Console Parity: Big Systems
 
 ### #78 Dialogue Choice Boxes — Console Finger-Cursor + Maroon Outline — FIXED v3.8.32→v3.8.39 (device-verified G Cloud 2026-06-04)

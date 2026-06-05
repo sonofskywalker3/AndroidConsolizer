@@ -199,7 +199,9 @@ Three player-facing real-time gameplay systems. Each likely needs multiple patch
 
 **Placement rule:** *all right-stick features ship in v4.0*, with slingshot aim (#25b) as the deliberate v3.9 exception. Major version bump because the right-stick cursor is the only remaining feature class that doesn't exist on Switch — calling v4.0 "The Right Stick Update" makes the bump narratively legible.
 
-### 12. Right Joystick — Full Console Behavior
+### 12. Right Joystick — Full Console Behavior — 🚧 CORE DONE (dev v3.9.1→v3.9.10, device-verified G Cloud 2026-06-05; NOT released)
+- **Status (2026-06-05):** the overworld right-stick cursor is **functionally complete and device-verified** — visible self-drawn cursor, 4s auto-hide, interaction follows cursor (chest/NPC/gift), tool swings hit the cursor tile (cardinal AND diagonal), placement/furniture (#62) follow the cursor, no center-snap, slingshot carve-out intact. Toggle `EnableRightStickCursor` (default on). All in `Patches/RightStickCursorPatches.cs`. Full writeup in `DONE.md` + handoff `docs/superpowers/specs/2026-06-05-handoff-right-stick-cursor-wip.md`. **Remaining before the v4.0.0 release:** #79 contextual cursor (below), the stuck #76 tool-hit box, #77 settings persistence, and pre-release hygiene (`[RStickDiag]` demote, `EnforceTick` cleanup). Spec/plan: `docs/superpowers/specs/2026-06-04-right-stick-update-v4-design.md` + `docs/superpowers/plans/2026-06-04-right-stick-update-v4.md`.
+- **Out of v4.0 scope (decided with user):** menu right-stick scroll, R3 chat/hold-emote, minigame right-stick→D-pad. Don't build.
 - **Bundled feature (LARGE).** Scope = EVERYTHING the right stick does on console, not just the cursor. **Research complete:** `docs/superpowers/specs/2026-06-04-right-stick-console-behavior-research.md` (wiki/community + decompile). Write an implementation spec from it before coding.
 - **Headline:** on console the right stick **is the free mouse cursor** (same cursor that drives tool targeting, tile interaction, placement, menu clicks). **This code already exists, complete, in the Android build** — `Game1.UpdateControlInput ~13298-13334` calls `setMousePositionRaw` from `ThumbSticks.Right`, gated only on `options.gamepadControls`. The blocker is the mobile path (`_mobileUpdateControlInput`) making the control type read TOUCH (suppresses `drawMouse`, the #18 trap) and/or `gamepadControls` effectively off. So this is mostly "let the existing path run + actually draw the cursor," not "build a cursor system."
 - **Behaviors to cover (from the research):**
@@ -224,6 +226,20 @@ Three player-facing real-time gameplay systems. Each likely needs multiple patch
 - **Reuses:** Same pattern as `CarpenterMenuPatches` building-ghost cursor override. Code there is the gold standard for this pattern.
 - **Files:** `Patches/FurniturePlacementPatches.cs`, possibly `Patches/GameplayButtonPatches.cs` for stick polling.
 - **Config:** Probably gate behind the existing `EnableConsoleFurniturePlacement` flag — same feature, just the second half.
+- **✅ Status (2026-06-05):** falls out of #12 — furniture/craftable/seed placement ghost follows the right-stick cursor (device-verified). Closed with #12's core.
+
+### 79. Contextual Cursor Sprite (hand over interactables, speech bubble over NPCs) — NEW (user-requested 2026-06-05)
+- **Ask:** on console the cursor sprite changes by what's under it — a **hand/finger** over interactables (chests, mailbox, shipping bin), a **speech bubble** over NPCs you can talk to, a magnifying glass over inspectables, etc. Our self-drawn cursor (`RightStickCursorPatches.DrawCursor`) currently always draws the default pointer.
+- **Where the engine computes it:** `Game1.drawMouseCursor` (`Game1.cs:15647-15649`) sets `mouseCursor` to `cursor_talk`/`cursor_look`/`cursor_grab` from `isActionAtCurrentCursorTile`/`isSpeechAtCurrentCursorTile`/`isInspectionAtCurrentCursorTile`, then **resets `mouseCursor` to `cursor_default` at 15688** before our `Display.RenderedHud` draw runs — which is why we only ever see the pointer.
+- **Plan:** capture the contextual index before the reset (a small postfix/field read on `drawMouseCursor`, or replicate the hover hit-test) and feed it to `DrawCursor`. Use the **PC 1.6 decompile** (`…/decompiler/stardew-valley-pc/…`) for the clean hover→cursor mapping. **Files:** `Patches/RightStickCursorPatches.cs`.
+
+### (v4.0 follow-up) Stuck #76 tool-hit box — doesn't revert to facing tile when the cursor fades
+- **User-reported 2026-06-05:** move the cursor → the #76 tool-hit box appears at the cursor; let the cursor fade, walk a new direction → the box stays pointing the OLD cursor direction even though you now hit the way you face.
+- **Cause:** the #76 box (`Farmer.cs:6364-6368`) always targets `Game1.getMousePosition()` and never reverts when the cursor is gone. **Fix:** when `!Game1.wasMouseVisibleThisFrame`, target the box at `GetToolLocation(ignoreClick: true)` (facing tile). Needs patching the box draw in `Farmer.draw` — check the PC code first. **Needs the box VISIBLE to test → do alongside the settings-persistence fix below.**
+
+### (v4.0 follow-up) #77 settings persistence — zoom + tool-hit box reset on cold restart
+- **User-reported 2026-06-05:** the native zoom + tool-hit-box options (injected by #77, stored in the game's StartupPreferences, NOT AC config) **reset after a full game restart.** This session was the first cold restart since 3.9.0 shipped, surfacing a latent #77 gap. **NOT caused by the v4.0 work** (`ModConfig` stores neither).
+- **Likely cause:** the zoom render (PinchZoom pipeline) isn't re-applied from saved prefs on load, and/or the tool-hit checkboxes aren't reloaded. **Fix:** re-apply both from saved prefs on `SaveLoaded`/`GameLaunched`. **Files:** `Patches/OptionsPageInjectionPatches.cs`, `ModEntry.cs`.
 
 ---
 
