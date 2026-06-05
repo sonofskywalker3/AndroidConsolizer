@@ -350,7 +350,7 @@ namespace AndroidConsolizer.Patches
                     int newVal = isRight ? Math.Min(curVal + 10, maxVal) : Math.Max(curVal - 10, minVal);
                     if (_sliderValueProp != null) _sliderValueProp.SetValue(slider, newVal);
                     else _sliderValueField?.SetValue(slider, newVal);
-                    Game1.options.changeSliderOption(slider.whichOption, newVal);
+                    ApplySliderValue(slider, newVal);
                     Game1.playSound("shiny4");
                 }
                 else if (opt is OptionsPlusMinus plusMinus)
@@ -364,6 +364,18 @@ namespace AndroidConsolizer.Patches
                     }
                 }
             }
+        }
+
+        /// <summary>Apply a slider's new value. Zoom (whichOption 18) is special-cased: its
+        /// changeSliderOption case is a degenerate ±10 stepper that expects a 0-1 fraction, so we set
+        /// it absolutely via changeDropDownOption("&lt;pct&gt;%"), which writes desiredBaseZoomLevel
+        /// directly (decompile Options.cs:1506-1518). All other sliders use changeSliderOption.</summary>
+        private static void ApplySliderValue(OptionsSlider slider, int newVal)
+        {
+            if (slider.whichOption == 18)
+                Game1.options.changeDropDownOption(18, newVal + "%");
+            else
+                Game1.options.changeSliderOption(slider.whichOption, newVal);
         }
 
         /// <summary>Find the position of the current focused index in _interactiveIndices.</summary>
@@ -578,7 +590,7 @@ namespace AndroidConsolizer.Patches
                     int newVal = isRight ? Math.Min(curVal + 10, maxVal) : Math.Max(curVal - 10, minVal);
                     if (_sliderValueProp != null) _sliderValueProp.SetValue(slider, newVal);
                     else _sliderValueField?.SetValue(slider, newVal);
-                    Game1.options.changeSliderOption(slider.whichOption, newVal);
+                    ApplySliderValue(slider, newVal);
                     Game1.playSound("shiny4");
                     return false;
                 }

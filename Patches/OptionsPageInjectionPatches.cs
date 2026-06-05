@@ -25,6 +25,9 @@ namespace AndroidConsolizer.Patches
         // OptionsElement.ItemHeight is Android-only (absent from the PC DLL) → reflected. Virtual, so
         // GetValue dispatches to each subclass override (Checkbox 72, Slider 122, DropDown 64, etc.).
         private static PropertyInfo _itemHeightProp;
+        // The Android OptionsSlider(label, which, x, y, width) ctor differs from the PC DLL's, so it
+        // can't be `new`-ed at compile time — resolved + invoked via reflection at runtime.
+        private static ConstructorInfo _optionsSliderCtor;
 
         // Touch-only options to hide when a controller is active (decided with user): 139 Controls
         // dropdown, 140 show-on-screen-controls toggle, 146 invisible-button width, 147 pinch-zoom.
@@ -50,6 +53,9 @@ namespace AndroidConsolizer.Patches
         private const int OptAlwaysShowToolHit = 11;
         private const int OptHideToolHitMoving = 12;
 
+        private const string LabelZoom = "Zoom level";
+        private const int OptZoom = 18;
+
         public static void Apply(Harmony harmony, IMonitor monitor)
         {
             Monitor = monitor;
@@ -59,6 +65,8 @@ namespace AndroidConsolizer.Patches
                 _scrollAreaField = AccessTools.Field(typeof(OptionsPage), "scrollArea");
                 _adjustControlsField = AccessTools.Field(typeof(OptionsPage), "optionsButtonAdjustControls");
                 _itemHeightProp = AccessTools.Property(typeof(OptionsElement), "ItemHeight");
+                _optionsSliderCtor = AccessTools.Constructor(typeof(OptionsSlider),
+                    new[] { typeof(string), typeof(int), typeof(int), typeof(int), typeof(int) });
 
                 var update = AccessTools.Method(typeof(OptionsPage), nameof(OptionsPage.update), new[] { typeof(GameTime) });
                 if (update != null)
@@ -105,6 +113,19 @@ namespace AndroidConsolizer.Patches
 
                 options.Add(new OptionsCheckbox(LabelAlwaysShowToolHit, OptAlwaysShowToolHit));
                 options.Add(new OptionsCheckbox(LabelHideToolHitMoving, OptHideToolHitMoving));
+
+                // Zoom slider (device-gated). Self-syncs to desiredBaseZoomLevel*100 (50-100) via
+                // setSliderToProperValue case 18. Bound to 50-100 so OptionsPagePatches' Left/Right nav
+                // steps within range; the value is APPLIED via changeDropDownOption (see
+                // OptionsPagePatches.ApplySliderValue) because changeSliderOption(18) is a broken stepper.
+                if (_optionsSliderCtor != null)
+                {
+                    var zoom = (OptionsSlider)_optionsSliderCtor.Invoke(
+                        new object[] { LabelZoom, OptZoom, -1, -1, __instance.width });
+                    AccessTools.Field(typeof(OptionsSlider), "sliderMinValue")?.SetValue(zoom, 50);
+                    AccessTools.Field(typeof(OptionsSlider), "sliderMaxValue")?.SetValue(zoom, 100);
+                    options.Add(zoom);
+                }
             }
             catch (Exception ex)
             {
