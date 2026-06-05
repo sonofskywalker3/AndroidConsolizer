@@ -130,6 +130,14 @@ namespace AndroidConsolizer.Patches
                         new object[] { LabelZoom, OptZoom, -1, -1, __instance.width });
                     AccessTools.Field(typeof(OptionsSlider), "sliderMinValue")?.SetValue(zoom, 50);
                     AccessTools.Field(typeof(OptionsSlider), "sliderMaxValue")?.SetValue(zoom, 200);
+                    // The ctor's setSliderToProperValue ran while min/max were still the default
+                    // 0-100, so the slider's internal _percent (thumb position) was computed against
+                    // the wrong range — the thumb rendered mid-bar at zoom 50 and pinned right above
+                    // 100 until the first input re-ran the setter. Re-trigger the value setter now
+                    // that min/max are 50-200 so _percent matches on the very first draw.
+                    var valueProp = AccessTools.Property(typeof(OptionsSlider), "value");
+                    if (valueProp != null)
+                        valueProp.SetValue(zoom, valueProp.GetValue(zoom));
                     InsertBefore(options, 1, zoom);
                 }
             }
