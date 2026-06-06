@@ -10,9 +10,10 @@ const CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const TLY = 'C:\\Users\\Jeff\\Documents\\Projects\\Stardee Valoo\\TheLongestYear\\';
 const SHOT = TLY + 'test-output\\';
 const EDIT_URL = 'https://www.nexusmods.com/games/stardewvalley/mods/47192/edit/general';
-const VERSION = '0.9.6';
+// Version is read from the TLY manifest so there's no per-release edit of this script.
+const VERSION = JSON.parse(readFileSync(TLY + 'src\\TheLongestYear\\manifest.json', 'utf8')).Version;
 const SHORT_DESC = 'Restore the Community Center within a single year — or the Junimos rewind the seasons and you begin again, a little stronger.';
-const MARKER = "What's New in 0.9.6";
+const MARKER = "What's New in " + VERSION;
 if (!USER_DATA) { console.error('[FATAL] NEXUS_PW_PROFILE not set'); process.exit(3); }
 const bbcode = readFileSync(TLY + 'docs\\nexus-description.bbcode', 'utf8');
 console.log('[init] bbcode=' + bbcode.length + ' chars');
