@@ -8,6 +8,14 @@ Shipped: **v3.6.0** (Bug Fix Release). Roadmap structure was re-evaluated post-3
 
 ---
 
+## Incoming — forum-sweep reports (not yet planned)
+
+### 80. Can't sell animals with the controller (Marnie animal-purchase/sell menu) — 🐞 NEW (forum sweep 2026-06-10)
+- **Report:** *NightMareBalon (Nexus, 9 Jun 2026, unanswered)*: "I can't use controller to sell animals on the farm."
+- **What this is:** Selling an animal goes through Marnie's `PurchaseAnimalsMenu` (the "Animals" / sell-back flow) — the controller can't complete the sell interaction. Classic console-parity gap: the menu likely lacks snap regions / A-button wiring on Android, or the confirmation dialog isn't reachable by controller.
+- **Investigate first (diagnostic-first rule):** read the decompiled Android `PurchaseAnimalsMenu` (and any `AnimalQueryMenu` / sell-confirmation path) — does it implement `snapToDefaultClickableComponent` / `receiveGamePadButton`? Which sub-menu actually handles "sell" (it may be `AnimalQueryMenu.receiveLeftClick` on the sell button, gated behind touch). Confirm where the controller path dead-ends before proposing a fix.
+- **File:** likely a new `Patches/PurchaseAnimalsMenuPatches.cs` (or `AnimalQueryMenuPatches.cs`).
+
 ## v3.8.0 — Console Parity: Quick Wins — ✅ SHIPPED 2026-05-31 (GitHub release v3.8.0 + Nexus)
 
 **All items complete — see `DONE.md`.** ✅ #22b, #17, #35, #39, #46, #19, #18, #27 (toolbar size slider, Nexus #1050718), and #47 (resolved not-a-bug). **The next milestone is [v3.9.0 — Console Parity: Big Systems](#v390--console-parity-big-systems) below (#25 tool charging while moving, #25b slingshot aim).** Start the next change at v3.8.1 (or v3.9.0 work). The items below are kept for their historical implementation notes.
