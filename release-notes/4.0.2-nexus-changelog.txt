@@ -1,0 +1,5 @@
+Bug fixes — two controller issues reported on Nexus. Both are individually toggleable via GMCM.
+
+Fixed:
+- Sell animals with the controller — Marnie's animal dialog (sell / move home) now works on a controller. A button is highlighted the moment it opens, and confirming "Sell" actually goes through. Before, the confirmation defaulted to "No", so pressing confirm just cancelled — selling an animal was effectively impossible without the touchscreen. Adds a new "Console Animal Menu" toggle.
+- Barter shops give the full stack — trading at the Bookseller (and any shop that trades an item for a bundle — e.g. a book for 20 Hardwood) now hands over the whole stack instead of a single item.
