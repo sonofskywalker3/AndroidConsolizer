@@ -10,21 +10,16 @@ If you play on a handheld (Odin, Ayaneo, Retroid, etc.) or dock your phone/table
 
 > **🎉 Feature complete — v4.0.0.** With the right stick now working like the Switch, Android Consolizer covers the full console control scheme, so I'm considering the mod **feature complete**. If I missed something, let me know — I'll keep fixing any reported bugs, and I'll consider feature requests that bring it closer to full console parity.
 
-## What's New in v4.0.0 — The Right Stick Update
+## What's New in v4.0.2 — Bug Fixes
 
-**The right stick is now the console free cursor** — the last piece of the Switch control scheme that Android was missing. Every group is individually toggleable via GMCM.
+Two controller fixes from Nexus reports. Both are individually toggleable via GMCM.
 
-- **Right-stick cursor** — the right stick moves an on-screen cursor that aims your tools, interaction, and placement at the tile under it, exactly like the Switch. Swing a tool and it hits the cursor's tile (diagonals included); move the cursor onto a chest or villager and the action targets it. The cursor auto-hides after ~4 seconds of no input, reverting tools to the tile you're facing.
-- **Contextual cursor** — the cursor shows a hand over things you can grab or use (chests, the mailbox) and a magnifying glass over things you can inspect, like console.
-- **Place with the cursor** — furniture, machines, and seeds place under the right-stick cursor; A places, B cancels.
-- **Tool-hit box follows through** — the optional "always show tool hit location" box tracks the cursor while it's up and snaps back to your facing tile when it fades.
-- **Settings that stick** — the in-game Zoom level and the tool-hit-location options now survive a full restart (Android wasn't saving them), and options you change with the controller are saved the same as touch.
-- **Snappier trigger toolbar** — changing toolbar slots quickly with LT/RT no longer drops presses.
-- **Fertilizer shows a single target box** — like seeds, instead of the screen-wide green map.
+- **Sell animals with the controller** — Marnie's animal dialog (sell / move home) now works on a controller. A button is highlighted the moment it opens, and confirming "Sell" actually goes through. Before, the confirmation defaulted to "No", so pressing confirm just cancelled — selling an animal was effectively impossible without the touchscreen. Adds a new "Console Animal Menu" toggle.
+- **Barter shops give the full stack** — trading at the Bookseller (and any shop that trades an item for a bundle — e.g. a book for 20 Hardwood) now hands over the whole stack instead of a single item.
 
 ## Previous releases
 
-Full version history is in [docs/CHANGELOG.md](docs/CHANGELOG.md). Recent highlights: **v3.9.0 — Console Parity: Big Systems** (charge tools while moving, console slingshot aiming, drop blocker, restored Options + working zoom, dialogue choice boxes); **v3.8.0 — Console Parity: Quick Wins** (resizable toolbar, museum donations, geode breaking, Load Game/title cursors, multi-page mail, and more).
+Full version history is in [docs/CHANGELOG.md](docs/CHANGELOG.md). Recent highlights: **v4.0.0 — The Right Stick Update** (right-stick free cursor that aims tools/interaction/placement like the Switch, contextual hand/magnifier cursor, place-with-cursor, settings that survive restart); **v3.9.0 — Console Parity: Big Systems** (charge tools while moving, console slingshot aiming, drop blocker, restored Options + working zoom, dialogue choice boxes); **v3.8.0 — Console Parity: Quick Wins** (resizable toolbar, museum donations, geode breaking, Load Game/title cursors, multi-page mail, and more).
 
 ## Controller Layout Support
 
