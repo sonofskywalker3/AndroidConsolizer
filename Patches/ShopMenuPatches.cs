@@ -434,9 +434,17 @@ namespace AndroidConsolizer.Patches
                 }
                 else if (selectedItem is Item purchaseItem)
                 {
-                    // Item wasn't handled by special logic — add to inventory normally
+                    // Item wasn't handled by special logic — add to inventory normally.
+                    // Vanilla delivers stockToBuy * item.Stack (ShopMenu.tryToPurchaseItem,
+                    // decompile line 1621): the salable's OWN Stack is the per-unit bundle
+                    // size. Most shop entries are Stack=1 (so quantity*1 = quantity, no change),
+                    // but trade/bundle entries set it higher — e.g. the bookseller trades 1
+                    // book for a Hardwood salable whose Stack is 20. AC previously set
+                    // newItem.Stack = quantity, dropping that multiplier, so every such trade
+                    // delivered only 1 item (Nexus report, NightMareBalon). Mirror vanilla.
+                    int perUnitStack = Math.Max(1, selectedItem.Stack);
                     var newItem = purchaseItem.getOne();
-                    newItem.Stack = quantity;
+                    newItem.Stack = quantity * perUnitStack;
                     if (!Game1.player.addItemToInventoryBool(newItem))
                     {
                         // Inventory full — refund money and trade items
@@ -451,7 +459,7 @@ namespace AndroidConsolizer.Patches
                         return false;
                     }
                     if (ModEntry.Config.VerboseLogging)
-                        Monitor.Log($"Added {quantity}x {newItem.DisplayName} to inventory", LogLevel.Debug);
+                        Monitor.Log($"Added {newItem.Stack}x {newItem.DisplayName} to inventory ({quantity} unit(s) x {perUnitStack})", LogLevel.Debug);
                 }
 
                 // Decrement stock the way vanilla does — HandleSynchedItemPurchase mutates the
