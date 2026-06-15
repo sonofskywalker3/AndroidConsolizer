@@ -34,6 +34,10 @@ namespace AndroidConsolizer
         /// <summary>Console-style shop controls: A button purchases, quantity selector, sell tab, right stick scroll.</summary>
         public bool EnableConsoleShops { get; set; } = true;
 
+        /// <summary>Console-style animal query menu (Marnie's sell/move dialog): initial highlight and a
+        /// working A-to-confirm sell flow so animals can be sold with the controller.</summary>
+        public bool EnableConsoleAnimalMenu { get; set; } = true;
+
         /// <summary>Console-style toolbar: 12-slot fixed toolbar with LB/RB row switching and LT/RT slot movement.</summary>
         public bool EnableConsoleToolbar { get; set; } = true;
 

@@ -197,6 +197,7 @@ namespace AndroidConsolizer
             // Apply Harmony patches
             var harmony = new Harmony(this.ModManifest.UniqueID);
             Patches.ShopMenuPatches.Apply(harmony, this.Monitor);
+            Patches.AnimalQueryMenuPatches.Apply(harmony, this.Monitor);
             Patches.ItemGrabMenuPatches.Apply(harmony, this.Monitor);
             Patches.InventoryPagePatches.Apply(harmony, this.Monitor);
             Patches.FarmerPatches.Apply(harmony, this.Monitor);
@@ -1257,6 +1258,14 @@ namespace AndroidConsolizer
                 tooltip: () => "A button purchases items, LT/RT quantity selector, sell tab with A/Y, right stick scroll.",
                 getValue: () => Config.EnableConsoleShops,
                 setValue: value => Config.EnableConsoleShops = value
+            );
+
+            configMenu.AddBoolOption(
+                mod: this.ModManifest,
+                name: () => "Console Animal Menu",
+                tooltip: () => "Marnie's animal sell/move dialog: highlights a button on open and lets A confirm a sale (so animals can be sold with the controller).",
+                getValue: () => Config.EnableConsoleAnimalMenu,
+                setValue: value => Config.EnableConsoleAnimalMenu = value
             );
 
             configMenu.AddBoolOption(
