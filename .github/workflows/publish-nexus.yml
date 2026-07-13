@@ -51,7 +51,7 @@ jobs:
           echo "Found: $ZIP"
 
       - name: Upload to Nexus Mods
-        uses: Nexus-Mods/upload-action@main
+        uses: Nexus-Mods/upload-action@ee1af4be8e1be6773ab5aeb02bacc6d638b20deb  # pinned pre-v3-migration; update-group flow dies 2026-09-09 — migrate to file_id before then
         with:
           api_key: ${{ secrets.NEXUS_API_KEY }}
           # Nexus file_group_id (NOT mod ID). Discovered via V2 GraphQL on the
