@@ -51,14 +51,20 @@ jobs:
           echo "Found: $ZIP"
 
       - name: Upload to Nexus Mods
-        uses: Nexus-Mods/upload-action@ee1af4be8e1be6773ab5aeb02bacc6d638b20deb  # pinned pre-v3-migration; update-group flow dies 2026-09-09 — migrate to file_id before then
+        # Pinned to the v3-migration merge (post-migration main as of 2026-07-13).
+        # The v3 mod-file id equals our old file_group_id — verified via TLY's
+        # read-only nexus-v3-probe workflow (GET /v3/mods/5596342428557/files:
+        # 7118491 is this mod's single ACTIVE file; legacy per-version fileIds 404).
+        # Rollback if a release fails: pre-migration pin
+        # ee1af4be8e1be6773ab5aeb02bacc6d638b20deb with the old
+        # file_group_id/file_category/archive_existing_file inputs (until 2026-09-09).
+        uses: Nexus-Mods/upload-action@f6e1e2ea683dfe8f88cccf642c6e0e69ab66825e
         with:
           api_key: ${{ secrets.NEXUS_API_KEY }}
-          # Nexus file_group_id (NOT mod ID). Discovered via V2 GraphQL on the
-          # current main file. Stays stable across version updates as long as
-          # archive_existing_file is true so the action replaces in place.
-          file_group_id: 7118491
+          # v3 mod-file id (NOT mod ID, NOT a per-version fileId). Stays stable
+          # across version updates; new versions attach to it.
+          file_id: 7118491
           filename: ${{ steps.zip.outputs.path }}
           version: ${{ steps.release.outputs.version }}
-          file_category: main
-          archive_existing_file: true
+          category: main
+          archive_existing_version: true
