@@ -10,6 +10,14 @@ Shipped: **v3.6.0** (Bug Fix Release). Roadmap structure was re-evaluated post-3
 
 ## Incoming — forum-sweep reports (not yet planned)
 
+### 82. Hold LT/RT to scroll the toolbar continuously — feature ask (sweep 2026-08-24)
+- **Report:** *Estallking (Nexus posts, 22 Aug 2026, unanswered)*: "holding LT/RT to scroll left
+  and right through the toolbar, instead of manually pressing LT or RT every time to move between
+  tiles."
+- **What this is:** hold-to-repeat on the toolbar slot-cycling buttons — an input-repeat timer on
+  the existing LT/RT slot-shift handling (initial delay + repeat rate, like vanilla menu cursor
+  repeat). Config toggle + repeat-rate setting likely wanted. Not yet planned.
+
 ### 80. Can't sell animals with the controller (Marnie animal-purchase/sell menu) — 🔧 FIXED v4.0.2 (PENDING PLAYTEST)
 - **✅ Root cause found + fixed v4.0.2.** Android's `AnimalQueryMenu` uses a mobile-only `receiveGamePadButton` handler driven by a private `_selectedButton` enum (NOT the console snap system). Two defects: (1) opens with `_selectedButton = None` (no highlight); (2) `OnClickSell` opens the confirm dialog but leaves `_selectedButton = Sell`, so in the confirm branch `A` runs `OnClickNo()` → cancel. Result: navigate-to-Sell + A + A never sells. Fix = reflection-only `Patches/AnimalQueryMenuPatches.cs` (members are Android-runtime-only): set `_selectedButton = Move` on open for an initial highlight, and `= Tick` after `OnClickSell` so the confirm opens on "Yes" and a second A confirms. Gated on new `EnableConsoleAnimalMenu` toggle + `gamepadControls`. **Needs device playtest:** open an already-petted animal's menu, navigate to Sell, A, A → animal sold; DPad-left still reaches "No" to back out.
 - **Report:** *NightMareBalon (Nexus, 9 Jun 2026, unanswered)*: "I can't use controller to sell animals on the farm."
