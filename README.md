@@ -163,6 +163,27 @@ If you test on other hardware, let me know!
 - [SMAPI 4.0+ for Android](https://github.com/NRTnarathip/SMAPI-Android-1.6) by NRTnarathip
 - (Optional, recommended) [Generic Mod Config Menu](https://github.com/sonofskywalker3/GenericModConfigMenu/releases) — our fork adds controller navigation
 
+## Install
+
+New to modding on Android? The whole thing takes about five minutes. Mods do **not** go through the "Install SMAPI From Zip" button; that button only accepts SMAPI's own zip, and it will refuse a mod zip with a "Please select file SMAPI-4.x.x.xxxx.zip" error.
+
+**1. Install SMAPI (one time only)**
+1. Install the SMAPI Launcher app from [github.com/NRTnarathip/SMAPILoader/releases](https://github.com/NRTnarathip/SMAPILoader/releases).
+2. Download `SMAPI.4.x.x-(xxxx).zip` from [github.com/NRTnarathip/SMAPI-Android-1.6/releases](https://github.com/NRTnarathip/SMAPI-Android-1.6/releases) into your Download folder. Don't unzip it.
+3. Open SMAPI Launcher, tap **Install SMAPI From Zip**, and pick that SMAPI zip.
+4. Wait for the "Successfully Install SMAPI" message.
+
+**2. Install the mod**
+1. Download `AndroidConsolizer.X.Y.Z.zip` from the Files tab. Don't unzip it.
+2. In SMAPI Launcher, tap **Mod Manager**, then **Install Mod**, and pick the Android Consolizer zip.
+3. It will confirm the install and Android Consolizer will appear in the Found Mods list. Do the same for any other mod zip, such as Generic Mod Config Menu.
+
+**3. Launch the game**
+1. Back on the launcher's main screen, tap **Start Game**. Always start from SMAPI Launcher, never the normal Stardew icon; the regular icon runs the plain game with no mods.
+2. You'll know it worked when the toolbar shows 12 slots with a controller connected.
+
+If something goes wrong, use the launcher's **Share Log** button and post the link on the Nexus bugs tab along with which step failed.
+
 ## Configuration
 
 Every feature is individually toggleable via [Generic Mod Config Menu](https://github.com/sonofskywalker3/GenericModConfigMenu/releases) or `config.json`: Controller Layout (Switch / Xbox / PlayStation), Control Style, Console Chests, Console Shops, Console Toolbar, Console Inventory, Console Shipping, Console Menus, Console Furniture Placement, Console Museum Donation + Geode menus, Move While Charging, Console Slingshot Aim, Console Drop Blocker, Console Dialogue Cursor, Pickup To Active Row, Hold To Craft, Right Stick Cursor, Carpenter Menu Fix, Furniture Debounce, Hold Start for Quest Log, Bumper Mode, and more. (Zoom level and the tool-hit-location checkboxes live on the in-game Options page and now persist across restarts.)
