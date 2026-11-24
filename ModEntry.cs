@@ -224,6 +224,7 @@ namespace AndroidConsolizer
             Patches.BootDiagnosticPatches.Apply(harmony, this.Monitor);
             Patches.RightStickCursorPatches.Apply(harmony, this.Monitor);
             Patches.BootDiagnosticPatches.ApplyAdditionalPatches(harmony, this.Monitor);
+            Patches.ItemStowPatches.Apply(harmony, this.Monitor);
 
             // Register events
             helper.Events.GameLoop.GameLaunched += this.OnGameLaunched;
@@ -238,6 +239,7 @@ namespace AndroidConsolizer
             Patches.InputSimulator.Init(helper, this.Monitor);
             helper.Events.GameLoop.OneSecondUpdateTicked += (_, _) => Patches.InputSimulator.Poll();
             helper.Events.GameLoop.UpdateTicked += (_, _) => Patches.InputSimulator.Tick();
+            helper.Events.GameLoop.UpdateTicked += (_, _) => Patches.ItemStowPatches.Tick();
 
             // Cache reflection for cutscene skip
             EventSkippableField = AccessTools.Field(typeof(Event), "skippable");
