@@ -186,6 +186,14 @@ namespace AndroidConsolizer
         /// </summary>
         public bool UseBumpersInsteadOfTriggers { get; set; } = false;
 
+        /// <summary>
+        /// The game's own Item Stowing option (Off, GamepadOnly or Both), which Android's options
+        /// page never shows. With it on, the use-tool button on an item that can't be placed there
+        /// puts the item away and the next press takes it back out, as on console and PC.
+        /// Off is the game's default, so a player who never changes it sees no difference.
+        /// </summary>
+        public string ItemStowing { get; set; } = "Off";
+
         /*********
         ** #77: persisted native-option values
         *********/

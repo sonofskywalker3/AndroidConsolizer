@@ -276,6 +276,20 @@ namespace AndroidConsolizer
             // #77: re-apply zoom + tool-hit-location options that Android doesn't persist across a
             // cold restart (StartupPreferences omits them). Values were saved on Options/GameMenu close.
             Patches.OptionsPagePatches.ApplySavedSettings();
+            this.ApplyItemStowing();
+        }
+
+        /// <summary>Copies the Item Stowing setting into the game's own option
+        /// (<c>Options.stowingMode</c>), which <c>Game1.pressUseToolButton</c> reads through
+        /// <c>allowStowing</c>. Android hides the option, so this is the only way to change it there.</summary>
+        private void ApplyItemStowing()
+        {
+            if (Game1.options == null) return;
+            if (!Enum.TryParse(Config.ItemStowing, out Options.ItemStowingModes mode))
+                mode = Options.ItemStowingModes.Off;
+            if (Game1.options.stowingMode == mode) return;
+            Game1.options.stowingMode = mode;
+            this.Monitor.Log($"Item stowing set to {mode}.", LogLevel.Trace);
         }
 
         /// <summary>Raised when a menu is opened or closed.</summary>
@@ -1163,7 +1177,11 @@ namespace AndroidConsolizer
             configMenu.Register(
                 mod: this.ModManifest,
                 reset: () => Config = new ModConfig(),
-                save: () => this.Helper.WriteConfig(Config)
+                save: () =>
+                {
+                    this.Helper.WriteConfig(Config);
+                    this.ApplyItemStowing();
+                }
             );
 
             // Version Display - AT TOP
@@ -1456,6 +1474,23 @@ namespace AndroidConsolizer
                               "Shops: LB/RB adjusts purchase quantity.",
                 getValue: () => Config.UseBumpersInsteadOfTriggers,
                 setValue: value => Config.UseBumpersInsteadOfTriggers = value
+            );
+
+            configMenu.AddTextOption(
+                mod: this.ModManifest,
+                name: () => "Item Stowing",
+                tooltip: () => "The game's Item Stowing option, which Android's settings page hides.\n" +
+                              "When on, pressing the use-tool button while holding an item you can't place there puts it away; press again to take it back out.\n" +
+                              "Gamepad only: works only while you play with a controller.",
+                getValue: () => Config.ItemStowing,
+                setValue: value => Config.ItemStowing = value,
+                allowedValues: new[] { "Off", "GamepadOnly", "Both" },
+                formatAllowedValue: value => value switch
+                {
+                    "GamepadOnly" => "Gamepad only",
+                    "Both" => "On",
+                    _ => "Off"
+                }
             );
 
             // Debug
