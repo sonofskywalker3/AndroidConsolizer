@@ -234,6 +234,11 @@ namespace AndroidConsolizer
             helper.Events.Display.MenuChanged += this.OnMenuChanged;
             helper.Events.Display.RenderedHud += this.OnRenderedHud;
 
+            // Developer test aid: scripted controller presses from sim-input.txt (no file, no effect).
+            Patches.InputSimulator.Init(helper, this.Monitor);
+            helper.Events.GameLoop.OneSecondUpdateTicked += (_, _) => Patches.InputSimulator.Poll();
+            helper.Events.GameLoop.UpdateTicked += (_, _) => Patches.InputSimulator.Tick();
+
             // Cache reflection for cutscene skip
             EventSkippableField = AccessTools.Field(typeof(Event), "skippable");
             EventSkippedField = AccessTools.Field(typeof(Event), "skipped");

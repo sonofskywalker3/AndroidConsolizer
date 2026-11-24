@@ -344,6 +344,9 @@ namespace AndroidConsolizer.Patches
                     return;
                 }
 
+                // Developer test aid: a scripted press arrives here, as a physical one would.
+                __result = InputSimulator.Apply(__result);
+
                 // Edge detection for Start during skippable events (before any swaps/suppression)
                 StartPressedThisTick = false;
                 bool rawStartPressed = __result.Buttons.Start == ButtonState.Pressed;
