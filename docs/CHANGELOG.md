@@ -2,6 +2,14 @@
 
 All notable changes to Android Consolizer, newest first. The README's "What's New" mirrors the latest entries; this file is the full history.
 
+## 4.0.8 — Item Stowing
+Bundles v4.0.3–v4.0.8.
+- **Item Stowing (4.0.3, 4.0.5)** — new `ItemStowing` setting (Off / GamepadOnly / Both, default Off) copied into the game's `Options.stowingMode` on save load and on GMCM save; Android's options page hides it. Android repeats the use-tool button every tick it is held (`Game1.UpdateControlInput` hold-to-repeat), so `pressUseToolButton` stowed and unstowed within one press; `Patches/ItemStowPatches.cs` swallows the rest of a hold once a call changed the stowed state. Device-verified on the Pocket Air (stow, then unstow, each held).
+- **Furniture Debounce off mid-session (4.0.6)** — the debounce prefixes set the suppress flag even with the toggle off, and only the gated per-tick release check cleared it, so furniture locked until restart. The flag is now set only while the toggle is on and cleared once it is off.
+- **Console Shops off (4.0.7)** — the LB/RB quantity handlers, the `ShopMenu.update` postfix and the right-stick suppression now check `EnableConsoleShops`.
+- **Console Toolbar off mid-session (4.0.8)** — the per-tick trigger-slot enforcement is dropped when the toggle is off, so the slot can't stay pinned.
+- **Developer test aid (4.0.4)** — `Patches/InputSimulator.cs` presses controller buttons from a `sim-input.txt` in the mod folder; no file, no effect.
+
 ## 4.0.0 — The Right Stick Update (feature complete)
 Bundles everything since v3.9.0 (internal iteration builds v3.9.1–v3.9.23). The right stick becomes the console free cursor — the last missing piece of the Switch control scheme — so the mod is now considered feature complete (bug fixes + parity-closing requests still welcome). All in `Patches/RightStickCursorPatches.cs` plus small wiring, every group toggleable via GMCM.
 - **Right-stick overworld cursor (#12, #62)** — the engine's native right-stick cursor path (`Game1.UpdateControlInput`) was being starved by AC zeroing the right stick. Now un-starved + self-drawn (Android renders no overworld cursor sprite): the cursor aims tool swings (incl. diagonals via a `Character.GetToolLocation(bool)` prefix), tile interaction (a `Game1.pressActionButton` prefix sets `lastCursorMotionWasMouse` at the gate read-site), and furniture/machine/seed placement at the tile under it; auto-hides after `timerUntilMouseFade` (~4s), reverting to the facing tile; no center-snap (`setMousePositionRaw` postfix). Toggle `EnableRightStickCursor` (replaces `SuppressRightStickInOverworld`).

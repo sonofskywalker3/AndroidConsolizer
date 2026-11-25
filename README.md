@@ -10,16 +10,14 @@ If you play on a handheld (Odin, Ayaneo, Retroid, etc.) or dock your phone/table
 
 > **🎉 Feature complete — v4.0.0.** With the right stick now working like the Switch, Android Consolizer covers the full console control scheme, so I'm considering the mod **feature complete**. If I missed something, let me know — I'll keep fixing any reported bugs, and I'll consider feature requests that bring it closer to full console parity.
 
-## What's New in v4.0.2 — Bug Fixes
+## What's New in v4.0.8 — Item Stowing
 
-Two controller fixes from Nexus reports. Both are individually toggleable via GMCM.
-
-- **Sell animals with the controller** — Marnie's animal dialog (sell / move home) now works on a controller. A button is highlighted the moment it opens, and confirming "Sell" actually goes through. Before, the confirmation defaulted to "No", so pressing confirm just cancelled — selling an animal was effectively impossible without the touchscreen. Adds a new "Console Animal Menu" toggle.
-- **Barter shops give the full stack** — trading at the Bookseller (and any shop that trades an item for a bundle — e.g. a book for 20 Hardwood) now hands over the whole stack instead of a single item.
+- **Item Stowing** — put away the item in your hands with the tool button, like on console and PC: press once to stow it, again to take it back out. Android hides the game's own Item Stowing option, so it's now in the config menu (Off / Gamepad only / On). It starts Off, the game's own default.
+- **Switching a feature off mid-game works cleanly** — three toggles misbehaved when turned off in GMCM during a session. Furniture Debounce left furniture impossible to pick up or place until a restart; Console Shops kept changing the purchase quantity with LB/RB and kept its right-stick scrolling; Console Toolbar could leave the selected slot stuck.
 
 ## Previous releases
 
-Full version history is in [docs/CHANGELOG.md](docs/CHANGELOG.md). Recent highlights: **v4.0.0 — The Right Stick Update** (right-stick free cursor that aims tools/interaction/placement like the Switch, contextual hand/magnifier cursor, place-with-cursor, settings that survive restart); **v3.9.0 — Console Parity: Big Systems** (charge tools while moving, console slingshot aiming, drop blocker, restored Options + working zoom, dialogue choice boxes); **v3.8.0 — Console Parity: Quick Wins** (resizable toolbar, museum donations, geode breaking, Load Game/title cursors, multi-page mail, and more).
+Full version history is in [docs/CHANGELOG.md](docs/CHANGELOG.md). Recent highlights: **v4.0.2 — Bug Fixes** (sell animals with the controller, barter shops give the full stack); **v4.0.0 — The Right Stick Update** (right-stick free cursor that aims tools/interaction/placement like the Switch, contextual hand/magnifier cursor, place-with-cursor, settings that survive restart); **v3.9.0 — Console Parity: Big Systems** (charge tools while moving, console slingshot aiming, drop blocker, restored Options + working zoom, dialogue choice boxes); **v3.8.0 — Console Parity: Quick Wins** (resizable toolbar, museum donations, geode breaking, Load Game/title cursors, multi-page mail, and more).
 
 ## Controller Layout Support
 
@@ -136,6 +134,7 @@ Two control styles:
 - Slingshot ammo: same pattern — A picks up ammo, Y on the slingshot attaches/detaches
 - Cutscene skip: press Start twice during skippable cutscenes
 - Start button: tap = Game Menu, hold ~½ sec = Quest Log/Journal
+- Item Stowing: put away the item in your hands with the tool button, and press again to take it back out (the game's own option, which Android hides; set it in the config menu)
 - Dialogue choice boxes open on the first option with a red outline + finger cursor (console look, no yellow highlight)
 - Settings persistence: the in-game Zoom level and the tool-hit-location options survive a full restart, and options changed with the controller are saved the same as touch
 - GMCM controller navigation via our [controller-enabled GMCM fork](https://github.com/sonofskywalker3/GenericModConfigMenu)
@@ -186,7 +185,7 @@ If something goes wrong, use the launcher's **Share Log** button and post the li
 
 ## Configuration
 
-Every feature is individually toggleable via [Generic Mod Config Menu](https://github.com/sonofskywalker3/GenericModConfigMenu/releases) or `config.json`: Controller Layout (Switch / Xbox / PlayStation), Control Style, Console Chests, Console Shops, Console Toolbar, Console Inventory, Console Shipping, Console Menus, Console Furniture Placement, Console Museum Donation + Geode menus, Move While Charging, Console Slingshot Aim, Console Drop Blocker, Console Dialogue Cursor, Pickup To Active Row, Hold To Craft, Right Stick Cursor, Carpenter Menu Fix, Furniture Debounce, Hold Start for Quest Log, Bumper Mode, and more. (Zoom level and the tool-hit-location checkboxes live on the in-game Options page and now persist across restarts.)
+Every feature is individually toggleable via [Generic Mod Config Menu](https://github.com/sonofskywalker3/GenericModConfigMenu/releases) or `config.json`: Controller Layout (Switch / Xbox / PlayStation), Control Style, Console Chests, Console Shops, Console Toolbar, Console Inventory, Console Shipping, Console Menus, Console Furniture Placement, Console Museum Donation + Geode menus, Move While Charging, Console Slingshot Aim, Console Drop Blocker, Console Dialogue Cursor, Pickup To Active Row, Hold To Craft, Right Stick Cursor, Carpenter Menu Fix, Furniture Debounce, Hold Start for Quest Log, Item Stowing, Bumper Mode, and more. (Zoom level and the tool-hit-location checkboxes live on the in-game Options page and now persist across restarts.)
 
 ## Also by this author
 
