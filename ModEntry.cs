@@ -389,6 +389,13 @@ namespace AndroidConsolizer
             // valid even when there's no active trigger target.
             _preUpdateToolIndex = player.CurrentToolIndex;
 
+            // Console Toolbar switched off: drop any trigger target so the slot isn't pinned.
+            if (!Config.EnableConsoleToolbar)
+            {
+                _triggerSlotTarget = -1;
+                return;
+            }
+
             if (_triggerSlotTarget < 0) return;
 
             // Enforce our target position BEFORE Game.Update() runs.
