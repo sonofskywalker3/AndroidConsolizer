@@ -1504,6 +1504,14 @@ namespace AndroidConsolizer.Patches
             if (!_suppressFurnitureUntilRelease)
                 return;
 
+            // Debounce switched off mid-session: the patches stay attached until restart, so
+            // drop a leftover flag or it would block every pickup and placement for good.
+            if (!ModEntry.Config.EnableFurnitureDebounce)
+            {
+                _suppressFurnitureUntilRelease = false;
+                return;
+            }
+
             var gps = Game1.input.GetGamePadState();
             bool toolButtonHeld = gps.Buttons.X == ButtonState.Pressed
                 || gps.Buttons.Y == ButtonState.Pressed;
@@ -1565,7 +1573,8 @@ namespace AndroidConsolizer.Patches
                 int h = __instance.getTilesHigh();
                 Monitor.Log($"[Bed] performRemoveAction on '{__instance.Name}' — picking up at TileLocation=({t.X},{t.Y}) size={w}x{h}. tick={Game1.ticks}", LogLevel.Debug);
             }
-            _suppressFurnitureUntilRelease = true;
+            if (ModEntry.Config.EnableFurnitureDebounce)
+                _suppressFurnitureUntilRelease = true;
             return true;
         }
 
@@ -1686,7 +1695,8 @@ namespace AndroidConsolizer.Patches
                 var pTile = who?.Tile ?? Game1.player?.Tile ?? Microsoft.Xna.Framework.Vector2.Zero;
                 Monitor.Log($"[Bed] placementAction ENTRY — name='{__instance.Name}' rawXY=({x},{y}) tile=({tx},{ty}) bedSize={w}x{h} bedsideTileY={bedside} playerTile=({pTile.X},{pTile.Y}) loc='{location?.Name}' GetAdditionalFurniturePlacementStatus={status} (0=ok, -1=bedside not clear). tick={Game1.ticks}", LogLevel.Debug);
             }
-            _suppressFurnitureUntilRelease = true;
+            if (ModEntry.Config.EnableFurnitureDebounce)
+                _suppressFurnitureUntilRelease = true;
             return true;
         }
 
