@@ -43,6 +43,8 @@ namespace AndroidConsolizer.Patches
         /// <summary>Check if the active menu is a ShopMenu on the buy tab (right stick should be suppressed).</summary>
         internal static bool ShouldSuppressRightStick()
         {
+            if (ModEntry.Config?.EnableConsoleShops != true)
+                return false; // Console Shops off: leave vanilla right-stick scrolling alone
             if (Game1.activeClickableMenu is ShopMenu shop && InvVisibleField != null)
             {
                 bool inventoryVisible = (bool)InvVisibleField.GetValue(shop);
@@ -1032,6 +1034,10 @@ namespace AndroidConsolizer.Patches
         {
             // #75 diagnostic: characterize the buy-list scroll bug from the log.
             LogScrollStateIfVerbose(__instance);
+
+            // Console Shops off: none of the console shop behaviour below applies.
+            if (ModEntry.Config?.EnableConsoleShops != true)
+                return;
 
             // Get gamepad state once for all hold-to-repeat checks
             var gpState = GamePad.GetState(PlayerIndex.One);

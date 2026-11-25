@@ -798,13 +798,13 @@ namespace AndroidConsolizer
             }
 
             // Shop quantity adjustment with bumpers (when triggers don't work)
-            if (Config.UseBumpersInsteadOfTriggers && Game1.activeClickableMenu is ShopMenu shopMenu)
+            if (Config.EnableConsoleShops && Config.UseBumpersInsteadOfTriggers && Game1.activeClickableMenu is ShopMenu shopMenu)
             {
                 HandleShopBumperQuantity(e, shopMenu);
             }
 
             // Shop quantity adjustment in non-bumper mode: LB/RB = +/-10
-            if (!Config.UseBumpersInsteadOfTriggers && Game1.activeClickableMenu is ShopMenu shopMenuNonBumper)
+            if (Config.EnableConsoleShops && !Config.UseBumpersInsteadOfTriggers && Game1.activeClickableMenu is ShopMenu shopMenuNonBumper)
             {
                 HandleShopQuantityNonBumper(e, shopMenuNonBumper);
             }
