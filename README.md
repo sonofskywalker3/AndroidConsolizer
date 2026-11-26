@@ -187,6 +187,10 @@ If something goes wrong, use the launcher's **Share Log** button and post the li
 
 Every feature is individually toggleable via [Generic Mod Config Menu](https://github.com/sonofskywalker3/GenericModConfigMenu/releases) or `config.json`: Controller Layout (Switch / Xbox / PlayStation), Control Style, Console Chests, Console Shops, Console Toolbar, Console Inventory, Console Shipping, Console Menus, Console Furniture Placement, Console Museum Donation + Geode menus, Move While Charging, Console Slingshot Aim, Console Drop Blocker, Console Dialogue Cursor, Pickup To Active Row, Hold To Craft, Right Stick Cursor, Carpenter Menu Fix, Furniture Debounce, Hold Start for Quest Log, Item Stowing, Bumper Mode, and more. (Zoom level and the tool-hit-location checkboxes live on the in-game Options page and now persist across restarts.)
 
+## AI disclosure
+
+I design my mods and test them, but I'm not a programmer: the code and these docs were written with Claude Code (Anthropic), under my direction, and checked by me in game. Android Consolizer contains no artwork and no game content.
+
 ## Also by this author
 
 - [**Cart Catalog**](https://www.nexusmods.com/stardewvalley/mods/47146) — Order from the Traveling Cart's daily stock; items arrive in a package on your porch the next morning.
