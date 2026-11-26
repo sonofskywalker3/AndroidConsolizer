@@ -189,7 +189,7 @@ Every feature is individually toggleable via [Generic Mod Config Menu](https://g
 
 ## AI disclosure
 
-I design my mods and test them, but I'm not a programmer: the code and these docs were written with Claude Code (Anthropic), under my direction, and checked by me in game. Android Consolizer contains no artwork and no game content.
+I design my mods and test them, but I'm not a programmer: the code and these docs were written with Claude Code (Anthropic), under my direction, and checked by me in game. Android Consolizer contains no artwork and no game content. The controller picture on its Nexus page was made with AI. Any AI art is only there because I can't draw it myself, and I would love for anyone interested to submit replacements, with full credit.
 
 ## Also by this author
 
